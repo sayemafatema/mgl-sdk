@@ -31,6 +31,12 @@ dist/
 # JetBrains IDE
 .idea/
 
+# Gradle (Android native module caches)
+.gradle/
+
+# VS Code local settings
+.vscode/
+
 # Unit test reports
 TEST*.xml
 

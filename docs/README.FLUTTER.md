@@ -6,13 +6,15 @@ Flutter **does not load the TypeScript SDK**. It connects through the **same RES
 
 ## Seamless integration (entire flow, one initialization)
 
-Use **`FleetSdkApp`** as your entry (full-screen **`runApp`** or a **`Navigator`** route). That single initialization mounts **`FleetFlowScreen`**, which is driven end-to-end by **`FleetAppEngine`**:
+Use **`FleetNativeSdk.root(config)`** (`runApp`) or **`FleetNativeSdk.present(context, config)`** from your existing navigator. That **single** call mounts **`FleetFlowScreen`** via **`FleetSdkApp`**, driven end-to-end by **`FleetAppEngine`**:
 
 | What you do | What you skip |
 |-------------|----------------|
-| Provide **`FleetConfig`** (`apiBaseUrl`, `useMock`) once | Wiring login, OTP/PIN, invite signup, tabs, overlays, or scan confirmation screens individually |
+| Pass **`FleetConfig`** (`apiBaseUrl`, `useMock`, optional `authToken`) once | Wiring login, OTP/PIN, invite signup, tabs, overlays, or scan confirmation screens individually |
 
-There are **no separate screen integrations** for the bundled UX path—only optional **`FleetRepository`** HTTP behaviour when **`useMock: false`**.
+**`FleetSdkApp`** remains the underlying widget — **`FleetNativeSdk`** is the native-SDK façade for hosts that only want initialization-style calls.
+
+There are **no separate screen integrations** for the bundled UX path when using **`FleetNativeSdk`** — only **`FleetRepository`** HTTP when **`useMock: false`**.
 
 ---
 
@@ -29,22 +31,22 @@ There are **no separate screen integrations** for the bundled UX path—only opt
 |------|------------|
 | **1** | Add **`mgl_fleet_sdk`** as a **`path:`** dependency in your host app **`pubspec.yaml`**, pointing at **[`flutter-sdk/`](../flutter-sdk/)** (or a local copy). |
 | **2** | Run **`flutter pub get`** in the host app. |
-| **3** | Import **`package:mgl_fleet_sdk/mgl_fleet_sdk.dart`** and wrap your tree with **`FleetSdkApp`** — **`runApp`** or **`Navigator.push`** (snippets below). |
+| **3** | Import **`package:mgl_fleet_sdk/mgl_fleet_sdk.dart`** and call **`FleetNativeSdk.root`** or **`FleetNativeSdk.present`**. |
 | **4** | Use **`FleetConfig(apiBaseUrl: '…', useMock: true)`** for offline demo; set **`useMock: false`** when your API exists. |
 | **5** | Run **`flutter analyze`** (recommended), then **`flutter run`** on simulator or device to verify the flow end-to-end. |
 
 ---
 
-## **`FleetSdkApp`** — bundled package
+## **`FleetNativeSdk`** — native entry
 
-This repo ships **`mgl_fleet_sdk`** — one widget that starts the **full demo flow**: mobile login / invite signup → OTP / PIN → driver shell (tabs, assignment/pairing overlays, scan authorize). Behaviour matches Angular **`FleetFlowHostComponent`**; the Dart **`FleetAppEngine`** mirrors TS **`FleetAppEngine`** from **`@mgl/fleet-core-sdk`**.
+This repo ships **`mgl_fleet_sdk`** — **`FleetNativeSdk`** is the **initialization-only** API; it wraps **`FleetSdkApp`** (same full flow: mobile login / invite signup → OTP / PIN → driver shell). Behaviour matches Angular **`FleetFlowHostComponent`**; Dart **`FleetAppEngine`** mirrors TS **`FleetAppEngine`**.
 
 ### How it connects
 
 ```mermaid
 flowchart LR
   subgraph flutter [Flutter host]
-    App[FleetSdkApp]
+    App[FleetNativeSdk]
     Repo[FleetRepository]
     Engine[FleetAppEngine]
     UI[FleetFlowScreen]
@@ -70,9 +72,9 @@ dependencies:
 
 Then **`flutter pub get`**.
 
-### Code — launch the fleet UI
+### Code — launch (native SDK)
 
-**Option A — entire window is the fleet demo**
+**Option A — entire window**
 
 ```dart
 import 'package:flutter/material.dart';
@@ -81,8 +83,8 @@ import 'package:mgl_fleet_sdk/mgl_fleet_sdk.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
-    FleetSdkApp(
-      config: FleetConfig(
+    FleetNativeSdk.root(
+      FleetConfig(
         apiBaseUrl: 'https://your-api.example',
         useMock: true,
       ),
@@ -91,15 +93,12 @@ void main() {
 }
 ```
 
-**Option B — push from your existing `MaterialApp`**
+**Option B — push from existing `MaterialApp`**
 
 ```dart
-Navigator.of(context).push(
-  MaterialPageRoute<void>(
-    builder: (_) => FleetSdkApp(
-      config: FleetConfig(useMock: false, apiBaseUrl: baseUrl),
-    ),
-  ),
+await FleetNativeSdk.present(
+  context,
+  FleetConfig(useMock: false, apiBaseUrl: baseUrl),
 );
 ```
 
@@ -163,7 +162,7 @@ They need **`mgl_fleet_sdk`** on **their** disk (**or** a published Dart package
 
 ## Alternative — Hand-written Dart client only
 
-If you **don’t** use **`FleetSdkApp`**, implement **`FleetRepository`-equivalent** calls yourself — same paths as OpenAPI / TS SDK. Examples (manual copy): [`flutter-integration/README.md`](../flutter-integration/README.md).
+If you **don’t** use **`FleetNativeSdk`** / **`FleetSdkApp`**, implement **`FleetRepository`-equivalent** calls yourself — same paths as OpenAPI / TS SDK. Examples (manual copy): [`flutter-integration/README.md`](../flutter-integration/README.md).
 
 ---
 

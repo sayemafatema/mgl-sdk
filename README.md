@@ -48,15 +48,15 @@ To learn more, take a look at the following resources:
 
 <a href="https://v0.app/chat/api/kiro/clone/priyasharma23-spec/v0-mgl-fleet-app" alt="Open in Kiro"><img src="https://pdgvvgmkdvyeydso.public.blob.vercel-storage.com/open%20in%20kiro.svg?sanitize=true" /></a>
 
-## Cross-platform SDK (Angular / Flutter)
+## Cross-platform SDK (Angular / Flutter / React Native)
 
-Native shells share **`docs/openapi/fleet-api.yaml`**.
+**Native-first (recommended):** [`docs/README.NATIVE-SDK.md`](docs/README.NATIVE-SDK.md) — Kotlin + Swift cores; Capacitor (`@mgl/capacitor-fleet-sdk`), Flutter (`mgl_fleet_native_sdk`), and React Native (`@mgl/react-native-fleet-sdk`) bridges share **`initialize` / `presentFleetFlow`**.
 
-Integration is **single-shot for the full UX**: initialize once (`FleetModule.forRoot` + one lazy shell route on Angular; **`FleetSdkApp`** on Flutter). Auth through tabs and overlays ships inside the SDK host—**no per-screen wiring**.
+OpenAPI contract: [`docs/openapi/fleet-api.yaml`](docs/openapi/fleet-api.yaml).
 
-| Host | Entry |
-|------|--------|
-| Angular + Capacitor | **`FleetModule.forRoot`** + lazy **`FleetShellModule`** → **`FleetFlowHostComponent`** — [docs/README.ANGULAR-CAPACITOR.md](docs/README.ANGULAR-CAPACITOR.md) |
-| Flutter | **`FleetSdkApp`** → **`FleetFlowScreen`** — [docs/README.FLUTTER.md](docs/README.FLUTTER.md), package [`flutter-sdk/`](flutter-sdk/) |
+| Host | Legacy / transitional |
+|------|------------------------|
+| Angular + Capacitor | **`initFleetNativeSdk`** — [`docs/README.ANGULAR-CAPACITOR.md`](docs/README.ANGULAR-CAPACITOR.md) |
+| Flutter | **`FleetNativeSdk`** — [`docs/README.FLUTTER.md`](docs/README.FLUTTER.md), [`flutter-sdk/`](flutter-sdk/) |
 
 Headless TS core: [`core-sdk/`](core-sdk/).

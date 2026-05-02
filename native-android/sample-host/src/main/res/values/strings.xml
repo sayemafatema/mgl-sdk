@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MGL Fleet Sample</string>
+    <string name="sample_instructions">Initialize → Present Fleet SDK flow.\nCompletion logs to Logcat tag FleetSample.</string>
+    <string name="sample_open_sdk">Open Fleet flow</string>
+</resources>

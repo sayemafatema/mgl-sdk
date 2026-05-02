@@ -1,0 +1,32 @@
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+repositories {
+    mavenLocal()
+    google()
+    mavenCentral()
+}
+
+android {
+    namespace 'com.mgl.fleet.capacitor'
+    compileSdkVersion project.hasProperty('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 35
+
+    defaultConfig {
+        minSdkVersion project.hasProperty('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    implementation 'com.mgl.sdk:fleet-android:0.1.0'
+    implementation 'com.capacitorjs:capacitor-android:6.2.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+}

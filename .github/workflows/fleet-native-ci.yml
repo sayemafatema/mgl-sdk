@@ -1,0 +1,33 @@
+name: Fleet native CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  npm-plugins:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pkg:
+          - capacitor-fleet
+          - react-native-fleet
+    defaults:
+      run:
+        working-directory: plugins/${{ matrix.pkg }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: plugins/${{ matrix.pkg }}/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  swift-package:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build --package-path . -v

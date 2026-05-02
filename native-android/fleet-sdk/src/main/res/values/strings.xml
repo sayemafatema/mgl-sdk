@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="fleet_sdk_title">MGL Fleet SDK</string>
+    <string name="fleet_sdk_subtitle">Native shell (parity UI replaces this placeholder).</string>
+    <string name="fleet_sdk_complete">Complete flow</string>
+    <string name="fleet_sdk_cancel">Cancel</string>
+</resources>

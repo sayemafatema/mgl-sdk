@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MGLFleetSdk" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#047857</item>
+        <item name="colorPrimaryVariant">#065f46</item>
+        <item name="android:statusBarColor">#047857</item>
+    </style>
+</resources>

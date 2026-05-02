@@ -4,26 +4,55 @@ This guide explains **how your Angular app connects to the fleet SDK** and how t
 
 ---
 
-## Seamless integration (entire flow, one initialization)
+## Native SDK integration (recommended — standalone Angular)
 
-Two registrations cover the UI flow—nothing else is required for the bundled screens:
+**One initialization call** returns both root **`providers`** and **`routes`**:
 
-1. **`FleetModule.forRoot({ apiBaseUrl, useMock, … })`** once in your root **`NgModule`** (or equivalent standalone providers).
-2. **One lazy route** that loads **`FleetShellModule`**, whose default child is **`FleetFlowHostComponent`**.
+```typescript
+import {
+  initFleetNativeSdk,
+} from './fleet/fleet-native-sdk'; // path after copy — or '@mgl/fleet-angular-sdk'
 
-After that, navigate to your fleet URL (for example **`/mgl-fleet`**). **Do not** declare or lazy-load separate SDK routes per auth step or tab—the host component owns the full journey.
+const fleet = initFleetNativeSdk(
+  { apiBaseUrl: environment.fleetApiUrl, useMock: true },
+  { path: 'mgl-fleet' },
+);
+
+// bootstrapApplication(AppComponent, {
+//   providers: [
+//     fleet.providers,
+//     provideRouter([ ...fleet.routes, ...yourRoutes ]),
+//   ],
+// });
+```
+
+Navigate to **`/mgl-fleet`** (or your **`path`**). **`FleetFlowHostComponent`** owns the entire journey — **do not** add separate SDK routes per screen.
+
+Legacy **`FleetModule.forRoot`** still registers providers only (shell stays lazy); merge **`fleetNativeSdkRoutes()`** into **`provideRouter`** / **`RouterModule.forRoot`** — see **`angular-sdk/README.md`**.
 
 For production APIs, keep **`useMock: false`** and set **`FleetService.setAuthToken`** when your host finishes real authentication.
+
+---
+
+## Seamless integration (overview)
+
+| Approach | What you register |
+|----------|-------------------|
+| **Native SDK (recommended)** | **`initFleetNativeSdk(...)`** → **`fleet.providers`** + **`fleet.routes`** |
+| **Manual** | **`provideFleetNativeSdk(config)`** + **`fleetNativeSdkRoutes({ path })`** |
+| **NgModule legacy** | **`FleetModule.forRoot(...)`** + same **`fleetNativeSdkRoutes`** in router |
+
+Nothing else is required for the bundled screens beyond **`core-sdk`** on **`npm`** and **`file:`** paths above.
 
 ---
 
 ## How the connection works
 
 | Layer | What runs where | Role |
-|--------|-----------------|------|
-| **Fleet UI shell** | Same Angular bundle as your app (`FleetShellModule`) | **`FleetFlowHostComponent`** covers auth + main app — **you do not wire each screen manually**. |
+|--------|-----------------|-----|
+| **Fleet UI shell** | Lazy **`FleetShellModule`** | **`FleetFlowHostComponent`** — auth + driver shell (**you do not wire each screen manually**). |
 | **`@mgl/fleet-core-sdk`** | Same JS bundle | Headless logic: `fetch`, mocks, store, events — **no React**. |
-| **`FleetModule.forRoot`** | Root injector | Registers config token + `FleetService` wrapping `FleetSDK`. |
+| **`initFleetNativeSdk` / `provideFleetNativeSdk`** | Root injector | Config token + **`FleetService`** wrapping **`FleetSDK`**. |
 | **Your HTTP API** | Server | REST contract in [`openapi/fleet-api.yaml`](openapi/fleet-api.yaml). |
 
 Capacitor runs **one** WebView for your Angular app; the SDK is **TypeScript + templates** using **`fetch`** only.
@@ -43,7 +72,7 @@ flowchart LR
 
 ## Prerequisites
 
-- Node.js **18+** recommended (building core SDK).
+- Node.js **20+** (building core SDK and Angular toolchain).
 - Angular **17+** + Capacitor.
 - `core-sdk` built (`dist/` present).
 
@@ -54,15 +83,14 @@ flowchart LR
 | Step | What to do |
 |------|------------|
 | **1** | Build **`core-sdk`** (`npm install && npm run build` in [`core-sdk/`](../core-sdk/)). |
-| **2** | Add **`@mgl/fleet-core-sdk`** to your Angular app (`file:` / `link:` path to built **`core-sdk`**, or a registry URL after you publish). |
-| **3** | Copy **[`angular-sdk/src/lib/`](../angular-sdk/src/lib/)** into your project (or consume as an Angular library), matching import paths (e.g. `./fleet/…`). |
-| **4** | Import **`FleetModule.forRoot({ apiBaseUrl, useMock: true, … })`** in your root **`NgModule`** (or equivalent **`importProvidersFrom`** for standalone bootstrap). |
-| **5** | Register **one** lazy route whose **`loadChildren`** resolves **`FleetShellModule`** (snippets under **Step 4 — Mount the entire flow with lazy routing**). |
-| **6** | Run **`ng serve`** (or **`ionic serve`** / **`ng build && npx cap run`**). Navigate to your fleet path (e.g. **`/mgl-fleet`**). |
+| **2** | Add **`@mgl/fleet-core-sdk`** to your Angular app (`file:` path to built **`core-sdk`**, or registry). |
+| **3** | Copy **[`angular-sdk/src/lib/`](../angular-sdk/src/lib/)** into your project (or consume as a library). |
+| **4** | Call **`initFleetNativeSdk(config, { path: '…' })`** — add **`fleet.providers`** to bootstrap **`providers`** and **`...fleet.routes`** into **`provideRouter`**. |
+| **5** | Run **`ng serve`** / Capacitor workflow → open **`/${path}`**. |
 
-Skipping **`FleetModule.forRoot`** or loading **`FleetShellModule`** without the core **`FleetService`** provider will break **`FleetFlowHostComponent`** at runtime.
+Skipping **`fleet.providers`** or omitting **`fleet.routes`** will break **`FleetFlowHostComponent`** at runtime.
 
-Detailed snippets: **Steps 1–6** in the sections below (build core → dependencies → **`forRoot`** → lazy shell → auth token → Capacitor).
+Detailed snippets below: build core → **`npm`** deps → **`initFleetNativeSdk`** → **`NgModule`** fallback → auth token → Capacitor.
 
 ---
 
@@ -76,9 +104,9 @@ npm run build
 
 ---
 
-## Step 2 — Dependencies
+## Step 2 — Dependencies + Angular sources
 
-In your Angular app `package.json`:
+In your Angular app **`package.json`**:
 
 ```json
 {
@@ -92,61 +120,98 @@ In your Angular app `package.json`:
 npm install
 ```
 
-Copy or symlink **[`angular-sdk/src/lib/`](../angular-sdk/src/lib/)** into your workspace (library or `src/app/fleet/`), keeping imports consistent.
+Copy **[`angular-sdk/src/lib/`](../angular-sdk/src/lib/)** into your workspace (`src/app/fleet/` or a library), keeping internal imports consistent.
 
 ---
 
-## Step 3 — Register SDK config (root)
+## Step 3 — Native SDK bootstrap (standalone — recommended)
 
-**Once** in `AppModule` (or bootstrap):
+```typescript
+import { ApplicationConfig } from '@angular/core';
+import { provideRouter } from '@angular/router';
+import { initFleetNativeSdk } from './fleet/fleet-native-sdk';
+
+const fleet = initFleetNativeSdk(
+  {
+    apiBaseUrl: environment.fleetApiUrl,
+    authToken: undefined,
+    useMock: true,
+  },
+  { path: 'mgl-fleet' },
+);
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    fleet.providers,
+    provideRouter([
+      ...fleet.routes,
+      // …your routes
+    ]),
+  ],
+};
+```
+
+Navigate to **`/mgl-fleet`**.
+
+---
+
+## Step 4 — **`NgModule`** hosts (legacy)
+
+Use **`FleetModule.forRoot`** **only** for providers — you **still** merge **`fleet.routes`** from **`initFleetNativeSdk`** into **`RouterModule.forRoot`** (the shell must stay lazy):
 
 ```typescript
 import { FleetModule } from './fleet/fleet.module';
+import { RouterModule } from '@angular/router';
+import { initFleetNativeSdk } from './fleet/fleet-native-sdk';
+
+const fleetConfig = {
+  apiBaseUrl: environment.fleetApiUrl,
+  authToken: undefined as string | undefined,
+  useMock: true,
+};
+const fleet = initFleetNativeSdk(fleetConfig, { path: 'mgl-fleet' });
 
 @NgModule({
   imports: [
-    FleetModule.forRoot({
-      apiBaseUrl: environment.fleetApiUrl,
-      authToken: undefined,
-      useMock: true,
-    }),
+    FleetModule.forRoot(fleetConfig),
+    RouterModule.forRoot([
+      ...fleet.routes,
+      // …your routes
+    ]),
   ],
 })
 export class AppModule {}
 ```
 
-This exposes `FleetService` / `FleetSDK` config app-wide.
+Alternatively call **`fleetNativeSdkRoutes({ path: '…' })`** instead of **`initFleetNativeSdk`** if you split providers (**`provideFleetNativeSdk`**) manually — see **`angular-sdk/README.md`**.
 
 ---
 
-## Step 4 — Mount the **entire flow** with lazy routing
+## Step 5 — Manual lazy route (equivalent to **`fleet.routes`**)
 
-Add **one** lazy route pointing at **`FleetShellModule`**:
+If you wire routing by hand, use **one** lazy entry:
 
 ```typescript
-// app.routes.ts (or AppRoutingModule)
 {
   path: 'mgl-fleet',
   loadChildren: () =>
     import('./fleet/fleet-shell.module').then((m) => m.FleetShellModule),
-},
+}
 ```
 
-If you copied sources into `./fleet/`, adjust the import path.
+Adjust the **`import`** path to match your copy location.
 
 ### Flow inside the shell
 
 | Route segment | Screen |
 |---------------|--------|
-| `/mgl-fleet` (lazy route path `''`) | **`FleetFlowHostComponent`** — mobile login/signup → OTP/PIN → driver shell (tabs + overlays). |
-
-Navigate users once:
+| **`/mgl-fleet`** (child path **`''`**) | **`FleetFlowHostComponent`** — login/signup → OTP/PIN → driver shell (tabs + overlays). |
 
 ```typescript
 this.router.navigate(['/mgl-fleet']);
 ```
 
-Optional default redirect:
+Optional redirect:
 
 ```typescript
 { path: '', redirectTo: 'mgl-fleet', pathMatch: 'full' },
@@ -154,7 +219,7 @@ Optional default redirect:
 
 ---
 
-## Step 5 — Auth token (production)
+## Step 6 — Auth token (production)
 
 After login:
 
@@ -163,15 +228,15 @@ constructor(private fleet: FleetService) {}
 this.fleet.setAuthToken(token);
 ```
 
-Used when `useMock: false` (`Authorization: Bearer …`).
+Used when **`useMock: false`** (`Authorization: Bearer …`).
 
 ---
 
-## Step 6 — Capacitor-specific configuration
+## Step 7 — Capacitor-specific configuration
 
-1. **API URL on device** — Use a reachable HTTPS origin (not `localhost` on physical devices unless proxied).
-2. **CORS** — Allow Capacitor WebView origins (`capacitor://localhost`, etc.).
-3. **Sync** — `ng build && npx cap sync`.
+1. **API URL on device** — Use a reachable HTTPS origin (not **`localhost`** on physical devices unless proxied).
+2. **CORS** — Allow Capacitor WebView origins (**`capacitor://localhost`**, etc.).
+3. **Sync** — **`ng build && npx cap sync`**.
 
 ---
 
@@ -211,9 +276,9 @@ Another developer needs **the SDK sources** (or **published packages**) availabl
 
 **Checklist for your teammate**
 
-1. Node **18+**, Angular **17+**, **`core-sdk`** built (**`dist/`** exists).
+1. Node **20+**, Angular **17+**, **`core-sdk`** built (**`dist/`** exists).
 2. **`package.json`** **`file:`** (or registry) **`@mgl/fleet-core-sdk`** resolves on **their** filesystem.
-3. **`FleetModule.forRoot`** + lazy **`FleetShellModule`** wired as in this doc.
+3. **`initFleetNativeSdk`** (or **`provideFleetNativeSdk`** + **`fleetNativeSdkRoutes`**) wired as in this doc.
 4. Optional: pin the same **Git tag/commit** as you so **`core-sdk`** behaviour matches.
 
 ---
@@ -228,14 +293,15 @@ If you **don’t** want the full shell, import **`FleetModule.forRoot`** only an
 
 | Symptom | Check |
 |---------|--------|
-| Blank lazy route | `FleetModule.forRoot` imported in `AppModule`; path matches copied module location. |
-| `FleetSDK` import fails | Rebuild `core-sdk`; verify `package.json` paths. |
+| Blank fleet route | **`fleet.providers`** in bootstrap; **`...fleet.routes`** inside **`provideRouter`**; navigate to **`/${path}`**. |
+| `FleetSDK` import fails | Rebuild **`core-sdk`**; verify **`package.json`** paths. |
 | Network errors | URL, HTTPS, CORS, auth token when `useMock: false`. |
 
 ---
 
 ## Related files
 
+- Native SDK bootstrap: [`angular-sdk/src/lib/fleet-native-sdk.ts`](../angular-sdk/src/lib/fleet-native-sdk.ts)
 - Shell routes: [`angular-sdk/src/lib/fleet-shell.routes.ts`](../angular-sdk/src/lib/fleet-shell.routes.ts)
 - Core: [`core-sdk/fleet-sdk.ts`](../core-sdk/fleet-sdk.ts)
 - OpenAPI: [`openapi/fleet-api.yaml`](openapi/fleet-api.yaml)
