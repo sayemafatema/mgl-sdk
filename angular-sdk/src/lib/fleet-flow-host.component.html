@@ -1,0 +1,334 @@
+<div class="fleet-root">
+  <button type="button" class="dev-skip" (click)="skipDev()">Skip to main (dev)</button>
+
+  <!-- ============ AUTH ============ -->
+  <div class="phone" *ngIf="s.authStep !== 'complete'">
+    <div class="status-bar">9:41</div>
+    <div class="auth-body">
+
+      <!-- Login -->
+      <ng-container *ngIf="s.authStep === 'login'">
+        <div class="logo-block">
+          <div class="logo-placeholder">MGL</div>
+          <h1>MGL Fleet Connect</h1>
+          <p class="muted">Driver App</p>
+        </div>
+        <label class="lbl">Mobile number</label>
+        <div class="row-phone">
+          <span class="cc">+91</span>
+          <input class="inp" type="tel" maxlength="10" [value]="s.mobileNumber" (input)="onMobileInput($event)" placeholder="10-digit mobile" />
+        </div>
+        <button type="button" class="btn primary full" [disabled]="s.mobileNumber.length !== 10" (click)="sendLoginOtp()">Send OTP</button>
+        <p class="divider">or</p>
+        <button type="button" class="btn outline full" (click)="goInvite()">New user? I have an invite code</button>
+        <p class="fine-print">Demo OTP after login: <strong>123456</strong> · PIN: <strong>123456</strong></p>
+      </ng-container>
+
+      <!-- Login OTP -->
+      <ng-container *ngIf="s.authStep === 'login_otp'">
+        <button type="button" class="link-back" (click)="authBack()">← Back</button>
+        <h2>Verify mobile</h2>
+        <p class="info-banner">OTP sent (demo — enter <strong>123456</strong>)</p>
+        <div class="otp-row">
+          <input *ngFor="let i of otpSlots()" class="otp-cell" maxlength="1" inputmode="numeric" (input)="otpLoginDigit(i, $event)" />
+        </div>
+        <p class="err" *ngIf="s.otpErrorLogin">{{ s.otpErrorLogin }}</p>
+      </ng-container>
+
+      <!-- PIN login -->
+      <ng-container *ngIf="s.authStep === 'pin_login'">
+        <div class="logo-block small">
+          <div class="logo-placeholder sm">MGL</div>
+          <p class="muted">Welcome back</p>
+          <p class="driver-name">{{ s.profile.name }}</p>
+        </div>
+        <label class="lbl">Enter PIN (demo <strong>123456</strong>)</label>
+        <div class="pin-dots">
+          <span *ngFor="let _ of otpSlots(); let i = index" class="dot" [class.filled]="s.loginPin.length > i" [class.bad]="s.loginPinError"></span>
+        </div>
+        <p class="err" *ngIf="s.loginPinError">{{ s.loginPinError }}</p>
+        <div class="numpad">
+          <button type="button" *ngFor="let n of nums()" class="np-btn" [disabled]="s.disableLoginNumpad" (click)="pinDigit('' + n)">{{ n }}</button>
+          <button type="button" class="np-btn wide" [disabled]="s.disableLoginNumpad" (click)="pinBs()">⌫</button>
+          <button type="button" class="np-btn" [disabled]="s.disableLoginNumpad" (click)="pinDigit('0')">0</button>
+        </div>
+        <button type="button" class="link" (click)="forgotPin()">Forgot PIN?</button>
+      </ng-container>
+
+      <!-- Forgot PIN -->
+      <ng-container *ngIf="s.authStep === 'forgot_pin'">
+        <button type="button" class="link-back" (click)="authBack()">← Back</button>
+        <h2>Reset PIN</h2>
+        <p class="muted">We’ll verify {{ s.profile.maskedMobile }}</p>
+        <button type="button" class="btn primary full" (click)="forgotSendOtp()">Send OTP</button>
+      </ng-container>
+
+      <!-- Forgot OTP -->
+      <ng-container *ngIf="s.authStep === 'forgot_otp'">
+        <button type="button" class="link-back" (click)="authBack()">← Back</button>
+        <h2>Verify mobile</h2>
+        <div class="otp-row">
+          <input *ngFor="let i of otpSlots()" class="otp-cell" maxlength="1" inputmode="numeric" (input)="forgotOtpDigit(i, $event)" />
+        </div>
+        <button type="button" class="btn primary full" [disabled]="s.inviteOtp.length !== 6" (click)="verifyForgotOtp()">Verify</button>
+      </ng-container>
+
+      <!-- Set PIN (reset / post-forgot) -->
+      <ng-container *ngIf="s.authStep === 'set_pin'">
+        <h2>Create PIN</h2>
+        <p class="muted">6 digits</p>
+        <div class="pin-dots">
+          <span *ngFor="let _ of otpSlots(); let i = index" class="dot" [class.filled]="s.newPin.length > i"></span>
+        </div>
+        <div class="numpad">
+          <button type="button" *ngFor="let n of nums()" class="np-btn" (click)="npAppend('' + n)">{{ n }}</button>
+          <button type="button" class="np-btn wide" (click)="npBs()">⌫</button>
+          <button type="button" class="np-btn" (click)="npAppend('0')">0</button>
+        </div>
+        <button type="button" class="btn primary full" [disabled]="s.newPin.length !== 6" (click)="npNext()">Next</button>
+      </ng-container>
+
+      <!-- Confirm PIN -->
+      <ng-container *ngIf="s.authStep === 'confirm_pin'">
+        <h2>Confirm PIN</h2>
+        <p class="err" *ngIf="s.pinError">{{ s.pinError }}</p>
+        <div class="pin-dots">
+          <span *ngFor="let _ of otpSlots(); let i = index" class="dot" [class.filled]="s.pinConfirm.length > i"></span>
+        </div>
+        <div class="numpad">
+          <button type="button" *ngFor="let n of nums()" class="np-btn" (click)="cpAppend('' + n)">{{ n }}</button>
+          <button type="button" class="np-btn wide" (click)="cpBs()">⌫</button>
+          <button type="button" class="np-btn" (click)="cpAppend('0')">0</button>
+        </div>
+        <button type="button" class="btn primary full" [disabled]="s.pinConfirm.length !== 6" (click)="cpSubmit()">Confirm</button>
+      </ng-container>
+
+      <!-- Registered success -->
+      <ng-container *ngIf="s.authStep === 'registered'">
+        <div class="success-block">
+          <h2>PIN created</h2>
+          <p class="muted">Continue to the driver home.</p>
+          <button type="button" class="btn primary full" (click)="regContinue()">Continue to Home</button>
+        </div>
+      </ng-container>
+
+      <!-- Invite code -->
+      <ng-container *ngIf="s.authStep === 'invite_code'">
+        <button type="button" class="link-back" (click)="authBack()">← Back</button>
+        <h2>Invite code</h2>
+        <input class="inp center track" maxlength="6" [value]="s.inviteCode" (input)="onInviteInput($event)" placeholder="ABC123" />
+        <div class="ok-banner" *ngIf="s.inviteCode.length === 6 && inviteLookup[s.inviteCode]">
+          ✓ {{ inviteLookup[s.inviteCode] }}
+        </div>
+        <button type="button" class="btn primary full" [disabled]="s.inviteCode.length !== 6 || !inviteLookup[s.inviteCode]" (click)="inviteNext()">Continue</button>
+      </ng-container>
+
+      <!-- Invite mobile -->
+      <ng-container *ngIf="s.authStep === 'invite_mobile'">
+        <button type="button" class="link-back" (click)="authBack()">← Back</button>
+        <h2>Mobile verification</h2>
+        <div class="row-phone">
+          <span class="cc">+91</span>
+          <input class="inp" type="tel" maxlength="10" [value]="s.mobileNumber" (input)="onMobileInput($event)" />
+        </div>
+        <button type="button" class="btn primary full" [disabled]="s.mobileNumber.length !== 10" (click)="inviteSendOtp()">Send OTP</button>
+      </ng-container>
+
+      <!-- Invite OTP -->
+      <ng-container *ngIf="s.authStep === 'invite_otp'">
+        <button type="button" class="link-back" (click)="authBack()">← Back</button>
+        <h2>Verify OTP</h2>
+        <div class="otp-row">
+          <input *ngFor="let i of otpSlots()" class="otp-cell" maxlength="1" inputmode="numeric" (input)="invOtpDigit(i, $event)" />
+        </div>
+        <p class="muted fine-print">Auto-advances on <strong>123456</strong></p>
+      </ng-container>
+
+      <!-- Invite PIN -->
+      <ng-container *ngIf="s.authStep === 'invite_pin'">
+        <h2>Create app PIN</h2>
+        <div class="pin-dots">
+          <span *ngFor="let _ of otpSlots(); let i = index" class="dot" [class.filled]="s.invitePin.length > i"></span>
+        </div>
+        <div class="numpad">
+          <button type="button" *ngFor="let n of nums()" class="np-btn" (click)="ipAppend('' + n)">{{ n }}</button>
+          <button type="button" class="np-btn wide" (click)="ipBs()">⌫</button>
+          <button type="button" class="np-btn" (click)="ipAppend('0')">0</button>
+        </div>
+        <button type="button" class="btn primary full" [disabled]="s.invitePin.length !== 6" (click)="ipNext()">Next</button>
+      </ng-container>
+
+      <!-- Invite confirm PIN -->
+      <ng-container *ngIf="s.authStep === 'invite_confirm_pin'">
+        <h2>Confirm PIN</h2>
+        <p class="err" *ngIf="s.pinError">{{ s.pinError }}</p>
+        <div class="pin-dots">
+          <span *ngFor="let _ of otpSlots(); let i = index" class="dot" [class.filled]="s.invitePinConfirm.length > i"></span>
+        </div>
+        <div class="numpad">
+          <button type="button" *ngFor="let n of nums()" class="np-btn" (click)="ipcAppend('' + n)">{{ n }}</button>
+          <button type="button" class="np-btn wide" (click)="ipcBs()">⌫</button>
+          <button type="button" class="np-btn" (click)="ipcAppend('0')">0</button>
+        </div>
+        <button type="button" class="btn primary full" [disabled]="s.invitePinConfirm.length !== 6" (click)="inviteDone()">Finish signup</button>
+      </ng-container>
+    </div>
+  </div>
+
+  <!-- ============ MAIN APP ============ -->
+  <div class="phone main-phone" *ngIf="s.authStep === 'complete'">
+    <div class="status-bar dark">9:41</div>
+
+    <!-- Overlay: assignment -->
+    <div class="overlay" *ngIf="s.mainOverlay === 'assignment_notification'">
+      <button type="button" class="link-back light" (click)="assignBack()">←</button>
+      <div class="overlay-card">
+        <h3>New assignment</h3>
+        <p class="vrn-big">{{ assignment().vrn }}</p>
+        <p>{{ assignment().fo }}</p>
+        <button type="button" class="btn primary full" (click)="assignAccept()">Review & accept</button>
+      </div>
+    </div>
+
+    <!-- Overlay: pairing -->
+    <div class="overlay" *ngIf="s.mainOverlay === 'pairing_code'">
+      <h3>Enter pairing code</h3>
+      <p class="muted">Demo valid codes include <strong>123456</strong>, <strong>789012</strong></p>
+      <div class="otp-row">
+        <input *ngFor="let i of otpSlots()" class="otp-cell" maxlength="1" inputmode="numeric" (input)="pairDigit(i, $event)" />
+      </div>
+      <p class="err" *ngIf="s.pairingError">{{ s.pairingError }}</p>
+      <button type="button" class="btn primary full" (click)="pairSubmit()">Pair</button>
+      <button type="button" class="link light-pad" (click)="assignBack()">Cancel</button>
+    </div>
+
+    <!-- Overlay: accepted -->
+    <div class="overlay center-text" *ngIf="s.mainOverlay === 'assignment_accepted'">
+      <h2 class="ok">Assignment activated</h2>
+      <p class="vrn-big">{{ assignment().vrn }}</p>
+      <button type="button" class="btn primary full" (click)="assignDismiss()">Go to Assignments</button>
+    </div>
+
+    <!-- Home shell -->
+    <ng-container *ngIf="s.mainOverlay === 'home'">
+      <header class="hero">
+        <div>
+          <p class="hero-sub">Good morning</p>
+          <p class="hero-name">{{ s.profile.name }}</p>
+        </div>
+        <div class="avatar">{{ s.profile.initials }}</div>
+      </header>
+      <div class="toast" *ngIf="s.successToast">{{ s.successToast }}</div>
+
+      <div class="demo-row">
+        <button type="button" class="btn sm outline" (click)="demoAssignment()">Demo: assignment push</button>
+        <button type="button" class="btn sm outline" (click)="demoPairing()">Demo: pairing</button>
+      </div>
+
+      <div class="tab-panel">
+        <!-- Card -->
+        <ng-container *ngIf="s.activeTab === 'card'">
+          <div class="banner-warn" *ngIf="s.bindings.length && pendingAssignmentCount() > 0">
+            <span>{{ pendingAssignmentCount() }} assignment(s) need attention</span>
+            <button type="button" class="link-inline" (click)="tab('assignments')">View</button>
+          </div>
+          <div class="carousel" *ngIf="card() as c">
+            <button type="button" class="car-btn l" *ngIf="s.activeCardIndex > 0" (click)="prevCard()">‹</button>
+            <button type="button" class="car-btn r" *ngIf="s.activeCardIndex < cards().length - 1" (click)="nextCard()">›</button>
+            <div class="fuel-card">
+              <p class="fc-fo">{{ c.fo }}</p>
+              <p class="fc-vrn">{{ c.vrn }}</p>
+              <p class="fc-meta">{{ c.authMode }}</p>
+            </div>
+            <div class="dots">
+              <button type="button" *ngFor="let _ of cards(); let i = index" class="dot-btn" [class.on]="i === s.activeCardIndex" (click)="dotCard(i)"></button>
+            </div>
+            <div class="balance-block">
+              <p class="lbl-sm">Vehicle balance</p>
+              <p class="bal">₹{{ c.balance?.toLocaleString('en-IN') }}</p>
+              <p class="fine-print">Spend limit ₹{{ c.spendLimit?.toLocaleString('en-IN') }}</p>
+            </div>
+            <button type="button" class="btn primary full" (click)="tab('scan')">Scan & Pay</button>
+            <p class="section-h">Recent</p>
+            <div class="txn" *ngFor="let t of s.transactions.slice(0, 3)">
+              <div>
+                <p class="txn-title">{{ t.station }}</p>
+                <p class="muted xs">{{ t.date }}</p>
+              </div>
+              <span class="amt">-₹{{ t.amount }}</span>
+            </div>
+          </div>
+        </ng-container>
+
+        <!-- Scan -->
+        <ng-container *ngIf="s.activeTab === 'scan'">
+          <ng-container *ngIf="scanAvail().length === 0">
+            <p class="muted pad">Scan unavailable — check assignments.</p>
+            <button type="button" class="btn outline full" (click)="tab('assignments')">Go to Assignments</button>
+          </ng-container>
+          <ng-container *ngIf="scanAvail().length > 0 && s.sessionState === 'idle'">
+            <div class="chip-row">
+              <button type="button" *ngFor="let b of scanAvail()" class="chip" [class.on]="selectedScan()?.id === b.id" (click)="scanPick(b)">{{ b.vrn }}</button>
+            </div>
+            <div class="qr-placeholder">
+              <span class="qr-icon">▦</span>
+              <p class="muted">Scanner preview</p>
+            </div>
+            <button type="button" class="btn primary full" (click)="simulateScan()">Simulate scan</button>
+          </ng-container>
+          <div class="confirm-sheet" *ngIf="s.sessionState === 'confirmation' && selectedScan() as sb">
+            <div class="sheet-head">
+              <h3>Confirm fueling</h3>
+              <button type="button" class="icon-x" (click)="cancelConfirm()">×</button>
+            </div>
+            <p class="muted">Station · MGL Hind CNG</p>
+            <p><strong>{{ sb.vrn }}</strong> · ₹{{ sb.balance?.toLocaleString('en-IN') }}</p>
+            <label class="lbl">Authorize PIN</label>
+            <input class="inp" type="password" maxlength="6" [value]="s.sessionPin" (input)="onSessionPin($event)" placeholder="123456" />
+            <button type="button" class="btn primary full" (click)="confirmFuel()">Authorize</button>
+          </div>
+        </ng-container>
+
+        <!-- Assignments -->
+        <ng-container *ngIf="s.activeTab === 'assignments'">
+          <div class="card-list">
+            <div class="assign-card" *ngFor="let b of s.bindings">
+              <p class="vrn">{{ b.vrn }}</p>
+              <p class="muted xs">{{ b.fo }}</p>
+              <span class="badge" [class.warn]="b.state === 'PENDING_ACCEPTANCE'">{{ b.state }}</span>
+              <p class="muted xs" *ngIf="b.scanPayStatus === 'locked_unpaired'">Pair to unlock</p>
+            </div>
+          </div>
+        </ng-container>
+
+        <!-- Transactions -->
+        <ng-container *ngIf="s.activeTab === 'transactions'">
+          <div class="txn" *ngFor="let t of s.transactions">
+            <div>
+              <p class="txn-title">{{ t.station }}</p>
+              <p class="muted xs">{{ t.date }} · {{ t.type }}</p>
+            </div>
+            <span class="amt">₹{{ t.amount }}</span>
+          </div>
+        </ng-container>
+
+        <!-- Profile -->
+        <ng-container *ngIf="s.activeTab === 'profile'">
+          <div class="profile-block">
+            <p class="hero-name">{{ s.profile.name }}</p>
+            <p class="muted">{{ s.profile.maskedMobile }}</p>
+            <button type="button" class="btn outline full logout" (click)="logout()">Log out</button>
+          </div>
+        </ng-container>
+      </div>
+
+      <nav class="tabbar">
+        <button type="button" class="tb-item" [class.active]="s.activeTab === 'card'" (click)="tab('card')">Card</button>
+        <button type="button" class="tb-item" [class.active]="s.activeTab === 'scan'" (click)="tab('scan')">Scan</button>
+        <button type="button" class="tb-item" [class.active]="s.activeTab === 'assignments'" (click)="tab('assignments')">Assign</button>
+        <button type="button" class="tb-item" [class.active]="s.activeTab === 'transactions'" (click)="tab('transactions')">Txns</button>
+        <button type="button" class="tb-item" [class.active]="s.activeTab === 'profile'" (click)="tab('profile')">Profile</button>
+      </nav>
+    </ng-container>
+  </div>
+</div>

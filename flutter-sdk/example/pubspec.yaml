@@ -1,0 +1,17 @@
+name: fleet_sdk_example
+description: Example host app to run mgl_fleet_sdk on your machine.
+publish_to: none
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  mgl_fleet_sdk:
+    path: ../
+
+flutter:
+  uses-material-design: true

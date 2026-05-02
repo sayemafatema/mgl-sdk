@@ -1,0 +1,179 @@
+openapi: 3.1.0
+info:
+  title: MGL Fleet API
+  version: 0.1.0
+  description: |
+    HTTP contract shared by **@mgl/fleet-core-sdk**, **Angular/Capacitor**, and **Flutter** clients.
+    All clients use native UI; this spec is the single source of truth for payloads.
+
+servers:
+  - url: https://api.example.com
+
+paths:
+  /fleet/drivers:
+    get:
+      operationId: listDrivers
+      summary: List fleet operators' drivers (FO view)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [drivers]
+                properties:
+                  drivers:
+                    type: array
+                    items: { $ref: '#/components/schemas/Driver' }
+
+  /fleet/drivers/{driverId}:
+    parameters:
+      - name: driverId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      operationId: getDriver
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [driver]
+                properties:
+                  driver: { $ref: '#/components/schemas/Driver' }
+        '404':
+          description: Not found
+    patch:
+      operationId: patchDriver
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DriverPatch' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [driver]
+                properties:
+                  driver: { $ref: '#/components/schemas/Driver' }
+
+  /fleet/bindings:
+    get:
+      operationId: listBindings
+      summary: Vehicle bindings for signed-in driver (driver app)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bindings]
+                properties:
+                  bindings:
+                    type: array
+                    items: { $ref: '#/components/schemas/FleetBinding' }
+
+  /fleet/transactions:
+    get:
+      operationId: listTransactions
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [transactions]
+                properties:
+                  transactions:
+                    type: array
+                    items: { $ref: '#/components/schemas/FleetTransaction' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Driver:
+      type: object
+      required: [id, name, vrn, status, cardBalancePaise]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        vrn: { type: string }
+        status: { type: string, enum: [Active, Inactive] }
+        cardBalancePaise: { type: integer, format: int64 }
+
+    DriverPatch:
+      type: object
+      properties:
+        name: { type: string }
+        status: { type: string, enum: [Active, Inactive] }
+        cardBalancePaise: { type: integer, format: int64 }
+
+    FleetBinding:
+      type: object
+      required: [id, vrn, fo, authMode, state, paired, scanPayStatus]
+      properties:
+        id: { type: string }
+        vrn: { type: string }
+        fo: { type: string }
+        authMode:
+          type: string
+          enum: [vehicle_linked, shift_based, trip_linked]
+        state:
+          type: string
+          enum: [ACTIVE, PENDING_ACCEPTANCE]
+        paired: { type: boolean }
+        scanPayStatus:
+          type: string
+          enum: [always_available, in_window, locked_unpaired, locked_repair]
+        balance: { type: integer }
+        cardBalance: { type: integer }
+        incentiveBalance: { type: integer }
+        spendLimit: { type: integer }
+        shiftDays:
+          type: array
+          items: { type: string }
+        shiftStart: { type: string }
+        shiftEnd: { type: string }
+        shiftEndsIn: { type: string }
+        tripDate: { type: string }
+        tripStart: { type: string }
+        tripEnd: { type: string }
+        tripEndsIn: { type: string }
+        origin: { type: string }
+        destination: { type: string }
+        assignedBy: { type: string }
+        validPairingCode: { type: string }
+        repairReason: { type: string }
+
+    FleetTransaction:
+      type: object
+      required: [id, station, vrn, amount, date, type, status]
+      properties:
+        id: { type: string }
+        station: { type: string }
+        vrn: { type: string }
+        amount: { type: number }
+        date: { type: string }
+        type: { type: string }
+        quantity: { type: string }
+        status: { type: string }
