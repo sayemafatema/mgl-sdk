@@ -9,11 +9,14 @@ import com.mgl.fleet.sdk.FleetSdkException
 import com.mgl.fleet.sdk.FleetSdkResult
 import com.mgl.fleet.sdk.R
 import com.mgl.fleet.sdk.api.FleetApiClient
+import java.util.concurrent.Executors
 
 /**
  * Fullscreen native shell — placeholder UI until parity checklist screens ship.
  */
 internal class FleetSdkActivity : AppCompatActivity() {
+
+    private val ioExecutor = Executors.newSingleThreadExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,28 +30,37 @@ internal class FleetSdkActivity : AppCompatActivity() {
         )
 
         findViewById<MaterialButton>(R.id.fleet_sdk_btn_complete).setOnClickListener {
-            val driversResult = FleetApiClient.default().listDrivers()
-            driversResult.fold(
-                onSuccess = { drivers ->
-                    val id = drivers.firstOrNull()?.id ?: "unknown"
-                    finishWith(
-                        FleetSdkResult.Success(
-                            event = "FLEET_FLOW_COMPLETED",
-                            payload = mapOf("driverId" to id, "driverCount" to drivers.size),
-                        ),
+            ioExecutor.execute {
+                val driversResult = try {
+                    FleetApiClient.default().listDrivers()
+                } catch (e: FleetSdkException) {
+                    runOnUiThread { finishWith(FleetSdkResult.Failure(e)) }
+                    return@execute
+                }
+                runOnUiThread {
+                    driversResult.fold(
+                        onSuccess = { drivers ->
+                            val id = drivers.firstOrNull()?.id ?: "unknown"
+                            finishWith(
+                                FleetSdkResult.Success(
+                                    event = "FLEET_FLOW_COMPLETED",
+                                    payload = mapOf("driverId" to id, "driverCount" to drivers.size),
+                                ),
+                            )
+                        },
+                        onFailure = {
+                            finishWith(
+                                FleetSdkResult.Failure(
+                                    FleetSdkException(
+                                        FleetSdkErrorCodes.NETWORK_ERROR,
+                                        it.message ?: it.javaClass.simpleName ?: "Network error",
+                                    ),
+                                ),
+                            )
+                        },
                     )
-                },
-                onFailure = {
-                    finishWith(
-                        FleetSdkResult.Failure(
-                            FleetSdkException(
-                                FleetSdkErrorCodes.NETWORK_ERROR,
-                                it.message ?: "Network error",
-                            ),
-                        ),
-                    )
-                },
-            )
+                }
+            }
         }
 
         findViewById<MaterialButton>(R.id.fleet_sdk_btn_cancel).setOnClickListener {
@@ -64,6 +76,11 @@ internal class FleetSdkActivity : AppCompatActivity() {
                 }
             },
         )
+    }
+
+    override fun onDestroy() {
+        ioExecutor.shutdownNow()
+        super.onDestroy()
     }
 
     private fun cancelFlow() {
