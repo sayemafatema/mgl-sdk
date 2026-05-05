@@ -10,6 +10,7 @@ import com.mgl.fleet.sdk.FleetSdkResult
 import com.mgl.fleet.sdk.R
 import com.mgl.fleet.sdk.api.FleetApiClient
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Fullscreen native shell — placeholder UI until parity checklist screens ship.
@@ -17,6 +18,7 @@ import java.util.concurrent.Executors
 internal class FleetSdkActivity : AppCompatActivity() {
 
     private val ioExecutor = Executors.newSingleThreadExecutor()
+    private val completionHandled = AtomicBoolean(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,7 +31,9 @@ internal class FleetSdkActivity : AppCompatActivity() {
             },
         )
 
-        findViewById<MaterialButton>(R.id.fleet_sdk_btn_complete).setOnClickListener {
+        findViewById<MaterialButton>(R.id.fleet_sdk_btn_complete).setOnClickListener { btn ->
+            val completeBtn = btn as MaterialButton
+            completeBtn.isEnabled = false
             ioExecutor.execute {
                 val driversResult = try {
                     FleetApiClient.default().listDrivers()
@@ -95,6 +99,7 @@ internal class FleetSdkActivity : AppCompatActivity() {
     }
 
     private fun finishWith(result: FleetSdkResult) {
+        if (!completionHandled.compareAndSet(false, true)) return
         val cb = FleetPresentationBridge.pendingCallback
         FleetPresentationBridge.pendingCallback = null
         FleetPresentationBridge.pendingSession = null
