@@ -226,7 +226,9 @@ export default function Page() {
   const [wrongAttempts, setWrongAttempts] = useState(0);
   const [disableNumpad, setDisableNumpad] = useState(false);
   const [showShake, setShowShake] = useState(false);
-  const [sessionState, setSessionState] = useState<'idle' | 'scanning' | 'confirmation' | 'otp_entry' | 'authorized' | 'complete'>('idle');
+  const [sessionState, setSessionState] = useState<
+    'idle' | 'scanning' | 'confirmation' | 'pin_confirm' | 'otp_entry' | 'authorized' | 'complete'
+  >('idle');
   const [sessionPin, setSessionPin] = useState('');
   const [sessionOtp, setSessionOtp] = useState('');
   const [dispensingAmount, setDispensingAmount] = useState(0);
@@ -2076,7 +2078,7 @@ export default function Page() {
             {/* Scan & Pay Tab */}
             {activeTab === 'scan' && (
               <div className="p-4 space-y-4 pb-24">
-                {(() => {
+                {(sessionState === 'idle' || sessionState === 'scanning') && (() => {
                   const availableForScan = screenBindings.filter((b) => 
                     b.paired === true && 
                     b.state === "ACTIVE" &&
@@ -2190,7 +2192,15 @@ export default function Page() {
                   <>
                     <div className="flex items-center justify-between mb-4">
                       <h2 className="text-lg font-bold text-gray-900">Confirm fueling</h2>
-                      <button onClick={() => { setSessionState('idle'); setActiveScanBinding(null); }} className="text-gray-600 hover:text-gray-900">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSessionState('idle');
+                          setActiveScanBinding(null);
+                          setSessionPin('');
+                        }}
+                        className="text-gray-600 hover:text-gray-900"
+                      >
                         <X className="w-5 h-5" />
                       </button>
                     </div>
@@ -2226,7 +2236,36 @@ export default function Page() {
                       </div>
                     </div>
 
-                    {/* PIN Entry */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSessionPin('');
+                        setSessionState('pin_confirm');
+                      }}
+                      className="w-full bg-green-700 hover:bg-green-800 text-white font-medium py-3 rounded-2xl transition"
+                    >
+                      Continue
+                    </button>
+                  </>
+                )}
+
+                {sessionState === 'pin_confirm' && activeScanBinding && (
+                  <>
+                    <div className="flex items-center gap-3 mb-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSessionPin('');
+                          setSessionState('confirmation');
+                        }}
+                        className="text-gray-600 hover:text-gray-900"
+                        aria-label="Back"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <h2 className="text-lg font-bold text-gray-900">Enter PIN</h2>
+                    </div>
+
                     <div className="mb-4">
                       <p className="text-sm font-medium text-gray-900 mb-2">Enter your PIN to confirm</p>
                       <PinDisplay value={sessionPin} />
@@ -2234,6 +2273,7 @@ export default function Page() {
                     </div>
 
                     <button
+                      type="button"
                       onClick={() => {
                         void (async () => {
                           if (USE_DRIVER_API && foScopedToken && activeScanBinding) {
@@ -2278,7 +2318,7 @@ export default function Page() {
                 {sessionState === 'otp_entry' && activeScanBinding && (
                   <>
                     <div className="flex items-center gap-3 mb-4">
-                      <button onClick={() => setSessionState('confirmation')} className="text-gray-600">
+                      <button type="button" onClick={() => setSessionState('pin_confirm')} className="text-gray-600">
                         <ChevronLeft className="w-5 h-5" />
                       </button>
                       <h2 className="text-lg font-bold text-gray-900">One-time password</h2>
