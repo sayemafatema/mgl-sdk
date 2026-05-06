@@ -7,7 +7,9 @@ import {
   driverExchangeOtpToken,
   driverFoList,
   driverFoSelect,
-  driverSendOtp,
+  driverInviteMobileSendOtp,
+  driverInviteMobileVerifyOtp,
+  driverSendLoginOtp,
   driverQrPay,
   driverCheckMobile,
   driverInviteSetPin,
@@ -267,6 +269,8 @@ export default function Page() {
   const [foScopedToken, setFoScopedToken] = useState<string | null>(null);
   const [otpPhaseToken, setOtpPhaseToken] = useState<string | null>(null);
   const [inviteSessionToken, setInviteSessionToken] = useState<string | null>(null);
+  const [inviteOtpRefNumber, setInviteOtpRefNumber] = useState<string | null>(null);
+  const [inviteMobileVerificationToken, setInviteMobileVerificationToken] = useState<string | null>(null);
   const [validatedInvitePreview, setValidatedInvitePreview] = useState<{ driverName: string; foName: string } | null>(null);
   const [foOrganizationList, setFoOrganizationList] = useState<FoListEntry[]>([]);
   const [selectedFoCompanyId, setSelectedFoCompanyId] = useState<number | null>(null);
@@ -314,6 +318,10 @@ export default function Page() {
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+    if (USE_DRIVER_API && val !== mobileNumber) {
+      setInviteOtpRefNumber(null);
+      setInviteMobileVerificationToken(null);
+    }
     setMobileNumber(val);
   };
 
@@ -619,10 +627,12 @@ export default function Page() {
                               const cm = await driverCheckMobile(DRIVER_API_BASE, mobileNumber);
                               if (cm === 'NEW_USER') {
                                 setApiBanner('New user — continue with invite code.');
+                                setInviteOtpRefNumber(null);
+                                setInviteMobileVerificationToken(null);
                                 setOnboardingStep('1c');
                                 return;
                               }
-                              await driverSendOtp(DRIVER_API_BASE, mobileNumber);
+                              await driverSendLoginOtp(DRIVER_API_BASE, mobileNumber);
                             }
                             setOtpCountdown(30);
                             setOnboardingStep('login_otp');
@@ -648,6 +658,8 @@ export default function Page() {
                         setInviteCode('');
                         setOtp('');
                         setInviteFlowOtpError('');
+                        setInviteOtpRefNumber(null);
+                        setInviteMobileVerificationToken(null);
                         setMobileNumber('');
                         setOnboardingStep('1c');
                       }}
@@ -716,7 +728,7 @@ export default function Page() {
                     onClick={() => {
                       void (async () => {
                         try {
-                          if (USE_DRIVER_API) await driverSendOtp(DRIVER_API_BASE, mobileNumber);
+                          if (USE_DRIVER_API) await driverSendLoginOtp(DRIVER_API_BASE, mobileNumber);
                           setOtpCountdown(30);
                         } catch (e) {
                           setOtpError(e instanceof Error ? e.message : String(e));
@@ -982,7 +994,21 @@ export default function Page() {
             {/* Screen 1b: Invite Code */}
             {onboardingStep === '1b' && (
               <>
-                <button onClick={() => setOnboardingStep(USE_DRIVER_API ? '1c' : '1d')} className="flex items-center gap-2 text-gray-600 mb-4">
+                <button
+                  onClick={() => {
+                    setValidatedInvitePreview(null);
+                    setInviteSessionToken(null);
+                    if (USE_DRIVER_API) {
+                      setInviteMobileVerificationToken(null);
+                      setInviteOtpRefNumber(null);
+                      setOtp('');
+                      setOnboardingStep('1c');
+                    } else {
+                      setOnboardingStep('1d');
+                    }
+                  }}
+                  className="flex items-center gap-2 text-gray-600 mb-4"
+                >
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
                 <h2 className="text-xl font-bold mb-2">Invite Code</h2>
@@ -1027,7 +1053,16 @@ export default function Page() {
                           setOnboardingStep('1e');
                           return;
                         }
-                        const r = await driverInviteValidate(DRIVER_API_BASE, mobileNumber, inviteCode);
+                        if (!inviteMobileVerificationToken) {
+                          setInviteFlowOtpError('Complete mobile OTP verification first.');
+                          return;
+                        }
+                        const r = await driverInviteValidate(
+                          DRIVER_API_BASE,
+                          mobileNumber,
+                          inviteCode,
+                          inviteMobileVerificationToken
+                        );
                         setInviteSessionToken(r.sessionToken);
                         setValidatedInvitePreview({ driverName: r.driverName, foName: r.foName });
                         setInviteFlowOtpError('');
@@ -1053,7 +1088,15 @@ export default function Page() {
             {/* Screen 1c: Mobile Verify */}
             {onboardingStep === '1c' && (
               <>
-                <button onClick={() => setOnboardingStep('login')} className="flex items-center gap-2 text-gray-600 mb-4">
+                <button
+                  onClick={() => {
+                    setInviteOtpRefNumber(null);
+                    setInviteMobileVerificationToken(null);
+                    setOtp('');
+                    setOnboardingStep('login');
+                  }}
+                  className="flex items-center gap-2 text-gray-600 mb-4"
+                >
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
                 <h2 className="text-xl font-bold mb-2">Mobile Verification</h2>
@@ -1079,7 +1122,12 @@ export default function Page() {
                           setInviteFlowOtpError('Use “Send OTP” on the login screen.');
                           return;
                         }
-                        setOnboardingStep('1b');
+                        const ref = await driverInviteMobileSendOtp(DRIVER_API_BASE, mobileNumber);
+                        setInviteOtpRefNumber(ref);
+                        setOtp('');
+                        setInviteFlowOtpError('');
+                        setOtpCountdown(30);
+                        setOnboardingStep('1d');
                       } catch (e) {
                         setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
                       }
@@ -1088,7 +1136,7 @@ export default function Page() {
                   disabled={mobileNumber.length !== 10}
                   className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
                 >
-                  {USE_DRIVER_API ? 'Continue' : 'Send OTP'}
+                  Send OTP
                 </button>
                 {inviteFlowOtpError && onboardingStep === '1c' && (
                   <p className="text-red-600 text-xs text-center mt-3">{inviteFlowOtpError}</p>
@@ -1134,6 +1182,96 @@ export default function Page() {
                   Verify OTP
                 </button>
                 <button className="w-full text-green-700 font-medium py-2 text-sm">Resend OTP</button>
+              </>
+            )}
+
+            {USE_DRIVER_API && onboardingStep === '1d' && (
+              <>
+                <button
+                  onClick={() => {
+                    setInviteOtpRefNumber(null);
+                    setOtp('');
+                    setOnboardingStep('1c');
+                  }}
+                  className="flex items-center gap-2 text-gray-600 mb-4"
+                >
+                  <ChevronLeft className="w-5 h-5" /> Back
+                </button>
+                <h2 className="text-xl font-bold mb-2">Verify OTP</h2>
+                <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 mb-4">
+                  <p className="text-sm text-blue-900">OTP sent to +91 {mobileNumber.slice(-4).padStart(10, '•')}</p>
+                </div>
+                <div className="flex justify-center gap-1 mb-4">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <input
+                      key={i}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={otp[i] || ''}
+                      onChange={(e) => {
+                        const newOtp = otp.split('');
+                        newOtp[i] = e.target.value.replace(/\D/g, '').slice(-1);
+                        setOtp(newOtp.join(''));
+                        if (newOtp[i] && i < 5) {
+                          (
+                            document.querySelectorAll('.otp-digit-invite-api')[i + 1] as HTMLInputElement
+                          )?.focus();
+                        }
+                      }}
+                      className="otp-digit-invite-api w-10 h-10 text-center text-lg font-bold border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100"
+                    />
+                  ))}
+                </div>
+                {inviteFlowOtpError && (
+                  <p className="text-red-500 text-sm text-center mb-3">{inviteFlowOtpError}</p>
+                )}
+                <button
+                  onClick={() => {
+                    void (async () => {
+                      if (!inviteOtpRefNumber || otp.length !== 6) return;
+                      try {
+                        const tok = await driverInviteMobileVerifyOtp(
+                          DRIVER_API_BASE,
+                          mobileNumber,
+                          inviteOtpRefNumber,
+                          otp
+                        );
+                        setInviteMobileVerificationToken(tok);
+                        setInviteFlowOtpError('');
+                        setOtp('');
+                        setOnboardingStep('1b');
+                      } catch (e) {
+                        setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                      }
+                    })();
+                  }}
+                  disabled={otp.length !== 6 || !inviteOtpRefNumber}
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mb-2"
+                >
+                  Verify OTP
+                </button>
+                {otpCountdown > 0 ? (
+                  <p className="text-center text-xs text-gray-500">Resend OTP in {otpCountdown}s</p>
+                ) : (
+                  <button
+                    onClick={() => {
+                      void (async () => {
+                        try {
+                          const ref = await driverInviteMobileSendOtp(DRIVER_API_BASE, mobileNumber);
+                          setInviteOtpRefNumber(ref);
+                          setInviteFlowOtpError('');
+                          setOtpCountdown(30);
+                        } catch (e) {
+                          setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                        }
+                      })();
+                    }}
+                    className="w-full text-green-700 hover:text-green-800 font-medium py-2 text-sm"
+                  >
+                    Resend OTP
+                  </button>
+                )}
               </>
             )}
 
@@ -1928,9 +2066,6 @@ export default function Page() {
                             {activeCards[activeCard]?.incentiveBalance?.toLocaleString('en-IN')}
                           </p>
                         )}
-                        <p className="text-xs text-gray-500 mt-2">
-                          Spend limit ₹{activeCards[activeCard]?.spendLimit?.toLocaleString('en-IN')} per fueling
-                        </p>
                       </div>
                     </div>
                   </div>
@@ -2968,16 +3103,6 @@ export default function Page() {
               </div>
               <div className="min-w-0 divide-y divide-gray-100 px-4 pb-6 pt-1 sm:px-5 sm:pb-8">
                 <div className="flex min-w-0 items-center justify-between gap-3 py-3.5 text-sm">
-                  <span className="shrink-0 text-gray-600">Auth Mode</span>
-                  <span className="min-w-0 break-words text-right font-bold text-gray-900">
-                    {assignmentDetailBinding.authMode === 'vehicle_linked'
-                      ? 'Vehicle-linked'
-                      : assignmentDetailBinding.authMode === 'shift_based'
-                        ? 'Shift-based'
-                        : 'Trip-linked'}
-                  </span>
-                </div>
-                <div className="flex min-w-0 items-center justify-between gap-3 py-3.5 text-sm">
                   <span className="shrink-0 text-gray-600">Balance</span>
                   <span className="shrink-0 text-right font-bold tabular-nums text-gray-900">
                     ₹
@@ -2988,9 +3113,14 @@ export default function Page() {
                   </span>
                 </div>
                 <div className="flex min-w-0 items-center justify-between gap-3 py-3.5 text-sm">
-                  <span className="shrink-0 text-gray-600">Spend Limit</span>
-                  <span className="shrink-0 whitespace-nowrap text-right font-bold tabular-nums text-gray-900">
-                    ₹{(assignmentDetailBinding.spendLimit ?? 0).toLocaleString('en-IN')}
+                  <span className="shrink-0 text-gray-600">Assigned At</span>
+                  <span className="min-w-0 break-words text-right font-bold text-gray-900">
+                    {assignmentDetailBinding.assignedAt
+                      ? new Date(assignmentDetailBinding.assignedAt).toLocaleString('en-IN', {
+                          dateStyle: 'medium',
+                          timeStyle: 'short',
+                        })
+                      : '—'}
                   </span>
                 </div>
                 <div className="flex min-w-0 items-start justify-between gap-3 py-3.5 text-sm">

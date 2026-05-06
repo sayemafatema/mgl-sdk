@@ -914,11 +914,6 @@ class _MainPane extends StatelessWidget {
                               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                             ),
                           ],
-                          const SizedBox(height: 8),
-                          Text(
-                            'Spend limit ₹${c.spendLimit} per fueling',
-                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                          ),
                         ],
                       ),
                     ),

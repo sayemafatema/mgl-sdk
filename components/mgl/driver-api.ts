@@ -135,6 +135,7 @@ export type DriverUiBinding = {
   cardBalance?: number;
   incentiveBalance?: number;
   spendLimit?: number;
+  assignedAt?: string;
   repairReason?: string;
 };
 
@@ -231,23 +232,57 @@ export async function driverCheckMobile(baseUrl: string, mobile: string): Promis
   return parseCheckMobileStatus(body);
 }
 
-export async function driverSendOtp(baseUrl: string, mobile: string): Promise<void> {
-  await fetchJsonOk(`${baseUrl}/otp/send`, {
+/** Flow 2 — returning driver: triggers login OTP (user must exist). */
+export async function driverSendLoginOtp(baseUrl: string, mobile: string): Promise<void> {
+  const q = encodeURIComponent(mobile);
+  await fetchJsonOk(`${baseUrl}/api/v0/otp/login?username=${q}`);
+}
+
+/** @deprecated Use {@link driverSendLoginOtp}. Old path `/otp/send` is not supported. */
+export const driverSendOtp = driverSendLoginOtp;
+
+/** Flow 1 — new user (no User): rate-limited send; returns otp ref for verify-otp. */
+export async function driverInviteMobileSendOtp(baseUrl: string, mobile: string): Promise<string> {
+  const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/auth/mobile/send-otp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mobile }),
   });
+  const data = unwrapIfWrapped<string>(body);
+  if (typeof data !== 'string' || data.length === 0) throw new Error('Unexpected send-otp response');
+  return data;
+}
+
+export async function driverInviteMobileVerifyOtp(
+  baseUrl: string,
+  mobile: string,
+  otpRefNumber: string,
+  otp: string
+): Promise<string> {
+  const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/auth/mobile/verify-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mobile, otpRefNumber, otp }),
+  });
+  const data = unwrapIfWrapped<{ mobileVerificationToken?: string }>(body);
+  const tok =
+    data && typeof data === 'object' && typeof data.mobileVerificationToken === 'string'
+      ? data.mobileVerificationToken
+      : undefined;
+  if (!tok) throw new Error('Unexpected verify-otp response');
+  return tok;
 }
 
 export async function driverInviteValidate(
   baseUrl: string,
   mobile: string,
-  inviteCode: string
+  inviteCode: string,
+  mobileVerificationToken: string
 ): Promise<InviteValidateResult> {
   const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/auth/invite/validate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mobile, inviteCode }),
+    body: JSON.stringify({ mobile, inviteCode, mobileVerificationToken }),
   });
   return unwrapIfWrapped(body) as InviteValidateResult;
 }
@@ -462,7 +497,7 @@ export function mapAssignmentsToUiBindings(home: DriverHome | null, rows: Driver
       balance,
       cardBalance: balance ?? 0,
       incentiveBalance: 0,
-      spendLimit: 2000,
+      assignedAt: a.assignedAt ?? undefined,
     };
   });
 }
