@@ -30,6 +30,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
@@ -60,6 +62,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -911,7 +914,7 @@ private fun ConfirmPinScreen(pinConfirm: String, pinError: String, onDigit: (Str
 @Composable
 private fun RegisteredScreen(onContinue: () -> Unit) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Check, null, tint = Green600, modifier = Modifier.size(64.dp))
+        Icon(Icons.Filled.Check, null, tint = Green600, modifier = Modifier.size(64.dp))
         Text("PIN created successfully", fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Green700, textAlign = TextAlign.Center)
         Text("You can now use Scan & Pay at any MGL CNG station", fontSize = 13.sp, color = Color.Gray, textAlign = TextAlign.Center)
         Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().padding(top = 24.dp), colors = ButtonDefaults.buttonColors(containerColor = Green700)) { Text("Continue to Home") }
@@ -1091,7 +1094,7 @@ private fun CardTab(
             }
             if (activeCard < activeCards.size - 1) {
                     IconButton(onClick = { onCardChange(activeCard + 1) }, modifier = Modifier.align(Alignment.CenterEnd)) {
-                        Icon(Icons.Default.ArrowForward, null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, null)
                     }
             }
             Card(
@@ -1145,7 +1148,7 @@ private fun CardTab(
         Text("₹${activeCards[activeCard].balance.inr()}", fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         Text("Spend limit ₹${activeCards[activeCard].spendLimit.inr()} per fueling", fontSize = 11.sp, color = Color.Gray, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         Button(onClick = onScanTab, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Green600)) {
-            Icon(Icons.Default.QrCode2, null)
+            Icon(Icons.Filled.QrCode2, null)
             Spacer(Modifier.width(8.dp))
             Text("Scan & Pay")
         }
@@ -1232,7 +1235,7 @@ private fun ScanTab(
                             .background(Color.Black),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Default.QrCode2, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
+                        Icon(Icons.Filled.QrCode2, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
                     }
                     Button(onClick = onSimulateScan, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Green700)) {
                         Text("Simulate Scan")
@@ -1243,7 +1246,7 @@ private fun ScanTab(
             "confirmation" -> {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Confirm fueling", fontWeight = FontWeight.Bold)
-                    IconButton(onClick = onCloseConfirm) { Icon(Icons.Default.Close, null) }
+                    IconButton(onClick = onCloseConfirm) { Icon(Icons.Filled.Close, null) }
                 }
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
@@ -1280,7 +1283,7 @@ private fun ScanTab(
                 Button(onClick = onVerifySessionOtp, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Green700)) { Text("Verify & Authorize") }
             }
             "authorized" -> {
-                Icon(Icons.Default.Check, null, tint = Green700, modifier = Modifier.size(48.dp))
+                Icon(Icons.Filled.Check, null, tint = Green700, modifier = Modifier.size(48.dp))
                 Text("Fueling authorized", fontWeight = FontWeight.Bold)
                 Text("Pre-authorized ₹1,200")
                 Button(onClick = onFuelingComplete, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Green700)) {
@@ -1656,7 +1659,7 @@ private fun AssignmentAcceptedOverlay(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Icon(Icons.Default.Check, null, tint = Green600, modifier = Modifier.size(72.dp))
+        Icon(Icons.Filled.Check, null, tint = Green600, modifier = Modifier.size(72.dp))
         Text("Assignment activated!", fontWeight = FontWeight.Bold, fontSize = 26.sp, color = Green700, textAlign = TextAlign.Center)
         Text(
             assignment.vrn,
@@ -1740,7 +1743,7 @@ private fun PairingOverlayExtended(
             )
             if (pairingSuccess) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-                    Icon(Icons.Default.Check, null, tint = Green600, modifier = Modifier.size(40.dp))
+                    Icon(Icons.Filled.Check, null, tint = Green600, modifier = Modifier.size(40.dp))
                     Text("Pairing successful!", fontWeight = FontWeight.Bold, color = Green700)
                     Text("Activating your assignment…", fontSize = 13.sp, color = Color.Gray)
                 }
@@ -1787,10 +1790,10 @@ private fun PairingOverlayExtended(
 private fun BottomNav(current: String, onTab: (String) -> Unit) {
     val items =
         listOf(
-            Triple("card", Icons.Default.Home, "Home"),
-            Triple("scan", Icons.Default.QrCode2, "Scan & Pay"),
-            Triple("assignments", Icons.Default.Route, "Assignments"),
-            Triple("profile", Icons.Default.Person, "Profile"),
+            Triple("card", Icons.Filled.Home, "Home"),
+            Triple("scan", Icons.Filled.QrCode2, "Scan & Pay"),
+            Triple("assignments", Icons.Filled.Route, "Assignments"),
+            Triple("profile", Icons.Filled.Person, "Profile"),
         )
     Row(
         Modifier
