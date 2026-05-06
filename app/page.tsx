@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Phone, Shield, LogOut, Eye, EyeOff, Home, Wifi, Route, CheckCircle, ArrowDown, ArrowUp } from 'lucide-react';
+import { ChevronLeft, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Phone, Shield, LogOut, Eye, EyeOff, Home, Route, CheckCircle, ArrowDown, ArrowUp } from 'lucide-react';
 import {
   driverAcceptPairing,
   driverExchangeOtpToken,
@@ -1496,16 +1496,7 @@ export default function Page() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
-      <div className="relative w-[375px] h-[812px] bg-white rounded-[40px] border-8 border-gray-800 shadow-2xl overflow-hidden flex flex-col">
-        {/* Status Bar */}
-        <div className="bg-gray-900 text-white px-6 py-2 text-xs flex justify-between">
-          <span>9:41</span>
-          <div className="flex gap-1">
-            <Wifi className="w-3 h-3" />
-          </div>
-        </div>
-
+    <div className="relative flex min-h-screen w-full flex-col bg-gray-100">
         {USE_DRIVER_API && apiBanner && (
           <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-900 flex justify-between gap-2 items-center">
             <span>{apiBanner}</span>
@@ -3072,7 +3063,7 @@ export default function Page() {
           </div>
         </div>
 
-        {/* Assignment sheet: sibling of scroll area — fills 375px phone frame only */}
+        {/* Assignment sheet: sibling of main scroll area */}
         {assignmentDetailBinding && (
           <div
             className="pointer-events-auto absolute inset-x-0 top-0 bottom-20 z-[80] flex min-h-0 w-full flex-col justify-end bg-black/50 overflow-hidden"
@@ -3133,7 +3124,6 @@ export default function Page() {
             </div>
           </div>
         )}
-      </div>
 
       {/* Dev Menu Trigger */}
       <button 
