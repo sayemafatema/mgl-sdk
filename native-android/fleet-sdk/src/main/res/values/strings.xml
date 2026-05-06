@@ -1,7 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="fleet_sdk_title">MGL Fleet SDK</string>
-    <string name="fleet_sdk_subtitle">Native shell (parity UI replaces this placeholder).</string>
+    <string name="fleet_sdk_subtitle_welcome">Welcome</string>
+    <string name="fleet_sdk_subtitle_auth">Sign in or create your account</string>
+    <string name="fleet_sdk_subtitle_fleet">Your fleet</string>
+    <string name="fleet_sdk_welcome_hint">Continue to sign in or sign up, then review your fleet and finish when you\'re ready.</string>
+    <string name="fleet_sdk_get_started">Get started</string>
+    <string name="fleet_sdk_continue">Continue</string>
     <string name="fleet_sdk_complete">Complete flow</string>
     <string name="fleet_sdk_cancel">Cancel</string>
+    <string name="fleet_sdk_create_account">Create a new account</string>
+    <string name="fleet_sdk_full_name">Full name</string>
+    <string name="fleet_sdk_email">Email</string>
+    <string name="fleet_sdk_password">Password</string>
+    <string name="fleet_sdk_err_required">Required</string>
+    <string name="fleet_sdk_err_email">Enter a valid email</string>
+    <string name="fleet_sdk_fleet_loading">Loading drivers…</string>
+    <string name="fleet_sdk_no_drivers">No drivers yet.</string>
 </resources>
