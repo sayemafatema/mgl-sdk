@@ -8,7 +8,7 @@ Pod::Spec.new do |s|
   # CocoaPods resolves this podspec from `plugins/capacitor-fleet/ios/` inside the npm tarball after `npm install`.
   s.source = { :path => '.' }
   s.source_files = 'Plugin/**/*.{swift}'
-  s.ios.deployment_target = '15.0'
+  s.ios.deployment_target = '16.0'
   s.dependency 'Capacitor'
   s.swift_version = '5.9'
 end

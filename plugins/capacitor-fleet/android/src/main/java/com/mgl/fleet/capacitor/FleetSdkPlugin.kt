@@ -8,6 +8,8 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.mgl.fleet.sdk.FleetSdk
 import com.mgl.fleet.sdk.FleetSdkCompletionCallback
+import com.mgl.fleet.sdk.FleetSdkErrorCodes
+import com.mgl.fleet.sdk.FleetSdkException
 import com.mgl.fleet.sdk.FleetSdkOptions
 import com.mgl.fleet.sdk.FleetSdkResult
 import com.mgl.fleet.sdk.FleetSessionOptions
@@ -44,36 +46,43 @@ class FleetSdkPlugin : Plugin() {
         val correlationId = call.getString("correlationId")
         val session = correlationId?.let { FleetSessionOptions(correlationId = it) }
 
-        FleetSdk.presentFleetFlow(activity, session, object : FleetSdkCompletionCallback {
-            override fun onComplete(result: FleetSdkResult) {
-                bridge.activity.runOnUiThread {
-                    when (result) {
-                        is FleetSdkResult.Success -> {
-                            val payloadObj = JSObject()
-                            result.payload.forEach { (k, v) ->
-                                when (v) {
-                                    null -> payloadObj.put(k, null)
-                                    is Number -> payloadObj.put(k, v.toDouble())
-                                    is Boolean -> payloadObj.put(k, v)
-                                    else -> payloadObj.put(k, v.toString())
+        try {
+            FleetSdk.presentFleetFlow(activity, session, object : FleetSdkCompletionCallback {
+                override fun onComplete(result: FleetSdkResult) {
+                    bridge.activity.runOnUiThread {
+                        when (result) {
+                            is FleetSdkResult.Success -> {
+                                val payloadObj = JSObject()
+                                result.payload.forEach { (k, v) ->
+                                    when (v) {
+                                        null -> payloadObj.put(k, null)
+                                        is Number -> payloadObj.put(k, v.toDouble())
+                                        is Boolean -> payloadObj.put(k, v)
+                                        else -> payloadObj.put(k, v.toString())
+                                    }
                                 }
+                                val root = JSObject()
+                                root.put("event", result.event)
+                                root.put("payload", payloadObj)
+                                call.resolve(root)
                             }
-                            val root = JSObject()
-                            root.put("event", result.event)
-                            root.put("payload", payloadObj)
-                            call.resolve(root)
-                        }
 
-                        is FleetSdkResult.Failure -> {
-                            call.reject(
-                                result.exception.message ?: "FleetSdk error",
-                                result.exception,
-                                result.exception.code.toString(),
-                            )
+                            is FleetSdkResult.Failure -> {
+                                val ex = result.exception
+                                call.reject(ex.message ?: "FleetSdk error", ex.code.toString(), ex)
+                            }
                         }
                     }
                 }
-            }
-        })
+            })
+        } catch (e: FleetSdkException) {
+            call.reject(e.message ?: "FleetSdk error", e.code.toString(), e)
+        } catch (e: Exception) {
+            call.reject(
+                e.message ?: "FleetSdk error",
+                FleetSdkErrorCodes.INTERNAL_SDK_ERROR.toString(),
+                e,
+            )
+        }
     }
 }

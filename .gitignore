@@ -34,6 +34,9 @@ dist/
 # Gradle (Android native module caches)
 .gradle/
 
+# Swift Package Manager (local build products)
+.build/
+
 # VS Code local settings
 .vscode/
 

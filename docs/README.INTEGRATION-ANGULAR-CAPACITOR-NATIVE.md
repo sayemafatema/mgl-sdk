@@ -17,6 +17,8 @@ Master overview (errors, distribution): [`README.NATIVE-SDK.md`](README.NATIVE-S
 
 So: **initialize = configuration**, **presentFleetFlow = launch the experience**.
 
+The fullscreen UI is the **native** implementation that mirrors the repo web demo **`app/page.tsx`** (onboarding, PIN, forgot-PIN/OTP, pairing, assignment overlays, tabs)—implemented in **Android** Compose (`native-android/fleet-sdk/.../FleetDriverComposeApp.kt`) and **iOS** SwiftUI (`native-ios/MGLFleetSDK/.../FleetDriverNativeView.swift`). **Minimum iOS:** **16** (sheet detents used in the pairing help sheet).
+
 ---
 
 ## Prerequisites
@@ -201,6 +203,7 @@ npx cap run ios
 |--------|----------------|
 | Android: could not resolve **`com.mgl.sdk:fleet-android`** | Run **Step 1**; add **`mavenLocal()`** to root/app Gradle repos. |
 | iOS: reject about **MGLFleetSDK** / **canImport** | Complete **Step 5** and target the **App** app, not only the Pods project. |
+| iOS deployment / compile errors on older iOS | The SwiftUI Fleet shell targets **iOS 16+**; align the host app and SPM minimum. |
 | **`FragmentActivity`** error | Ensure the main Capacitor activity extends **`FragmentActivity`**. |
 | TypeScript / build errors for the plugin | Run **`npm run build`** inside the plugin package so **`dist/`** exists. |
 
