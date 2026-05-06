@@ -2,8 +2,7 @@
   <button type="button" class="dev-skip" (click)="skipDev()">Skip to main (dev)</button>
 
   <!-- ============ AUTH ============ -->
-  <div class="phone" *ngIf="s.authStep !== 'complete'">
-    <div class="status-bar">9:41</div>
+  <div class="app-shell" *ngIf="s.authStep !== 'complete'">
     <div class="auth-body">
 
       <!-- Login -->
@@ -176,8 +175,7 @@
   </div>
 
   <!-- ============ MAIN APP ============ -->
-  <div class="phone main-phone" *ngIf="s.authStep === 'complete'">
-    <div class="status-bar dark">9:41</div>
+  <div class="app-shell app-shell--main" *ngIf="s.authStep === 'complete'">
 
     <!-- Overlay: assignment -->
     <div class="overlay" *ngIf="s.mainOverlay === 'assignment_notification'">

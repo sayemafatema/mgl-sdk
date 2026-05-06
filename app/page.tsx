@@ -574,13 +574,8 @@ export default function Page() {
   // Onboarding and PIN Login
   if (onboardingStep !== 'complete') {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
-        <div className="w-[375px] h-[812px] bg-white rounded-[40px] border-8 border-gray-800 shadow-2xl overflow-hidden flex flex-col">
-          <div className="bg-gray-900 text-white px-6 py-2 text-xs flex justify-between">
-            <span>9:41</span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto flex flex-col justify-center p-6">
+      <div className="relative w-full min-h-screen bg-gray-100 flex flex-col">
+          <div className="flex-1 w-full min-h-0 overflow-y-auto flex flex-col justify-center p-6">
             {/* Screen: Login */}
             {onboardingStep === 'login' && (
               <>
@@ -1343,7 +1338,6 @@ export default function Page() {
               </>
             )}
           </div>
-        </div>
 
         {/* Dev Menu Trigger */}
         <button 
@@ -1363,7 +1357,6 @@ export default function Page() {
     );
   }
 
-  // Main App - Phone Frame
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
       <div className="relative w-[375px] h-[812px] bg-white rounded-[40px] border-8 border-gray-800 shadow-2xl overflow-hidden flex flex-col">
@@ -1396,7 +1389,7 @@ export default function Page() {
         )} */}
 
         {/* Content Area */}
-        <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-white">
           {/* Assignment Notification Screen */}
           {currentMainScreen === 'assignment_notification' && (
             <div className="flex-1 overflow-y-auto flex flex-col">

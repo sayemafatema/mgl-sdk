@@ -1,8 +1,10 @@
 .fleet-root {
+  width: 100%;
   min-height: 100vh;
   background: #f3f4f6;
-  padding: 1rem;
+  padding: 0;
   font-family: system-ui, -apple-system, sans-serif;
+  box-sizing: border-box;
 }
 
 .dev-skip {
@@ -18,28 +20,17 @@
   cursor: pointer;
 }
 
-.phone {
-  max-width: 375px;
-  margin: 0 auto;
+.app-shell {
+  width: 100%;
+  min-height: 100vh;
   background: #fff;
-  border-radius: 28px;
-  border: 6px solid #1f2937;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
   overflow: hidden;
-  min-height: 640px;
   display: flex;
   flex-direction: column;
 }
 
-.main-phone {
-  min-height: 720px;
-}
-
-.status-bar {
-  background: #111827;
-  color: #fff;
-  font-size: 11px;
-  padding: 6px 16px;
+.app-shell--main {
+  min-height: 100vh;
 }
 
 .auth-body {

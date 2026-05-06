@@ -61,38 +61,21 @@ class _FleetFlowScreenState extends State<FleetFlowScreen> {
       backgroundColor: const Color(0xfff3f4f6),
       body: Stack(
         children: [
-          Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 375),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: const Color(0xff1f2937), width: 6),
-                    boxShadow: const [
-                      BoxShadow(
-                        blurRadius: 40,
-                        offset: Offset(0, 20),
-                        color: Color(0x26000000),
+          Positioned.fill(
+            child: ColoredBox(
+              color: const Color(0xfff3f4f6),
+              child: s.authStep != 'complete'
+                  ? SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: _AuthPane(
+                        engine: widget.engine,
+                        s: s,
+                        mobileCtrl: _mobileCtrl,
+                        inviteCodeCtrl: _inviteCodeCtrl,
+                        otpSlots: _otpSlots,
                       ),
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(22),
-                    child: s.authStep != 'complete'
-                        ? _AuthPane(
-                            engine: widget.engine,
-                            s: s,
-                            mobileCtrl: _mobileCtrl,
-                            inviteCodeCtrl: _inviteCodeCtrl,
-                            otpSlots: _otpSlots,
-                          )
-                        : _MainPane(engine: widget.engine, s: s),
-                  ),
-                ),
-              ),
+                    )
+                  : _MainPane(engine: widget.engine, s: s),
             ),
           ),
           Positioned(
@@ -108,25 +91,6 @@ class _FleetFlowScreenState extends State<FleetFlowScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _StatusBar extends StatelessWidget {
-  const _StatusBar({this.dark = false});
-
-  final bool dark;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: dark ? const Color(0xff111827) : const Color(0xff111827),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: const Text(
-        '9:41',
-        style: TextStyle(color: Colors.white, fontSize: 11),
       ),
     );
   }
@@ -149,16 +113,9 @@ class _AuthPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const _StatusBar(),
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: _authBody(context),
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: _authBody(context),
     );
   }
 
@@ -680,8 +637,9 @@ class _MainPane extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const _StatusBar(dark: true),
-        if (s.mainOverlay != 'home') Expanded(child: _overlay(context)) else Expanded(child: _home(context)),
+        Expanded(
+          child: s.mainOverlay != 'home' ? _overlay(context) : _home(context),
+        ),
       ],
     );
   }
