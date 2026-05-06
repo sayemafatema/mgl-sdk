@@ -100,7 +100,7 @@ After **`fleet-android`** is on **Maven Central**, consumer apps typically only 
 
 While you depend on an unpublished `.aar`, keep **`mavenLocal()`** in the **project-level** Gradle repositories list.
 
-The Capacitor plugin’s **`android/build.gradle`** already lists **`mavenLocal()`**, **`google()`**, and **`mavenCentral()`**. If resolution fails, mirror those repos at the **root** **`settings.gradle`** / **`build.gradle`** (templates vary).
+The Capacitor plugin’s **`android/build.gradle`** lists **`mavenLocal()`**, **`google()`**, and **`mavenCentral()`**, and pulls Capacitor core from **`project(':capacitor-android')`** (not from Maven). If **`fleet-android`** fails to resolve, mirror **`mavenLocal()`** at the root **`settings.gradle`** repositories — Capacitor 8+ templates often resolve dependencies only from the root block.
 
 Keep **Java/Kotlin 17** compatibility consistent with the plugin (`compileOptions` / `jvmTarget` **17**).
 
@@ -201,7 +201,9 @@ npx cap run ios
 
 | Symptom | What to check |
 |--------|----------------|
-| Android: could not resolve **`com.mgl.sdk:fleet-android`** | Run **Step 1**; add **`mavenLocal()`** to root/app Gradle repos. |
+| Android: could not resolve **`com.mgl.sdk:fleet-android`** | Publish locally (**`./gradlew :fleet-sdk:publishToMavenLocal`** from **`native-android`**) or use Maven Central once published; add **`mavenLocal()`** at the **root** **`dependencyResolutionManagement` / `repositories`** block (not only inside the plugin subproject). |
+| Android: could not resolve **`com.capacitorjs:capacitor-android`** from Maven | Expected: the plugin uses **`project(':capacitor-android')`**. Ensure **`npx cap sync android`** ran and **`settings.gradle`** includes **`capacitor-android`** (default Capacitor template). |
+| Android: “multiple versions of the Android Gradle plugin (8.7.2, 8.9.1)” | Use **one** AGP version across the root **`build.gradle`** / **`libs.versions.toml`** and all included modules; remove duplicate **`plugins { id 'com.android…' version '…' }`** in subprojects if any. |
 | iOS: reject about **MGLFleetSDK** / **canImport** | Complete **Step 5** and target the **App** app, not only the Pods project. |
 | iOS deployment / compile errors on older iOS | The SwiftUI Fleet shell targets **iOS 16+**; align the host app and SPM minimum. |
 | **`FragmentActivity`** error | Ensure the main Capacitor activity extends **`FragmentActivity`**. |
