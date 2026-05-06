@@ -42,13 +42,33 @@ public final class FleetApiClient {
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("mgl-fleet-ios-sdk/1.0", forHTTPHeaderField: "User-Agent")
         if let token = options.authToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
-        session.dataTask(with: request) { data, _, error in
+        session.dataTask(with: request) { data, response, error in
             if let error {
                 completion(.failure(error))
+                return
+            }
+            guard let http = response as? HTTPURLResponse else {
+                completion(.failure(FleetSdkError(code: .networkError, message: "No HTTP response")))
+                return
+            }
+            let bodyText = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            guard (200 ..< 300).contains(http.statusCode) else {
+                let flat = bodyText.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespaces)
+                let snippet = String(flat.prefix(200))
+                let htmlHint =
+                    flat.trimmingCharacters(in: .whitespaces).hasPrefix("<")
+                    ? " [Non-JSON HTML — check apiBaseUrl, auth/WAF, or use useMock:true.]"
+                    : ""
+                completion(.failure(FleetSdkError(
+                    code: .networkError,
+                    message: "HTTP \(http.statusCode) \(url.absoluteString): \(snippet)\(htmlHint)",
+                )))
                 return
             }
             guard let data else {
