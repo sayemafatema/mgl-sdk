@@ -1,7 +1,35 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, X, Lock, ChevronDown, MapPin, AlertCircle, User, ChevronRight, Clock, Check, CreditCard, Zap, QrCode, History, Phone, Shield, LogOut, Eye, EyeOff, Home, Wifi, Route, CheckCircle } from 'lucide-react';
+import { ChevronLeft, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Phone, Shield, LogOut, Eye, EyeOff, Home, Wifi, Route, CheckCircle, ArrowDown, ArrowUp } from 'lucide-react';
+import {
+  driverAcceptPairing,
+  driverExchangeOtpToken,
+  driverFoList,
+  driverFoSelect,
+  driverSendOtp,
+  driverQrPay,
+  driverCheckMobile,
+  driverInviteSetPin,
+  driverInviteValidate,
+  driverGetAssignments,
+  driverGetHome,
+  driverGetProfile,
+  driverGetTransactions,
+  getDriverApiBase,
+  mapAssignmentsToUiBindings,
+  oauthAccessToken,
+  type DriverAssignment,
+  type DriverHome,
+  type DriverProfile,
+  type DriverTxnRow,
+  type DriverUiBinding,
+  type FoListEntry,
+} from '../components/mgl/driver-api';
+
+const DRIVER_API_BASE = getDriverApiBase();
+const USE_DRIVER_API = DRIVER_API_BASE.length > 0;
+const DRIVER_APP_FO_TOKEN_KEY = 'mgl_driver_app_fo_token';
 
 // ============ MOCK DATA - BEFORE COMPONENT ============
 const INVITE_CODES_DB: { [key: string]: string } = {
@@ -20,10 +48,10 @@ const pairedVehicles = [
 ];
 
 const mockTransactions = [
-  { id: 'TXN001', station: 'MGL Hind CNG Filling', vrn: 'MH 02 AB 1234', amount: 672, date: 'Mar 23, 10:30 AM', type: 'Fueling', quantity: '4.2 kg', status: 'Success' },
-  { id: 'TXN002', station: 'NEFT Credit', vrn: 'MH 02 AB 1234', amount: 10000, date: 'Mar 22, 02:15 PM', type: 'Credit', status: 'Success' },
-  { id: 'TXN003', station: 'MGL Kurla Station', vrn: 'MH 02 CD 5678', amount: 1200, date: 'Mar 21, 08:45 AM', type: 'Fueling', quantity: '7.5 kg', status: 'Success' },
-  { id: 'TXN004', station: 'MGL Andheri East', vrn: 'MH 02 AB 1234', amount: 950, date: 'Mar 20, 06:20 PM', type: 'Fueling', quantity: '6.0 kg', status: 'Success' },
+  { id: 'TXN001', station: 'MGL Hind CNG Filling', vrn: 'MH 02 AB 1234', amount: 850, date: 'Mar 23, 10:30 AM', dayLabel: '13 Apr', timeLabel: '10:30 AM', type: 'Fueling' as const, quantity: '4.2 kg', status: 'Success' },
+  { id: 'TXN002', station: 'Wallet Top-up', vrn: 'MH 02 AB 1234', amount: 10000, date: 'Mar 22, 02:15 PM', dayLabel: '12 Apr', timeLabel: '02:15 PM', type: 'Credit' as const, status: 'Success' },
+  { id: 'TXN003', station: 'MGL Kurla Station', vrn: 'MH 02 CD 5678', amount: 1200, date: 'Mar 21, 08:45 AM', dayLabel: '11 Apr', timeLabel: '08:45 AM', type: 'Fueling' as const, quantity: '7.5 kg', status: 'Success' },
+  { id: 'TXN004', station: 'MGL Andheri East', vrn: 'MH 02 AB 1234', amount: 950, date: 'Mar 20, 06:20 PM', dayLabel: '10 Apr', timeLabel: '06:20 PM', type: 'Fueling' as const, quantity: '6.0 kg', status: 'Success' },
 ];
 
 const MOCK_PENDING_BINDING = {
@@ -59,7 +87,15 @@ const DRIVER = {
   registered: true,
 };
 
-const BINDINGS = [
+function driverInitialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  const one = parts[0] ?? '';
+  if (one.length >= 2) return one.slice(0, 2).toUpperCase();
+  return one.toUpperCase() || '?';
+}
+
+const MOCK_BINDINGS: DriverUiBinding[] = [
   {
     id: "BND001",
     vrn: "MH 02 AB 1234",
@@ -146,20 +182,38 @@ const pairedVehiclesGlobal = [
 ];
 
 const mockTransactionsGlobal = [
-    { id: 'TXN001', station: 'MGL Hind CNG Filling', vrn: 'MH 02 AB 1234', amount: 672, date: 'Mar 23, 10:30 AM', type: 'Fueling', quantity: '4.2 kg', status: 'Success' },
-    { id: 'TXN002', station: 'NEFT Credit', vrn: 'MH 02 AB 1234', amount: 10000, date: 'Mar 22, 02:15 PM', type: 'Credit', status: 'Success' },
-    { id: 'TXN003', station: 'MGL Kurla Station', vrn: 'MH 02 CD 5678', amount: 1200, date: 'Mar 21, 08:45 AM', type: 'Fueling', quantity: '7.5 kg', status: 'Success' },
-    { id: 'TXN004', station: 'MGL Andheri East', vrn: 'MH 02 AB 1234', amount: 950, date: 'Mar 20, 06:20 PM', type: 'Fueling', quantity: '6.0 kg', status: 'Success' },
+    { id: 'TXN001', station: 'MGL Hind CNG Filling', vrn: 'MH 02 AB 1234', amount: 850, date: 'Mar 23, 10:30 AM', dayLabel: '13 Apr', timeLabel: '10:30 AM', type: 'Fueling' as const, quantity: '4.2 kg', status: 'Success' },
+    { id: 'TXN002', station: 'Wallet Top-up', vrn: 'MH 02 AB 1234', amount: 10000, date: 'Mar 22, 02:15 PM', dayLabel: '12 Apr', timeLabel: '02:15 PM', type: 'Credit' as const, status: 'Success' },
+    { id: 'TXN003', station: 'MGL Kurla Station', vrn: 'MH 02 CD 5678', amount: 1200, date: 'Mar 21, 08:45 AM', dayLabel: '11 Apr', timeLabel: '08:45 AM', type: 'Fueling' as const, quantity: '7.5 kg', status: 'Success' },
+    { id: 'TXN004', station: 'MGL Andheri East', vrn: 'MH 02 AB 1234', amount: 950, date: 'Mar 20, 06:20 PM', dayLabel: '10 Apr', timeLabel: '06:20 PM', type: 'Fueling' as const, quantity: '6.0 kg', status: 'Success' },
 ];
 
-const mockBindingsGlobal = BINDINGS;
+const mockBindingsGlobal = MOCK_BINDINGS;
 
 export default function Page() {
   // ============ STATE ============
   const [isReturningUser, setIsReturningUser] = useState(true);
-  const [onboardingStep, setOnboardingStep] = useState<'login' | 'login_otp' | 'pin_login' | 'set_pin' | 'confirm_pin' | 'complete' | 'forgot_pin' | 'verify_otp_reset' | 'set_pin_reset' | 'confirm_pin_reset'>(
-    'login'
-  );
+  const [onboardingStep, setOnboardingStep] = useState<
+    | 'login'
+    | 'login_otp'
+    | 'pin_login'
+    | 'set_pin'
+    | 'confirm_pin'
+    | 'complete'
+    | 'forgot_pin'
+    | 'forgot_otp'
+    | 'verify_otp_reset'
+    | 'set_pin_reset'
+    | 'confirm_pin_reset'
+    | 'registered'
+    | '1b'
+    | '1c'
+    | '1d'
+    | '1e'
+    | '1f'
+    | 'select_fo'
+    | 'fo_pin_login'
+  >('login');
   const [inviteCode, setInviteCode] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [otp, setOtp] = useState('');
@@ -183,15 +237,15 @@ export default function Page() {
   const [currentMainScreen, setCurrentMainScreen] = useState<'home_empty' | 'home_active' | 'assignment_notification' | 'pairing_code'>('home_empty');
   const [selectedVehicle, setSelectedVehicle] = useState(0);
   const [activeCard, setActiveCard] = useState(0);
-  const [expandPastAssignments, setExpandPastAssignments] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<string | null>(null);
   const [selectedPendingBinding, setSelectedPendingBinding] = useState(MOCK_PENDING_BINDING);
   const [showShiftSchedule, setShowShiftSchedule] = useState(false);
-  const [selectedShiftBinding, setSelectedShiftBinding] = useState<typeof BINDINGS[0] | null>(null);
+  const [selectedShiftBinding, setSelectedShiftBinding] = useState<DriverUiBinding | null>(null);
   const [showTripDetails, setShowTripDetails] = useState(false);
-  const [selectedTripBinding, setSelectedTripBinding] = useState<typeof BINDINGS[0] | null>(null);
+  const [selectedTripBinding, setSelectedTripBinding] = useState<DriverUiBinding | null>(null);
+  const [assignmentDetailBinding, setAssignmentDetailBinding] = useState<DriverUiBinding | null>(null);
   const [declineBndId, setDeclineBndId] = useState<string | null>(null);
-  const [activeAssignment, setActiveAssignment] = useState<typeof BINDINGS[0] | null>(null);
+  const [activeAssignment, setActiveAssignment] = useState<DriverUiBinding | null>(null);
   const [pairingDigits, setPairingDigits] = useState(Array(6).fill(""));
   const [pairingAttempts, setPairingAttempts] = useState(0);
   const [pairingSuccess, setPairingSuccess] = useState(false);
@@ -203,10 +257,24 @@ export default function Page() {
   const [isNewUser, setIsNewUser] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [isRegistered, setIsRegistered] = useState(true);
-  const [otpDigits, setOtpDigits] = useState(Array(6).fill(""));
-  const [otpError, setOtpError] = useState("");
-  const [activeScanBinding, setActiveScanBinding] = useState<typeof BINDINGS[0] | null>(null);
-  const [selectedScanBinding, setSelectedScanBinding] = useState<typeof BINDINGS[0] | null>(null);
+  const [otpDigits, setOtpDigits] = useState(Array(6).fill(''));
+  const [otpError, setOtpError] = useState('');
+  const [inviteFlowOtpError, setInviteFlowOtpError] = useState('');
+  const [activeScanBinding, setActiveScanBinding] = useState<DriverUiBinding | null>(null);
+  const [selectedScanBinding, setSelectedScanBinding] = useState<DriverUiBinding | null>(null);
+  const [foScopedToken, setFoScopedToken] = useState<string | null>(null);
+  const [otpPhaseToken, setOtpPhaseToken] = useState<string | null>(null);
+  const [inviteSessionToken, setInviteSessionToken] = useState<string | null>(null);
+  const [validatedInvitePreview, setValidatedInvitePreview] = useState<{ driverName: string; foName: string } | null>(null);
+  const [foOrganizationList, setFoOrganizationList] = useState<FoListEntry[]>([]);
+  const [selectedFoCompanyId, setSelectedFoCompanyId] = useState<number | null>(null);
+  const [apiHome, setApiHome] = useState<DriverHome | null>(null);
+  const [apiProfileState, setApiProfileState] = useState<DriverProfile | null>(null);
+  const [apiAssignments, setApiAssignments] = useState<DriverAssignment[]>([]);
+  const [apiTxns, setApiTxns] = useState<DriverTxnRow[]>([]);
+  const [apiBanner, setApiBanner] = useState<string | null>(null);
+  const [foPinEntry, setFoPinEntry] = useState('');
+  const [qrTxnId, setQrTxnId] = useState('QR-DEMO-LOCAL');
 
   const pairingRefs = [
     useRef(null), useRef(null), useRef(null),
@@ -218,20 +286,27 @@ export default function Page() {
   const pairedVehicles = pairedVehiclesGlobal;
   const mockTransactions = mockTransactionsGlobal;
   const mockBindings = mockBindingsGlobal;
+  const screenBindings: DriverUiBinding[] =
+    USE_DRIVER_API && onboardingStep === 'complete' && foScopedToken
+      ? mapAssignmentsToUiBindings(apiHome, apiAssignments)
+      : MOCK_BINDINGS;
   const currentVehicle = pairedVehicles[selectedVehicle];
-  const activeCards = BINDINGS.filter(b => b.paired && b.state === "ACTIVE");
+  const activeCards = screenBindings.filter((b) => b.paired && b.state === 'ACTIVE');
   const currentCard = activeCards[activeCard];
-  const pendingAssignmentCount = BINDINGS.filter(b => 
-    b.state === "PENDING_ACCEPTANCE" || (!b.paired && b.state === "ACTIVE")
-  ).length;
-  const activeBindings = BINDINGS.filter(b => b.paired && b.state === "ACTIVE");
-  const pendingBindings = BINDINGS.filter(b => b.state === "PENDING_ACCEPTANCE");
-  const repairBindings = BINDINGS.filter(b => !b.paired && b.state === "ACTIVE");
-
+  const pendingAssignmentCount = screenBindings.filter((b) => b.state === 'PENDING_ACCEPTANCE' || (!b.paired && b.state === 'ACTIVE')).length;
+  const activeBindings = screenBindings.filter((b) => b.paired && b.state === 'ACTIVE');
+  const pendingBindings = screenBindings.filter((b) => b.state === 'PENDING_ACCEPTANCE');
+  const repairBindings = screenBindings.filter((b) => !b.paired && b.state === 'ACTIVE');
+  const assignmentFallback = screenBindings[3] ?? screenBindings[0] ?? MOCK_BINDINGS[0];
+  const driverDisplayName = apiProfileState?.name ?? DRIVER.name;
+  const driverDisplayInitials = apiProfileState?.name
+    ? driverInitialsFromName(apiProfileState.name)
+    : DRIVER.initials;
 
   // ============ HANDLERS ============
   const handleInviteCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+    const max = USE_DRIVER_API ? 24 : 6;
+    const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, max);
     setInviteCode(val);
   };
 
@@ -281,24 +356,61 @@ export default function Page() {
     }
   };
 
-  const handleLoginOtpVerify = () => {
-    const enteredOtp = otpDigits.join("");
-    if (enteredOtp === "123456") {
-      if (isRegistered) {
-        setOnboardingStep("complete");
+  const handleLoginOtpVerify = async () => {
+    const enteredOtp = otpDigits.join('');
+    if (!USE_DRIVER_API) {
+      if (enteredOtp === '123456') {
+        if (isRegistered) setOnboardingStep('complete');
+        else {
+          setIsNewUser(true);
+          setNewPin('');
+          setPinConfirm('');
+          setPinError('');
+          setOnboardingStep('set_pin');
+        }
       } else {
-        setIsNewUser(true);
-        setNewPin("");
-        setPinConfirm("");
-        setPinError("");
-        setOnboardingStep("set_pin");
+        setOtpError('Incorrect OTP. Try again.');
+        setTimeout(() => {
+          setOtpDigits(Array(6).fill(''));
+          setOtpError('');
+        }, 1500);
       }
-    } else {
-      setOtpError("Incorrect OTP. Try again.");
+      return;
+    }
+    try {
+      setApiBanner(null);
+      setOtpError('');
+      const tr = await driverExchangeOtpToken(mobileNumber, enteredOtp, DRIVER_API_BASE);
+      const partial = oauthAccessToken(tr);
+      if (!partial) {
+        setOtpError('Login failed: no token.');
+        return;
+      }
+      setOtpPhaseToken(partial);
+      const fos = await driverFoList(DRIVER_API_BASE, partial);
+      const active = fos.filter((f) => f.foStatus === 'ACTIVE');
+      setFoOrganizationList(active);
+      if (!active.length) {
+        setOtpError('No active fleet — use your invite code.');
+        setOtpPhaseToken(null);
+        setOtpDigits(Array(6).fill(''));
+        return;
+      }
+      if (active.length === 1) {
+        setSelectedFoCompanyId(active[0].foCompanyId);
+        setFoPinEntry('');
+        setOnboardingStep('fo_pin_login');
+      } else {
+        setSelectedFoCompanyId(null);
+        setOnboardingStep('select_fo');
+      }
+      setOtpDigits(Array(6).fill(''));
+    } catch (e) {
+      setOtpError(e instanceof Error ? e.message : String(e));
       setTimeout(() => {
-        setOtpDigits(Array(6).fill(""));
-        setOtpError("");
-      }, 1500);
+        setOtpDigits(Array(6).fill(''));
+        setOtpError('');
+      }, 1700);
     }
   };
 
@@ -307,12 +419,32 @@ export default function Page() {
   };
 
   const handleLogout = () => {
-    setOnboardingStep('1a');
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem(DRIVER_APP_FO_TOKEN_KEY);
+      } catch {
+        /* ignore */
+      }
+    }
+    setOnboardingStep('login');
     setInviteCode('');
     setMobileNumber('');
     setOtp('');
     setPin('');
     setPinConfirm('');
+    setFoScopedToken(null);
+    setOtpPhaseToken(null);
+    setInviteSessionToken(null);
+    setValidatedInvitePreview(null);
+    setFoOrganizationList([]);
+    setSelectedFoCompanyId(null);
+    setApiHome(null);
+    setApiProfileState(null);
+    setApiAssignments([]);
+    setApiTxns([]);
+    setApiBanner(null);
+    setFoPinEntry('');
+    setOtpDigits(Array(6).fill(''));
   };
 
   // Numpad component
@@ -345,10 +477,86 @@ export default function Page() {
 
   // ============ EFFECTS ============
   useEffect(() => {
-    if (otpDigits.join("").length === 6 && onboardingStep === "login_otp") {
-      handleLoginOtpVerify();
+    if (!USE_DRIVER_API || typeof window === 'undefined') return;
+    try {
+      const t = localStorage.getItem(DRIVER_APP_FO_TOKEN_KEY)?.trim();
+      if (t) {
+        setFoScopedToken(t);
+        setOnboardingStep('complete');
+      }
+    } catch {
+      /* ignore */
     }
+  }, []);
+
+  useEffect(() => {
+    if (!USE_DRIVER_API || typeof window === 'undefined' || !foScopedToken) return;
+    try {
+      localStorage.setItem(DRIVER_APP_FO_TOKEN_KEY, foScopedToken);
+    } catch {
+      /* ignore */
+    }
+  }, [USE_DRIVER_API, foScopedToken]);
+
+  useEffect(() => {
+    if (otpDigits.join('').length === 6 && onboardingStep === 'login_otp') void handleLoginOtpVerify();
   }, [otpDigits, onboardingStep]);
+
+  useEffect(() => {
+    if (!USE_DRIVER_API || !foScopedToken || onboardingStep !== 'complete') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setApiBanner(null);
+        const [home, profile, assignments, tx] = await Promise.all([
+          driverGetHome(DRIVER_API_BASE, foScopedToken),
+          driverGetProfile(DRIVER_API_BASE, foScopedToken),
+          driverGetAssignments(DRIVER_API_BASE, foScopedToken),
+          driverGetTransactions(DRIVER_API_BASE, foScopedToken, 0),
+        ]);
+        if (!cancelled) {
+          setApiHome(home);
+          setApiProfileState(profile);
+          setApiAssignments(assignments);
+          setApiTxns(tx);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        setApiBanner(msg);
+        if (/\b401\b|Unauthorized|invalid_token|expired/i.test(msg)) {
+          try {
+            localStorage.removeItem(DRIVER_APP_FO_TOKEN_KEY);
+          } catch {
+            /* ignore */
+          }
+          setFoScopedToken(null);
+          setApiHome(null);
+          setApiProfileState(null);
+          setApiAssignments([]);
+          setApiTxns([]);
+          setOnboardingStep('login');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [USE_DRIVER_API, foScopedToken, onboardingStep]);
+
+  useEffect(() => {
+    if (USE_DRIVER_API || onboardingStep !== '1d' || otp.length !== 6) return;
+    if (otp === '123456') {
+      setInviteFlowOtpError('');
+      setOnboardingStep('1b');
+    } else {
+      setInviteFlowOtpError('Incorrect OTP. Try again.');
+      setTimeout(() => {
+        setOtp('');
+        setInviteFlowOtpError('');
+      }, 1500);
+    }
+  }, [otp, onboardingStep]);
 
   useEffect(() => {
     if (currentMainScreen === "pairing_code") {
@@ -404,11 +612,27 @@ export default function Page() {
                     </div>
 
                     <button
-                      onClick={() => { 
-                        setOtpDigits(Array(6).fill(""));
-                        setOtpError("");
-                        setOtpCountdown(30);
-                        setOnboardingStep('login_otp'); 
+                      onClick={() => {
+                        void (async () => {
+                          setApiBanner(null);
+                          setOtpDigits(Array(6).fill(''));
+                          setOtpError('');
+                          try {
+                            if (USE_DRIVER_API) {
+                              const cm = await driverCheckMobile(DRIVER_API_BASE, mobileNumber);
+                              if (cm === 'NEW_USER') {
+                                setApiBanner('New user — continue with invite code.');
+                                setOnboardingStep('1c');
+                                return;
+                              }
+                              await driverSendOtp(DRIVER_API_BASE, mobileNumber);
+                            }
+                            setOtpCountdown(30);
+                            setOnboardingStep('login_otp');
+                          } catch (e) {
+                            setOtpError(e instanceof Error ? e.message : String(e));
+                          }
+                        })();
                       }}
                       disabled={mobileNumber.length !== 10}
                       className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-xl transition"
@@ -423,7 +647,13 @@ export default function Page() {
                     </div>
 
                     <button
-                      onClick={() => { setInviteCode(''); setOnboardingStep('1b'); }}
+                      onClick={() => {
+                        setInviteCode('');
+                        setOtp('');
+                        setInviteFlowOtpError('');
+                        setMobileNumber('');
+                        setOnboardingStep('1c');
+                      }}
                       className="w-full border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-3 rounded-xl transition"
                     >
                       New user? I have an invite code
@@ -485,10 +715,110 @@ export default function Page() {
                 {otpCountdown > 0 ? (
                   <p className="text-center text-xs text-gray-500">Resend OTP in {otpCountdown}s</p>
                 ) : (
-                  <button onClick={() => setOtpCountdown(30)} className="w-full text-green-700 hover:text-green-800 font-medium py-2 text-sm">
+                  <button
+                    onClick={() => {
+                      void (async () => {
+                        try {
+                          if (USE_DRIVER_API) await driverSendOtp(DRIVER_API_BASE, mobileNumber);
+                          setOtpCountdown(30);
+                        } catch (e) {
+                          setOtpError(e instanceof Error ? e.message : String(e));
+                        }
+                      })();
+                    }}
+                    className="w-full text-green-700 hover:text-green-800 font-medium py-2 text-sm"
+                  >
                     Resend OTP
                   </button>
                 )}
+                {USE_DRIVER_API && apiBanner && !otpError && (
+                  <p className="text-xs text-center text-amber-700 mt-3">{apiBanner}</p>
+                )}
+              </>
+            )}
+
+            {onboardingStep === 'select_fo' && (
+              <>
+                <button
+                  onClick={() => {
+                    setOnboardingStep('login_otp');
+                    setOtpPhaseToken(null);
+                  }}
+                  className="flex items-center gap-2 text-gray-600 mb-6"
+                >
+                  <ChevronLeft className="w-5 h-5" /> Back
+                </button>
+                <h2 className="text-xl font-bold mb-4">Choose fleet operator</h2>
+                <div className="space-y-3">
+                  {foOrganizationList
+                    .filter((f) => f.foStatus === 'ACTIVE')
+                    .map((f) => (
+                      <button
+                        key={f.foCompanyId}
+                        type="button"
+                        onClick={() => {
+                          setSelectedFoCompanyId(f.foCompanyId);
+                          setFoPinEntry('');
+                          setOnboardingStep('fo_pin_login');
+                        }}
+                        className="w-full text-left border rounded-2xl p-4 hover:border-green-700 border-gray-200"
+                      >
+                        <p className="font-semibold text-gray-900">{f.foName}</p>
+                        <p className="text-xs text-gray-500">Fleet ID #{f.foCompanyId}</p>
+                      </button>
+                    ))}
+                </div>
+              </>
+            )}
+
+            {onboardingStep === 'fo_pin_login' && otpPhaseToken && (
+              <>
+                <button
+                  onClick={() =>
+                    setOnboardingStep(
+                      foOrganizationList.filter((x) => x.foStatus === 'ACTIVE').length > 1 ? 'select_fo' : 'login_otp'
+                    )
+                  }
+                  className="flex items-center gap-2 text-gray-600 mb-6"
+                >
+                  <ChevronLeft className="w-5 h-5" /> Back
+                </button>
+                <h2 className="text-xl font-bold mb-2">Fleet PIN</h2>
+                <p className="text-sm text-gray-600 mb-6">Enter your PIN for this fleet (4–6 digits)</p>
+                <PinDisplay value={foPinEntry} />
+                <Numpad
+                  onPress={(digit) => foPinEntry.length < 6 && setFoPinEntry(foPinEntry + digit)}
+                  onBackspace={() => setFoPinEntry(foPinEntry.slice(0, -1))}
+                />
+                <button
+                  disabled={foPinEntry.length < 4 || foPinEntry.length > 6 || selectedFoCompanyId === null}
+                  onClick={() => {
+                    void (async () => {
+                      if (selectedFoCompanyId === null || !otpPhaseToken) return;
+                      try {
+                        const tr = await driverFoSelect(
+                          DRIVER_API_BASE,
+                          otpPhaseToken,
+                          selectedFoCompanyId,
+                          foPinEntry
+                        );
+                        const scoped = oauthAccessToken(tr);
+                        if (!scoped) throw new Error('Missing fleet token');
+                        setFoScopedToken(scoped);
+                        setOtpPhaseToken(null);
+                        setFoPinEntry('');
+                        setApiBanner(null);
+                        setOnboardingStep('complete');
+                      } catch (e) {
+                        setApiBanner(e instanceof Error ? e.message : String(e));
+                      }
+                    })();
+                  }}
+                  className="w-full mt-8 bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                >
+                  Unlock app
+                </button>
+                {apiBanner && <p className="text-red-600 text-xs text-center mt-3">{apiBanner}</p>}
               </>
             )}
 
@@ -498,7 +828,7 @@ export default function Page() {
                 <div className="text-center space-y-2 mb-8 flex flex-col items-center">
                   <img src="/mgl-logo.png" alt="MGL Fleet" className="w-12 h-12 object-contain" />
                   <p className="text-xs text-gray-500">Welcome back</p>
-                  <p className="text-lg font-bold text-gray-900">{DRIVER.name}</p>
+                  <p className="text-lg font-bold text-gray-900">{driverDisplayName}</p>
                 </div>
 
                 <div className="mb-6">
@@ -655,13 +985,26 @@ export default function Page() {
             {/* Screen 1b: Invite Code */}
             {onboardingStep === '1b' && (
               <>
-                <button onClick={() => setOnboardingStep('login')} className="flex items-center gap-2 text-gray-600 mb-4">
+                <button onClick={() => setOnboardingStep(USE_DRIVER_API ? '1c' : '1d')} className="flex items-center gap-2 text-gray-600 mb-4">
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
                 <h2 className="text-xl font-bold mb-2">Invite Code</h2>
-                <p className="text-sm text-gray-600 mb-6">Enter the 6-character code your Fleet Operator shared</p>
-                <input type="text" value={inviteCode} onChange={handleInviteCodeChange} maxLength={6} placeholder="ABC123" className="w-full px-4 py-3 border border-gray-300 rounded-2xl text-center text-lg tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-green-700 mb-4" />
-                {inviteCode.length === 6 && INVITE_CODES_DB[inviteCode] && (
+                <p className="text-sm text-gray-600 mb-6">
+                  {USE_DRIVER_API ? 'Enter the code your Fleet Operator shared' : 'Enter the 6-character code your Fleet Operator shared'}
+                </p>
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => {
+                    handleInviteCodeChange(e);
+                    setValidatedInvitePreview(null);
+                    setInviteSessionToken(null);
+                  }}
+                  maxLength={USE_DRIVER_API ? 24 : 6}
+                  placeholder={USE_DRIVER_API ? 'A3K9M2…' : 'ABC123'}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-2xl text-center text-lg tracking-widest font-bold focus:outline-none focus:ring-2 focus:ring-green-700 mb-4"
+                />
+                {!USE_DRIVER_API && inviteCode.length === 6 && INVITE_CODES_DB[inviteCode] && (
                   <div className="bg-green-50 border border-green-300 rounded-2xl p-3 mb-4 flex items-start gap-3">
                     <Check className="w-5 h-5 text-green-700 flex-shrink-0 mt-0.5" />
                     <div>
@@ -669,16 +1012,51 @@ export default function Page() {
                     </div>
                   </div>
                 )}
-                <button onClick={() => setOnboardingStep('1c')} disabled={inviteCode.length !== 6 || !INVITE_CODES_DB[inviteCode]} className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition">
+                {USE_DRIVER_API && validatedInvitePreview && (
+                  <div className="bg-green-50 border border-green-300 rounded-2xl p-3 mb-4 flex items-start gap-3">
+                    <Check className="w-5 h-5 text-green-700 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-green-900 text-sm">{validatedInvitePreview.driverName}</p>
+                      <p className="text-xs text-green-800">{validatedInvitePreview.foName}</p>
+                    </div>
+                  </div>
+                )}
+                <button
+                  onClick={() => {
+                    void (async () => {
+                      try {
+                        if (!USE_DRIVER_API) {
+                          if (inviteCode.length !== 6 || !INVITE_CODES_DB[inviteCode]) return;
+                          setOnboardingStep('1e');
+                          return;
+                        }
+                        const r = await driverInviteValidate(DRIVER_API_BASE, mobileNumber, inviteCode);
+                        setInviteSessionToken(r.sessionToken);
+                        setValidatedInvitePreview({ driverName: r.driverName, foName: r.foName });
+                        setInviteFlowOtpError('');
+                        setOnboardingStep('1e');
+                      } catch (e) {
+                        setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                      }
+                    })();
+                  }}
+                  disabled={
+                    !USE_DRIVER_API ? inviteCode.length !== 6 || !INVITE_CODES_DB[inviteCode] : inviteCode.length < 6
+                  }
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                >
                   Continue
                 </button>
+                {inviteFlowOtpError && onboardingStep === '1b' && (
+                  <p className="text-red-600 text-xs text-center mt-3">{inviteFlowOtpError}</p>
+                )}
               </>
             )}
 
             {/* Screen 1c: Mobile Verify */}
             {onboardingStep === '1c' && (
               <>
-                <button onClick={() => setOnboardingStep('1b')} className="flex items-center gap-2 text-gray-600 mb-4">
+                <button onClick={() => setOnboardingStep('login')} className="flex items-center gap-2 text-gray-600 mb-4">
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
                 <h2 className="text-xl font-bold mb-2">Mobile Verification</h2>
@@ -687,14 +1065,42 @@ export default function Page() {
                   <span className="text-lg font-bold text-gray-600 pt-3">+91</span>
                   <input type="tel" value={mobileNumber} onChange={handleMobileChange} placeholder="98765 43210" className="flex-1 px-4 py-3 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-700" />
                 </div>
-                <button onClick={() => { setOtpCountdown(30); setOnboardingStep('1d'); }} disabled={mobileNumber.length !== 10} className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition">
-                  Send OTP
+                <button
+                  onClick={() => {
+                    void (async () => {
+                      setApiBanner(null);
+                      setInviteFlowOtpError('');
+                      if (!USE_DRIVER_API) {
+                        setOtp('');
+                        setOtpCountdown(30);
+                        setOnboardingStep('1d');
+                        return;
+                      }
+                      try {
+                        const cm = await driverCheckMobile(DRIVER_API_BASE, mobileNumber);
+                        if (cm !== 'NEW_USER') {
+                          setInviteFlowOtpError('Use “Send OTP” on the login screen.');
+                          return;
+                        }
+                        setOnboardingStep('1b');
+                      } catch (e) {
+                        setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                      }
+                    })();
+                  }}
+                  disabled={mobileNumber.length !== 10}
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                >
+                  {USE_DRIVER_API ? 'Continue' : 'Send OTP'}
                 </button>
+                {inviteFlowOtpError && onboardingStep === '1c' && (
+                  <p className="text-red-600 text-xs text-center mt-3">{inviteFlowOtpError}</p>
+                )}
               </>
             )}
 
             {/* Screen 1d: OTP Entry */}
-            {onboardingStep === '1d' && (
+            {!USE_DRIVER_API && onboardingStep === '1d' && (
               <>
                 <button onClick={() => setOnboardingStep('1c')} className="flex items-center gap-2 text-gray-600 mb-4">
                   <ChevronLeft className="w-5 h-5" /> Back
@@ -703,12 +1109,31 @@ export default function Page() {
                 <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 mb-4">
                   <p className="text-sm text-blue-900">OTP sent to +91 {mobileNumber.slice(-4).padStart(10, '•')}</p>
                 </div>
+                <p className="text-xs text-gray-500 mb-2">Demo: enter <strong>123456</strong></p>
                 <div className="flex justify-center gap-1 mb-4">
                   {Array.from({ length: 6 }).map((_, i) => (
-                    <input key={i} type="text" inputMode="numeric" maxLength={1} value={otp[i] || ''} onChange={(e) => { const newOtp = otp.split(''); newOtp[i] = e.target.value.replace(/\D/g, '').slice(-1); setOtp(newOtp.join('')); if (newOtp[i] && i < 5) (document.querySelectorAll('.otp-digit')[i + 1] as HTMLInputElement)?.focus(); }} className="otp-digit w-10 h-10 text-center text-lg font-bold border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100" />
+                    <input key={i} type="text" inputMode="numeric" maxLength={1} value={otp[i] || ''} onChange={(e) => { const newOtp = otp.split(''); newOtp[i] = e.target.value.replace(/\D/g, '').slice(-1); setOtp(newOtp.join('')); if (newOtp[i] && i < 5) (document.querySelectorAll('.otp-digit-invite')[i + 1] as HTMLInputElement)?.focus(); }} className="otp-digit-invite w-10 h-10 text-center text-lg font-bold border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100" />
                   ))}
                 </div>
-                <button onClick={() => setOnboardingStep('1e')} disabled={otp.length !== 6} className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mb-2">
+                {inviteFlowOtpError && (
+                  <p className="text-red-500 text-sm text-center mb-3">{inviteFlowOtpError}</p>
+                )}
+                <button
+                  onClick={() => {
+                    if (otp === '123456') {
+                      setInviteFlowOtpError('');
+                      setOnboardingStep('1b');
+                    } else {
+                      setInviteFlowOtpError('Incorrect OTP. Try again.');
+                      setTimeout(() => {
+                        setOtp('');
+                        setInviteFlowOtpError('');
+                      }, 1500);
+                    }
+                  }}
+                  disabled={otp.length !== 6}
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mb-2"
+                >
                   Verify OTP
                 </button>
                 <button className="w-full text-green-700 font-medium py-2 text-sm">Resend OTP</button>
@@ -719,10 +1144,16 @@ export default function Page() {
             {onboardingStep === '1e' && (
               <>
                 <h2 className="text-xl font-bold mb-2">Create your app PIN</h2>
-                <p className="text-sm text-gray-600 mb-6">6 digits for fueling authorization</p>
+                <p className="text-sm text-gray-600 mb-6">{USE_DRIVER_API ? '4–6 digits for fleet login and fuel authorization' : '6 digits for fueling authorization'}</p>
                 <PinDisplay value={pin} />
-                <Numpad onPress={(digit) => handlePinInput(digit, false)} onBackspace={() => handlePinBackspace(false)} />
-                <button onClick={() => setOnboardingStep('1f')} disabled={pin.length !== 6} className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6">
+                <Numpad onPress={(digit) => { if (pin.length < 6) handlePinInput(digit, false); }} onBackspace={() => handlePinBackspace(false)} />
+                <button
+                  onClick={() => setOnboardingStep('1f')}
+                  disabled={
+                    USE_DRIVER_API ? pin.length < 4 || pin.length > 6 : pin.length !== 6
+                  }
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6"
+                >
                   Next
                 </button>
               </>
@@ -735,18 +1166,40 @@ export default function Page() {
                 <p className="text-sm text-gray-600 mb-6">Enter the same PIN again</p>
                 {pinError && <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{pinError}</div>}
                 <PinDisplay value={pinConfirm} />
-                <Numpad onPress={(digit) => handlePinInput(digit, true)} onBackspace={() => handlePinBackspace(true)} isConfirm />
+                <Numpad onPress={(digit) => { if (pinConfirm.length < 6) handlePinInput(digit, true); }} onBackspace={() => handlePinBackspace(true)} isConfirm />
                 <button
                   onClick={() => {
-                    if (pin === pinConfirm) {
+                    void (async () => {
+                      if (pin !== pinConfirm) {
+                        setPinError("PINs don't match, try again");
+                        setPinConfirm('');
+                        return;
+                      }
                       setPinError('');
-                      setOnboardingStep('complete');
-                    } else {
-                      setPinError("PINs don't match, try again");
-                      setPinConfirm('');
-                    }
+                      if (!USE_DRIVER_API) {
+                        setOnboardingStep('complete');
+                        return;
+                      }
+                      if (!inviteSessionToken) {
+                        setPinError('Session missing — go back to invite step.');
+                        return;
+                      }
+                      try {
+                        const tr = await driverInviteSetPin(DRIVER_API_BASE, inviteSessionToken, pin);
+                        const scoped = oauthAccessToken(tr);
+                        if (!scoped) throw new Error('Missing access token');
+                        setFoScopedToken(scoped);
+                        setInviteSessionToken(null);
+                        setPin('');
+                        setPinConfirm('');
+                        setApiBanner(null);
+                        setOnboardingStep('complete');
+                      } catch (e) {
+                        setPinError(e instanceof Error ? e.message : String(e));
+                      }
+                    })();
                   }}
-                  disabled={pinConfirm.length !== 6}
+                  disabled={USE_DRIVER_API ? pinConfirm.length < 4 || pinConfirm.length > 6 : pinConfirm.length !== 6}
                   className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6"
                 >
                   Confirm PIN
@@ -911,7 +1364,7 @@ export default function Page() {
   // Main App - Phone Frame
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
-      <div className="w-[375px] h-[812px] bg-white rounded-[40px] border-8 border-gray-800 shadow-2xl overflow-hidden flex flex-col">
+      <div className="relative w-[375px] h-[812px] bg-white rounded-[40px] border-8 border-gray-800 shadow-2xl overflow-hidden flex flex-col">
         {/* Status Bar */}
         <div className="bg-gray-900 text-white px-6 py-2 text-xs flex justify-between">
           <span>9:41</span>
@@ -920,8 +1373,17 @@ export default function Page() {
           </div>
         </div>
 
+        {USE_DRIVER_API && apiBanner && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-900 flex justify-between gap-2 items-center">
+            <span>{apiBanner}</span>
+            <button type="button" onClick={() => setApiBanner(null)} className="text-amber-800 font-semibold shrink-0">
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Session In Progress Banner */}
-        {sessionState !== 'idle' && (
+        {/* {sessionState !== 'idle' && (
           <div className="bg-blue-100 border-b border-blue-300 px-4 py-2 flex items-center gap-2 text-xs">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"/>
@@ -929,7 +1391,7 @@ export default function Page() {
             </span>
             <span className="text-blue-900 font-medium">Fueling in progress · MH 02 AB 1234</span>
           </div>
-        )}
+        )} */}
 
         {/* Content Area */}
         <div className="flex-1 overflow-hidden flex flex-col">
@@ -947,7 +1409,7 @@ export default function Page() {
                 <div className="p-6 space-y-4">
                   {/* Get assignment data */}
                   {(() => {
-                    const assignment = activeAssignment || BINDINGS[3];
+                    const assignment = activeAssignment || assignmentFallback;
 
                     return (
                       <>
@@ -1109,7 +1571,7 @@ export default function Page() {
               <div className="flex-1 flex flex-col overflow-y-auto">
                 <div className="p-6 space-y-6">
                   {(() => {
-                    const assignment = activeAssignment || BINDINGS[3];
+                    const assignment = activeAssignment || assignmentFallback;
 
                     return (
                       <>
@@ -1217,25 +1679,46 @@ export default function Page() {
                         {pairingAttempts < 3 && !pairingSuccess && (
                           <button
                             onClick={() => {
-                              const code = pairingDigits.join('');
-                              const validCode = activeAssignment?.validPairingCode || BINDINGS[3].validPairingCode;
+                              void (async () => {
+                                const code = pairingDigits.join('');
+                                if (USE_DRIVER_API && foScopedToken) {
+                                  try {
+                                    await driverAcceptPairing(DRIVER_API_BASE, foScopedToken, code);
+                                    const next = await driverGetAssignments(DRIVER_API_BASE, foScopedToken);
+                                    setApiAssignments(next);
+                                    setPairingSuccess(true);
+                                    setTimeout(() => setCurrentMainScreen('assignment_accepted'), 1500);
+                                  } catch (e) {
+                                    const newAttempts = pairingAttempts + 1;
+                                    setPairingAttempts(newAttempts);
+                                    setPairingError(e instanceof Error ? e.message : String(e));
+                                    setTimeout(() => {
+                                      setPairingDigits(Array(6).fill(''));
+                                      setPairingError('');
+                                    }, 1500);
+                                  }
+                                  return;
+                                }
+                                const validCode =
+                                  activeAssignment?.validPairingCode || assignmentFallback?.validPairingCode;
 
-                              if (code === validCode) {
-                                setPairingSuccess(true);
-                                setTimeout(() => {
-                                  setCurrentMainScreen('assignment_accepted');
-                                }, 1500);
-                              } else {
-                                const newAttempts = pairingAttempts + 1;
-                                setPairingAttempts(newAttempts);
-                                setPairingError('Incorrect code');
-                                setTimeout(() => {
-                                  setPairingDigits(Array(6).fill(''));
-                                  setPairingError('');
-                                  const inputs = document.querySelectorAll('.pairing-digit-ref') as NodeListOf<HTMLInputElement>;
-                                  inputs[0]?.focus();
-                                }, 1500);
-                              }
+                                if (code === validCode) {
+                                  setPairingSuccess(true);
+                                  setTimeout(() => {
+                                    setCurrentMainScreen('assignment_accepted');
+                                  }, 1500);
+                                } else {
+                                  const newAttempts = pairingAttempts + 1;
+                                  setPairingAttempts(newAttempts);
+                                  setPairingError('Incorrect code');
+                                  setTimeout(() => {
+                                    setPairingDigits(Array(6).fill(''));
+                                    setPairingError('');
+                                    const inputs = document.querySelectorAll('.pairing-digit-ref') as NodeListOf<HTMLInputElement>;
+                                    inputs[0]?.focus();
+                                  }, 1500);
+                                }
+                              })();
                             }}
                             disabled={pairingDigits.some(d => d === "")}
                             className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
@@ -1291,7 +1774,7 @@ export default function Page() {
           {currentMainScreen === 'assignment_accepted' && (
             <div className="flex-1 overflow-y-auto flex flex-col items-center justify-center p-6 bg-gradient-to-b from-green-50 to-white space-y-6">
               {(() => {
-                const assignment = activeAssignment || BINDINGS[3];
+                const assignment = activeAssignment || assignmentFallback;
 
                 return (
                   <>
@@ -1370,14 +1853,14 @@ export default function Page() {
           {currentMainScreen !== 'pairing_code' && currentMainScreen !== 'assignment_accepted' && currentMainScreen !== 'assignment_notification' && (
             <>
               {/* Header */}
-              <div className="bg-green-600 px-5 pt-4 pb-5">
+              <div className="bg-[#1a3020] px-5 pt-4 pb-5">
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="text-green-100 text-sm">Good morning</p>
-                    <p className="text-white font-bold text-xl mt-0.5">{DRIVER.name}</p>
+                    <p className="text-[#c8e6c9] text-sm font-normal">Good morning</p>
+                    <p className="text-white font-bold text-xl mt-0.5">{driverDisplayName}</p>
                   </div>
-                  <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                    <span className="text-white font-bold text-sm">{DRIVER.initials}</span>
+                  <div className="w-10 h-10 rounded-full bg-[#2d4a36] ring-2 ring-white/10 flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">{driverDisplayInitials}</span>
                   </div>
                 </div>
               </div>
@@ -1390,7 +1873,11 @@ export default function Page() {
               )}
 
               {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto pb-24">
+          <div
+            className={`flex-1 overflow-y-auto pb-24 ${
+              activeTab === 'card' && currentCard ? 'bg-[#eceff1]' : 'bg-white'
+            }`}
+          >
             {/* Card Tab */}
             {activeTab === 'card' && currentCard && (
               <div className="p-4 space-y-4">
@@ -1409,138 +1896,71 @@ export default function Page() {
 
                 {/* Vehicle Card Carousel */}
                 <div>
-                  {/* Carousel Container */}
-                  <div className="relative mb-4">
-                    {/* Left Chevron */}
-                    {activeCard > 0 && (
-                      <button
-                        onClick={() => setActiveCard(activeCard - 1)}
-                        className="absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-white/80 rounded-full p-2 hover:bg-white transition"
-                      >
-                        <ChevronLeft className="w-5 h-5 text-gray-900" />
-                      </button>
-                    )}
-
-                    {/* Right Chevron */}
-                    {activeCard < activeCards.length - 1 && (
-                      <button
-                        onClick={() => setActiveCard(activeCard + 1)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-white/80 rounded-full p-2 hover:bg-white transition"
-                      >
-                        <ChevronRight className="w-5 h-5 text-gray-900" />
-                      </button>
-                    )}
-
-                    {/* Card */}
-                    <div className="bg-gradient-to-br from-green-600 to-blue-600 rounded-2xl text-white overflow-hidden">
-                      <div className="p-5 px-16 h-full flex flex-col justify-between min-h-[160px]">
-                        
-                        {/* Top row */}
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="text-white/70 text-xs font-medium tracking-wide uppercase">
-                              {currentCard.fo}
-                            </p>
-                          </div>
-                          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                            <span className="text-white text-xs font-bold">MGL</span>
-                          </div>
-                        </div>
-
-                        {/* VRN — large and prominent */}
-                        <p className="text-white font-mono font-bold text-xl tracking-widest mt-3">
-                          {activeCards[activeCard]?.vrn}
+                  <div className="relative mb-1">
+                    <div className="rounded-[14px] border border-gray-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+                      <div className="flex justify-between items-start gap-3">
+                        <p className="text-xs text-gray-600 leading-snug pr-2 min-w-0 flex-1">
+                          {currentCard.fo}
                         </p>
-
-                        {/* Bottom row */}
-                        <div className="flex justify-between items-end mt-3">
-                          <div className={`px-3 py-1 rounded-full text-xs font-semibold
-                            ${currentCard.authMode === "vehicle_linked" ?
-                              "bg-white/20 text-white" :
-                              currentCard.authMode === "shift_based" ?
-                              "bg-amber-400/30 text-amber-100" :
-                              "bg-blue-400/30 text-blue-100"}`}>
-                            {currentCard.authMode === "vehicle_linked" && 
-                              "Vehicle-linked"}
-                            {currentCard.authMode === "shift_based" && 
-                              `Shift · ends ${currentCard.shiftEnd}`}
-                            {currentCard.authMode === "trip_linked" && 
-                              `Trip · ends ${currentCard.tripEnd}`}
-                          </div>
-                          <p className="text-white/80 text-xs">
-                            {currentCard.authMode === "shift_based" && 
-                              currentCard.shiftEndsIn}
-                            {currentCard.authMode === "trip_linked" && 
-                              `${currentCard.origin} → ${currentCard.destination}`}
+                        <span
+                          className={`shrink-0 rounded-md px-2.5 py-1 text-[11px] font-bold
+                            ${currentCard.authMode === 'vehicle_linked'
+                              ? 'bg-[#e8f5e9] text-[#1b5e20]'
+                              : currentCard.authMode === 'shift_based'
+                                ? 'bg-amber-100 text-amber-900'
+                                : 'bg-blue-100 text-blue-900'}`}
+                        >
+                          {currentCard.authMode === 'vehicle_linked' && 'Vehicle-linked'}
+                          {currentCard.authMode === 'shift_based' &&
+                            `Shift · ends ${currentCard.shiftEnd}`}
+                          {currentCard.authMode === 'trip_linked' &&
+                            `Trip · ends ${currentCard.tripEnd}`}
+                        </span>
+                      </div>
+                      <p className="text-gray-900 font-bold text-2xl leading-tight tracking-wide mt-4 font-mono">
+                        {activeCards[activeCard]?.vrn}
+                      </p>
+                      <div className="mt-4 border-t border-gray-100 pt-4">
+                        <p className="text-[10px] text-gray-400 font-medium tracking-[0.22em] uppercase">
+                          Vehicle balance
+                        </p>
+                        <p className="text-[1.75rem] leading-none font-bold text-gray-900 mt-2">
+                          ₹{activeCards[activeCard]?.balance?.toLocaleString('en-IN')}
+                        </p>
+                        {(activeCards[activeCard]?.incentiveBalance ?? 0) > 0 && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            Card ₹{activeCards[activeCard]?.cardBalance?.toLocaleString('en-IN')} · Incentive ₹
+                            {activeCards[activeCard]?.incentiveBalance?.toLocaleString('en-IN')}
                           </p>
-                        </div>
+                        )}
+                        <p className="text-xs text-gray-500 mt-2">
+                          Spend limit ₹{activeCards[activeCard]?.spendLimit?.toLocaleString('en-IN')} per fueling
+                        </p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Dot Indicators */}
-                  <div className="flex justify-center gap-2 mt-3">
-                    {activeCards.map((_: any, i: number) => (
+                  <div className="flex justify-center gap-2 mt-2.5">
+                    {activeCards.map((_: unknown, i: number) => (
                       <button
                         key={i}
+                        type="button"
                         onClick={() => setActiveCard(i)}
-                        className={`rounded-full transition-all duration-300
-                          ${activeCard === i ? 
-                            "w-6 h-2 bg-green-600" : 
-                            "w-2 h-2 bg-gray-300"}`}
+                        className={`rounded-full transition-all duration-300 ${
+                          activeCard === i ? 'w-7 h-2 bg-[#43a047]' : 'w-2 h-2 bg-gray-300'
+                        }`}
                       />
                     ))}
                   </div>
                 </div>
 
-                {/* Balance Section */}
-                <div className="px-4 py-4 border-b border-gray-100">
-                  <p className="text-xs text-gray-400 font-medium tracking-widest uppercase text-center">
-                    Vehicle Balance
-                  </p>
-                  <p className="text-4xl font-bold text-center mt-1">
-                    ₹{activeCards[activeCard]?.balance?.toLocaleString("en-IN")}
-                  </p>
-                  {(activeCards[activeCard]?.incentiveBalance > 0) && (
-                    <p className="text-xs text-gray-400 text-center mt-1">
-                      Card ₹{activeCards[activeCard]?.cardBalance?.toLocaleString("en-IN")} · Incentive ₹{activeCards[activeCard]?.incentiveBalance?.toLocaleString("en-IN")}
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-400 text-center mt-0.5">
-                    Spend limit ₹{activeCards[activeCard]?.spendLimit?.toLocaleString("en-IN")} per fueling
-                  </p>
-                </div>
-
-                <div className={`mx-4 mt-3 px-4 py-2.5 rounded-xl flex items-center gap-2
-                  ${activeCards[activeCard]?.scanPayStatus === "always_available" || 
-                   activeCards[activeCard]?.scanPayStatus === "in_window" ?
-                    "bg-green-50 border border-green-200" :
-                    "bg-amber-50 border border-amber-200"}`}>
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0
-                    ${activeCards[activeCard]?.scanPayStatus === "always_available" || 
-                     activeCards[activeCard]?.scanPayStatus === "in_window" ?
-                      "bg-green-500" : "bg-amber-500"}`} />
-                  <span className={`text-xs font-medium
-                    ${activeCards[activeCard]?.scanPayStatus === "always_available" || 
-                     activeCards[activeCard]?.scanPayStatus === "in_window" ?
-                      "text-green-700" : "text-amber-700"}`}>
-                    {activeCards[activeCard]?.scanPayStatus === "always_available" && 
-                      "Scan & Pay always available"}
-                    {activeCards[activeCard]?.scanPayStatus === "in_window" && 
-                      activeCards[activeCard]?.authMode === "shift_based" &&
-                      `Scan & Pay active · ends ${activeCards[activeCard]?.shiftEnd}`}
-                    {activeCards[activeCard]?.scanPayStatus === "in_window" && 
-                      activeCards[activeCard]?.authMode === "trip_linked" &&
-                      `Scan & Pay active · ends ${activeCards[activeCard]?.tripEnd}`}
-                  </span>
-                </div>
-
                 {/* Action Buttons */}
-                <div className="px-4 mt-3">
+                <div className="mt-4">
                   <button
                     onClick={() => setActiveTab('scan')}
-                    disabled={activeCards[activeCard]?.scanPayStatus === "out_window"}
-                    className="w-full bg-green-600 disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 transition-colors">
+                    disabled={activeCards[activeCard]?.scanPayStatus === 'out_window'}
+                    className="w-full bg-[#43a047] hover:bg-[#388e3c] disabled:bg-gray-200 disabled:text-gray-400 text-white font-semibold py-3.5 rounded-2xl text-[15px] flex items-center justify-center gap-2.5 transition-colors shadow-sm"
+                  >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                       <rect x="3" y="3" width="7" height="7"/>
                       <rect x="14" y="3" width="7" height="7"/>
@@ -1552,23 +1972,103 @@ export default function Page() {
                 </div>
 
                 {/* Recent Transactions */}
-                <div className="flex justify-between items-center px-4 pt-4 pb-2">
-                  <p className="font-semibold text-base">Recent</p>
-                  <button onClick={() => setActiveTab('transactions')} className="text-sm text-green-600 font-medium">View all</button>
+                <div className="flex justify-between items-center pt-4 pb-2">
+                  <p className="font-semibold text-base text-gray-900">Recent</p>
+                  <button type="button" onClick={() => setActiveTab('transactions')} className="text-sm text-[#2e7d32] font-semibold">
+                    View all
+                  </button>
                 </div>
-                <div className="px-4">
-                  <div className="space-y-2">
-                    {mockTransactions.slice(0, 3).map((txn) => (
-                      <div key={txn.id} className="bg-white border border-gray-200 rounded-xl p-3 flex justify-between items-center">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{txn.station}</p>
-                          {txn.type === 'Fueling' && <p className="text-xs text-gray-600">{currentCard.vrn}</p>}
-                          <p className="text-xs text-gray-600">{txn.date}</p>
-                        </div>
-                        <p className="text-sm font-bold text-red-600">-₹{txn.amount}</p>
+                <div className="pb-2 space-y-3">
+                    {(USE_DRIVER_API ? apiTxns.length === 0 : mockTransactions.length === 0) ? (
+                      <div className="rounded-xl border border-gray-100 bg-white px-3.5 py-8 text-center shadow-[0_2px_12px_rgba(0,0,0,0.05)]">
+                        <p className="text-sm text-gray-500">No transaction found</p>
                       </div>
-                    ))}
-                  </div>
+                    ) : USE_DRIVER_API
+                      ? apiTxns.slice(0, 3).map((txn) => {
+                          const isCredit = /credit|top-up|top up|wallet|neft/i.test(txn.status);
+                          let dayLine = txn.createdOn;
+                          let timeFromCreated = '';
+                          if (txn.createdOn.includes('T')) {
+                            const [d, t] = txn.createdOn.split('T');
+                            dayLine = d ?? txn.createdOn;
+                            timeFromCreated = t?.slice(0, 5) ?? '';
+                          } else {
+                            const m = /\d{1,2}:\d{2}/.exec(txn.createdOn);
+                            timeFromCreated = m?.[0] ?? '';
+                            dayLine =
+                              txn.createdOn.split(/\d{1,2}:\d{2}/)[0]?.replace(/[,\s]+$/u, '').trim() ??
+                              txn.createdOn;
+                          }
+                          return (
+                            <div
+                              key={txn.serverTxnId}
+                              className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-3.5 py-3 shadow-[0_2px_12px_rgba(0,0,0,0.05)]"
+                            >
+                              <div
+                                className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                                  isCredit ? 'bg-green-50' : 'bg-red-50'
+                                }`}
+                              >
+                                {isCredit ? (
+                                  <ArrowUp className="w-5 h-5 text-green-700" strokeWidth={2.5} />
+                                ) : (
+                                  <ArrowDown className="w-5 h-5 text-red-600" strokeWidth={2.5} />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-gray-900 truncate">{txn.status}</p>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {txn.vehicleRegNo} · {dayLine || txn.createdOn}
+                                </p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p
+                                  className={`text-sm font-bold tabular-nums ${isCredit ? 'text-green-600' : 'text-gray-900'}`}
+                                >
+                                  {isCredit ? '+' : '-'}₹{txn.amountINR.toLocaleString('en-IN')}
+                                </p>
+                                {timeFromCreated ? (
+                                  <p className="text-xs text-gray-400 mt-0.5">{timeFromCreated}</p>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })
+                      : mockTransactions.slice(0, 3).map((txn) => {
+                          const isCredit = txn.type === 'Credit';
+                          return (
+                            <div
+                              key={txn.id}
+                              className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-3.5 py-3 shadow-[0_2px_12px_rgba(0,0,0,0.05)]"
+                            >
+                              <div
+                                className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                                  isCredit ? 'bg-green-50' : 'bg-red-50'
+                                }`}
+                              >
+                                {isCredit ? (
+                                  <ArrowUp className="w-5 h-5 text-green-700" strokeWidth={2.5} />
+                                ) : (
+                                  <ArrowDown className="w-5 h-5 text-red-600" strokeWidth={2.5} />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-gray-900 truncate">{txn.station}</p>
+                                <p className="text-xs text-gray-500 truncate">
+                                  {txn.vrn} · {txn.dayLabel}
+                                </p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p
+                                  className={`text-sm font-bold tabular-nums ${isCredit ? 'text-green-600' : 'text-gray-900'}`}
+                                >
+                                  {isCredit ? '+' : '-'}₹{txn.amount.toLocaleString('en-IN')}
+                                </p>
+                                <p className="text-xs text-gray-400 mt-0.5">{txn.timeLabel}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
                 </div>
               </div>
             )}
@@ -1577,7 +2077,7 @@ export default function Page() {
             {activeTab === 'scan' && (
               <div className="p-4 space-y-4 pb-24">
                 {(() => {
-                  const availableForScan = BINDINGS.filter(b => 
+                  const availableForScan = screenBindings.filter((b) => 
                     b.paired === true && 
                     b.state === "ACTIVE" &&
                     (b.scanPayStatus === "always_available" || 
@@ -1585,7 +2085,7 @@ export default function Page() {
                      b.scanPayStatus === "trip_window")
                   );
 
-                  const lockedBindings = BINDINGS.filter(b =>
+                  const lockedBindings = screenBindings.filter((b) =>
                     b.scanPayStatus === "locked_unpaired" ||
                     b.scanPayStatus === "locked_repair" ||
                     b.scanPayStatus === "out_window"
@@ -1674,6 +2174,7 @@ export default function Page() {
 
                       <button 
                         onClick={() => {
+                          setQrTxnId(`QR-${Date.now()}`);
                           setActiveScanBinding(selectedScanBinding);
                           setSessionState('confirmation');
                         }} 
@@ -1732,7 +2233,43 @@ export default function Page() {
                       <Numpad onPress={handleSessionPinInput} onBackspace={handleSessionPinBackspace} />
                     </div>
 
-                    <button onClick={() => { if (sessionPin === pin) setSessionState('otp_entry'); else { setSessionPin(''); } }} disabled={sessionPin.length !== 6} className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition">
+                    <button
+                      onClick={() => {
+                        void (async () => {
+                          if (USE_DRIVER_API && foScopedToken && activeScanBinding) {
+                            if (sessionPin.length < 4 || sessionPin.length > 6) return;
+                            try {
+                              setApiBanner(null);
+                              await driverQrPay(DRIVER_API_BASE, foScopedToken, {
+                                txnId: qrTxnId,
+                                vehicleRegNo: activeScanBinding.vrn.replace(/\s+/g, ''),
+                                pin: sessionPin,
+                              });
+                              setSessionPin('');
+                              setSessionState('complete');
+                              const [home, tx] = await Promise.all([
+                                driverGetHome(DRIVER_API_BASE, foScopedToken),
+                                driverGetTransactions(DRIVER_API_BASE, foScopedToken, 0),
+                              ]);
+                              setApiHome(home);
+                              setApiTxns(tx);
+                            } catch (e) {
+                              setApiBanner(e instanceof Error ? e.message : String(e));
+                            }
+                            return;
+                          }
+                          if (sessionPin.length !== 6) return;
+                          if (sessionPin === pin) setSessionState('otp_entry');
+                          else setSessionPin('');
+                        })();
+                      }}
+                      disabled={
+                        USE_DRIVER_API
+                          ? sessionPin.length < 4 || sessionPin.length > 6
+                          : sessionPin.length !== 6
+                      }
+                      className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                    >
                       Verify PIN
                     </button>
                   </>
@@ -1909,7 +2446,8 @@ export default function Page() {
 
                               {/* Details button */}
                               <button
-                                onClick={() => {}}
+                                type="button"
+                                onClick={() => setAssignmentDetailBinding(binding)}
                                 className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round">
                                   <circle cx="12" cy="12" r="10"/>
@@ -2116,40 +2654,6 @@ export default function Page() {
                   </div>
                 )}
 
-                {/* SECTION 3: Past Assignments */}
-                {(activeBindings.length > 0 || pendingBindings.length > 0 || repairBindings.length > 0) && (
-                  <div className="space-y-3 pt-2">
-                    <button
-                      onClick={() => setExpandPastAssignments(!expandPastAssignments)}
-                      className="w-full text-left text-xs uppercase font-semibold text-gray-600 hover:text-gray-900 transition flex items-center justify-between py-2"
-                    >
-                      <span>Show past assignments</span>
-                      <ChevronDown className={`w-4 h-4 transition ${expandPastAssignments ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {expandPastAssignments && (
-                      <div className="space-y-2">
-                        <div className="border border-gray-200 bg-gray-50 rounded-xl p-3 space-y-2">
-                          <div className="flex justify-between items-start">
-                            <p className="font-mono font-semibold text-gray-700">MH 10 MN 1111</p>
-                            <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-full">Expired</span>
-                          </div>
-                          <p className="text-xs text-gray-600">Trip-linked · ABC Logistics</p>
-                          <p className="text-xs text-gray-600">Ended 10 Apr 2026</p>
-                        </div>
-                        <div className="border border-gray-200 bg-gray-50 rounded-xl p-3 space-y-2">
-                          <div className="flex justify-between items-start">
-                            <p className="font-mono font-semibold text-gray-700">MH 12 PQ 2222</p>
-                            <span className="px-2 py-1 bg-gray-200 text-gray-700 text-xs font-semibold rounded-full">Revoked</span>
-                          </div>
-                          <p className="text-xs text-gray-600">Vehicle-linked · Quick Movers</p>
-                          <p className="text-xs text-gray-600">Revoked 01 Mar 2026</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Empty State */}
                 {activeBindings.length === 0 && pendingBindings.length === 0 && repairBindings.length === 0 && (
                   <div className="text-center py-12">
@@ -2269,23 +2773,44 @@ export default function Page() {
                   ))}
                 </div>
                 <div className="p-4 space-y-2">
-                  {mockTransactions.filter(t => {
-                    if (txnFilter === 'all') return true;
-                    if (txnFilter === 'successful') return t.status === 'Success';
-                    if (txnFilter === 'failed') return t.status === 'Failed';
-                    return true;
-                  }).map((txn) => (
-                    <div key={txn.id} className="bg-white border border-gray-200 rounded-xl p-3">
-                      <div className="flex justify-between items-start mb-1">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{txn.station}</p>
-                          <p className="text-xs text-gray-600">{txn.vrn}</p>
+                  {(USE_DRIVER_API
+                    ? apiTxns.filter((t) => {
+                        if (txnFilter === 'all') return true;
+                        if (txnFilter === 'successful') return t.status === 'SUCCESS';
+                        if (txnFilter === 'failed') return t.status !== 'SUCCESS';
+                        return true;
+                      })
+                    : mockTransactions.filter((t) => {
+                        if (txnFilter === 'all') return true;
+                        if (txnFilter === 'successful') return t.status === 'Success';
+                        if (txnFilter === 'failed') return t.status === 'Failed';
+                        return true;
+                      })
+                  ).map((txn) =>
+                    USE_DRIVER_API ? (
+                      <div key={(txn as DriverTxnRow).serverTxnId} className="bg-white border border-gray-200 rounded-xl p-3">
+                        <div className="flex justify-between items-start mb-1">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{(txn as DriverTxnRow).serverTxnId}</p>
+                            <p className="text-xs text-gray-600">{(txn as DriverTxnRow).vehicleRegNo}</p>
+                          </div>
+                          <p className="text-sm font-bold text-red-600">₹{(txn as DriverTxnRow).amountINR}</p>
                         </div>
-                        <p className={`text-sm font-bold ${txn.type === 'Fueling' ? 'text-red-600' : 'text-green-600'}`}>{txn.type === 'Fueling' ? '-' : '+'}₹{txn.amount}</p>
+                        <p className="text-xs text-gray-600">{(txn as DriverTxnRow).createdOn}</p>
                       </div>
-                      <p className="text-xs text-gray-600">{txn.date}</p>
-                    </div>
-                  ))}
+                    ) : (
+                      <div key={(txn as (typeof mockTransactions)[0]).id} className="bg-white border border-gray-200 rounded-xl p-3">
+                        <div className="flex justify-between items-start mb-1">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900">{(txn as (typeof mockTransactions)[0]).station}</p>
+                            <p className="text-xs text-gray-600">{(txn as (typeof mockTransactions)[0]).vrn}</p>
+                          </div>
+                          <p className={`text-sm font-bold ${(txn as (typeof mockTransactions)[0]).type === 'Fueling' ? 'text-red-600' : 'text-green-600'}`}>{(txn as (typeof mockTransactions)[0]).type === 'Fueling' ? '-' : '+'}₹{(txn as (typeof mockTransactions)[0]).amount}</p>
+                        </div>
+                        <p className="text-xs text-gray-600">{(txn as (typeof mockTransactions)[0]).date}</p>
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
             )}
@@ -2295,10 +2820,16 @@ export default function Page() {
               <div className="p-4 pb-8">
                 <div className="text-center mb-6">
                   <div className="w-16 h-16 bg-green-200 rounded-full flex items-center justify-center mx-auto mb-2">
-                    <span className="text-2xl font-bold text-green-700">S</span>
+                    <span className="text-2xl font-bold text-green-700">
+                      {driverDisplayName.trim().charAt(0).toUpperCase() || '?'}
+                    </span>
                   </div>
-                  <h2 className="font-bold text-gray-900">Suresh Kumar</h2>
-                  <p className="text-xs text-gray-600">Driver · ABC Logistics</p>
+                  <h2 className="font-bold text-gray-900">{driverDisplayName}</h2>
+                  <p className="text-xs text-gray-600">
+                    {USE_DRIVER_API && apiProfileState
+                      ? `Driver · FO ${apiProfileState.foStatus ?? ''}`
+                      : 'Driver · ABC Logistics'}
+                  </p>
                 </div>
 
                 <div className="space-y-4">
@@ -2307,31 +2838,48 @@ export default function Page() {
                     <div className="divide-y divide-gray-200">
                       <div className="px-4 py-3 flex justify-between text-sm">
                         <span className="text-gray-600">Mobile</span>
-                        <span className="font-medium">+91 {mobileNumber}</span>
+                        <span className="font-medium">
+                          {USE_DRIVER_API && apiProfileState ? apiProfileState.maskedMobile : `+91 ${mobileNumber}`}
+                        </span>
                       </div>
                       <div className="px-4 py-3 flex justify-between text-sm">
                         <span className="text-gray-600">Driver ID</span>
-                        <span className="font-medium">DRV-00123</span>
+                        <span className="font-medium">
+                          {USE_DRIVER_API && apiProfileState ? apiProfileState.driverId : 'DRV-00123'}
+                        </span>
                       </div>
                       <div className="px-4 py-3 flex justify-between text-sm">
-                        <span className="text-gray-600">Registered</span>
-                        <span className="font-medium">12 Jan 2025</span>
+                        <span className="text-gray-600">DL</span>
+                        <span className="font-medium">
+                          {USE_DRIVER_API && apiProfileState?.dlNumber ? apiProfileState.dlNumber : '—'}
+                        </span>
                       </div>
                     </div>
                   </div>
 
                   <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                     <h3 className="px-4 py-3 font-semibold text-gray-900 border-b border-gray-200">My Vehicles</h3>
-                    {pairedVehicles.map((vehicle, idx) => (
-                      <div key={idx} className="px-4 py-3 border-b border-gray-200 last:border-0">
-                        <p className="font-medium text-gray-900 text-sm">{vehicle.vrn}</p>
-                        <p className="text-xs text-gray-600 mt-1">{vehicle.company}</p>
-                        <div className="flex gap-2 items-center mt-2">
-                          <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">{vehicle.authMode}</span>
-                          <span className="w-2 h-2 bg-green-600 rounded-full" />
-                        </div>
-                      </div>
-                    ))}
+                    {USE_DRIVER_API
+                      ? apiAssignments.map((a) => (
+                          <div key={a.vehicleDriverId} className="px-4 py-3 border-b border-gray-200 last:border-0">
+                            <p className="font-medium text-gray-900 text-sm">{a.vehicleRegNo}</p>
+                            <p className="text-xs text-gray-600 mt-1">{a.assignmentType}</p>
+                            <div className="flex gap-2 items-center mt-2">
+                              <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">{a.status}</span>
+                              <span className="w-2 h-2 bg-green-600 rounded-full" />
+                            </div>
+                          </div>
+                        ))
+                      : pairedVehicles.map((vehicle, idx) => (
+                          <div key={idx} className="px-4 py-3 border-b border-gray-200 last:border-0">
+                            <p className="font-medium text-gray-900 text-sm">{vehicle.vrn}</p>
+                            <p className="text-xs text-gray-600 mt-1">{vehicle.company}</p>
+                            <div className="flex gap-2 items-center mt-2">
+                              <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">{vehicle.authMode}</span>
+                              <span className="w-2 h-2 bg-green-600 rounded-full" />
+                            </div>
+                          </div>
+                        ))}
                   </div>
 
                   <button onClick={handleLogout} className="w-full border-2 border-red-300 text-red-600 font-medium py-3 rounded-2xl hover:bg-red-50 transition">
@@ -2355,6 +2903,73 @@ export default function Page() {
             ))}
           </div>
         </div>
+
+        {/* Assignment sheet: sibling of scroll area — fills 375px phone frame only */}
+        {assignmentDetailBinding && (
+          <div
+            className="pointer-events-auto absolute inset-x-0 top-0 bottom-20 z-[80] flex min-h-0 w-full flex-col justify-end bg-black/50 overflow-hidden"
+            role="presentation"
+            onClick={() => setAssignmentDetailBinding(null)}
+          >
+            <div
+              role="dialog"
+              aria-labelledby="assignment-detail-vrn"
+              className="w-full min-h-0 min-w-0 max-h-[82%] overflow-x-hidden overflow-y-auto rounded-t-2xl bg-white shadow-[0_-8px_32px_rgba(0,0,0,0.14)] box-border animate-in slide-in-from-bottom duration-200"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex min-w-0 justify-between items-center gap-3 border-b border-gray-100 px-4 pt-4 pb-3 sm:px-5 sm:pt-5 sm:pb-4">
+                <p
+                  id="assignment-detail-vrn"
+                  className="min-w-0 flex-1 break-all font-mono text-base font-bold tracking-wide text-gray-900"
+                >
+                  {assignmentDetailBinding.vrn}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setAssignmentDetailBinding(null)}
+                  className="shrink-0 rounded-lg p-1 text-gray-500 hover:text-gray-700"
+                  aria-label="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="min-w-0 divide-y divide-gray-100 px-4 pb-6 pt-1 sm:px-5 sm:pb-8">
+                <div className="flex min-w-0 items-center justify-between gap-3 py-3.5 text-sm">
+                  <span className="shrink-0 text-gray-600">Auth Mode</span>
+                  <span className="min-w-0 break-words text-right font-bold text-gray-900">
+                    {assignmentDetailBinding.authMode === 'vehicle_linked'
+                      ? 'Vehicle-linked'
+                      : assignmentDetailBinding.authMode === 'shift_based'
+                        ? 'Shift-based'
+                        : 'Trip-linked'}
+                  </span>
+                </div>
+                <div className="flex min-w-0 items-center justify-between gap-3 py-3.5 text-sm">
+                  <span className="shrink-0 text-gray-600">Balance</span>
+                  <span className="shrink-0 text-right font-bold tabular-nums text-gray-900">
+                    ₹
+                    {(assignmentDetailBinding.balance ??
+                      assignmentDetailBinding.cardBalance ??
+                      0
+                    ).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="flex min-w-0 items-center justify-between gap-3 py-3.5 text-sm">
+                  <span className="shrink-0 text-gray-600">Spend Limit</span>
+                  <span className="shrink-0 whitespace-nowrap text-right font-bold tabular-nums text-gray-900">
+                    ₹{(assignmentDetailBinding.spendLimit ?? 0).toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="flex min-w-0 items-start justify-between gap-3 py-3.5 text-sm">
+                  <span className="shrink-0 pt-0.5 text-gray-600">Fleet Operator</span>
+                  <span className="min-w-0 flex-1 break-words text-right font-bold text-gray-900">
+                    {assignmentDetailBinding.fo?.trim() ? assignmentDetailBinding.fo : '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Dev Menu Trigger */}

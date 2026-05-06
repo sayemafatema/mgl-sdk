@@ -420,9 +420,9 @@ class FleetAppEngine extends ChangeNotifier {
     if (step == 'login_otp') {
       _emit(_s.copy(authStep: 'login'));
     } else if (step == 'invite_code') {
-      _emit(_s.copy(authStep: 'login'));
+      _emit(_s.copy(authStep: 'invite_otp'));
     } else if (step == 'invite_mobile') {
-      _emit(_s.copy(authStep: 'invite_code'));
+      _emit(_s.copy(authStep: 'login'));
     } else if (step == 'invite_otp') {
       _emit(_s.copy(authStep: 'invite_mobile'));
     } else if (step == 'forgot_otp') {
@@ -433,7 +433,12 @@ class FleetAppEngine extends ChangeNotifier {
   }
 
   void goInviteSignup() {
-    _emit(_s.copy(authStep: 'invite_code', inviteCode: ''));
+    _emit(_s.copy(
+      authStep: 'invite_mobile',
+      mobileNumber: '',
+      inviteOtp: '',
+      inviteCode: '',
+    ));
   }
 
   void setInviteCode(String raw) {
@@ -446,7 +451,12 @@ class FleetAppEngine extends ChangeNotifier {
   void inviteContinue() {
     final code = _s.inviteCode;
     if (code.length != 6 || mockInviteCompanies[code] == null) return;
-    _emit(_s.copy(authStep: 'invite_mobile', mobileNumber: ''));
+    _emit(_s.copy(
+      authStep: 'invite_pin',
+      invitePin: '',
+      invitePinConfirm: '',
+      pinError: '',
+    ));
   }
 
   void inviteSendOtp() {
@@ -475,10 +485,8 @@ class FleetAppEngine extends ChangeNotifier {
   void verifyInviteOtp() {
     if (_s.inviteOtp != _demoOtp) return;
     _emit(_s.copy(
-      authStep: 'invite_pin',
-      invitePin: '',
-      invitePinConfirm: '',
-      pinError: '',
+      authStep: 'invite_code',
+      inviteCode: '',
     ));
   }
 

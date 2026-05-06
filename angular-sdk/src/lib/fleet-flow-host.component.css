@@ -387,57 +387,120 @@ h3 {
   position: relative;
 }
 
+.carousel-card-wrap {
+  position: relative;
+}
+
 .car-btn {
   position: absolute;
-  top: 40%;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 2;
   border: none;
   border-radius: 999px;
   width: 36px;
   height: 36px;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.95);
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .car-btn.l {
-  left: 8px;
+  left: 4px;
 }
 
 .car-btn.r {
-  right: 8px;
+  right: 4px;
 }
 
-.fuel-card {
-  background: linear-gradient(135deg, #059669, #2563eb);
-  color: #fff;
-  border-radius: 16px;
-  padding: 1.25rem 2.5rem;
-  min-height: 140px;
+.wallet-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 1.25rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
 }
 
-.fc-fo {
-  font-size: 0.75rem;
-  opacity: 0.85;
+.wallet-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.wallet-fo {
   margin: 0;
-}
-
-.fc-vrn {
-  font-family: ui-monospace, monospace;
-  font-size: 1.25rem;
-  font-weight: 700;
-  margin: 0.75rem 0 0;
-}
-
-.fc-meta {
   font-size: 0.75rem;
-  opacity: 0.9;
-  margin-top: 0.5rem;
+  line-height: 1.35;
+  color: #4b5563;
+  flex: 1;
+  min-width: 0;
+}
+
+.wallet-badge {
+  flex-shrink: 0;
+  border-radius: 6px;
+  padding: 0.25rem 0.625rem;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wallet-badge.wl {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.wallet-badge.ws {
+  background: #fef3c7;
+  color: #78350f;
+}
+
+.wallet-badge.wt {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.wallet-vrn {
+  margin: 1rem 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #111827;
+}
+
+.wallet-balance-block {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #f3f4f6;
+}
+
+.wallet-lbl {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: #9ca3af;
+  text-transform: uppercase;
+}
+
+.wallet-bal {
+  margin: 0.5rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #111827;
+}
+
+.wallet-limit {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: #6b7280;
 }
 
 .dots {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
   margin-top: 10px;
 }
@@ -452,28 +515,9 @@ h3 {
 }
 
 .dot-btn.on {
-  width: 22px;
-  border-radius: 6px;
-  background: #059669;
-}
-
-.balance-block {
-  text-align: center;
-  padding: 16px 0;
-  border-bottom: 1px solid #f1f5f9;
-}
-
-.lbl-sm {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-  text-transform: uppercase;
-}
-
-.bal {
-  font-size: 2rem;
-  font-weight: 700;
-  margin: 4px 0;
+  width: 28px;
+  border-radius: 999px;
+  background: #43a047;
 }
 
 .section-h {

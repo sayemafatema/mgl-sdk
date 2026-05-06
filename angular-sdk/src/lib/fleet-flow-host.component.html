@@ -112,17 +112,6 @@
         </div>
       </ng-container>
 
-      <!-- Invite code -->
-      <ng-container *ngIf="s.authStep === 'invite_code'">
-        <button type="button" class="link-back" (click)="authBack()">← Back</button>
-        <h2>Invite code</h2>
-        <input class="inp center track" maxlength="6" [value]="s.inviteCode" (input)="onInviteInput($event)" placeholder="ABC123" />
-        <div class="ok-banner" *ngIf="s.inviteCode.length === 6 && inviteLookup[s.inviteCode]">
-          ✓ {{ inviteLookup[s.inviteCode] }}
-        </div>
-        <button type="button" class="btn primary full" [disabled]="s.inviteCode.length !== 6 || !inviteLookup[s.inviteCode]" (click)="inviteNext()">Continue</button>
-      </ng-container>
-
       <!-- Invite mobile -->
       <ng-container *ngIf="s.authStep === 'invite_mobile'">
         <button type="button" class="link-back" (click)="authBack()">← Back</button>
@@ -142,6 +131,17 @@
           <input *ngFor="let i of otpSlots()" class="otp-cell" maxlength="1" inputmode="numeric" (input)="invOtpDigit(i, $event)" />
         </div>
         <p class="muted fine-print">Auto-advances on <strong>123456</strong></p>
+      </ng-container>
+
+      <!-- Invite code -->
+      <ng-container *ngIf="s.authStep === 'invite_code'">
+        <button type="button" class="link-back" (click)="authBack()">← Back</button>
+        <h2>Invite code</h2>
+        <input class="inp center track" maxlength="6" [value]="s.inviteCode" (input)="onInviteInput($event)" placeholder="ABC123" />
+        <div class="ok-banner" *ngIf="s.inviteCode.length === 6 && inviteLookup[s.inviteCode]">
+          ✓ {{ inviteLookup[s.inviteCode] }}
+        </div>
+        <button type="button" class="btn primary full" [disabled]="s.inviteCode.length !== 6 || !inviteLookup[s.inviteCode]" (click)="inviteNext()">Continue</button>
       </ng-container>
 
       <!-- Invite PIN -->
@@ -233,20 +233,26 @@
             <button type="button" class="link-inline" (click)="tab('assignments')">View</button>
           </div>
           <div class="carousel" *ngIf="card() as c">
-            <button type="button" class="car-btn l" *ngIf="s.activeCardIndex > 0" (click)="prevCard()">‹</button>
-            <button type="button" class="car-btn r" *ngIf="s.activeCardIndex < cards().length - 1" (click)="nextCard()">›</button>
-            <div class="fuel-card">
-              <p class="fc-fo">{{ c.fo }}</p>
-              <p class="fc-vrn">{{ c.vrn }}</p>
-              <p class="fc-meta">{{ c.authMode }}</p>
+            <div class="carousel-card-wrap">
+              <button type="button" class="car-btn l" *ngIf="s.activeCardIndex > 0" (click)="prevCard()">‹</button>
+              <button type="button" class="car-btn r" *ngIf="s.activeCardIndex < cards().length - 1" (click)="nextCard()">›</button>
+              <div class="wallet-card">
+                <div class="wallet-card-header">
+                  <p class="wallet-fo">{{ c.fo }}</p>
+                  <span class="wallet-badge wl" *ngIf="c.authMode === 'vehicle_linked'">Vehicle-linked</span>
+                  <span class="wallet-badge ws" *ngIf="c.authMode === 'shift_based'">Shift · ends {{ c.shiftEnd }}</span>
+                  <span class="wallet-badge wt" *ngIf="c.authMode === 'trip_linked'">Trip · ends {{ c.tripEnd }}</span>
+                </div>
+                <p class="wallet-vrn">{{ c.vrn }}</p>
+                <div class="wallet-balance-block">
+                  <p class="wallet-lbl">Vehicle balance</p>
+                  <p class="wallet-bal">₹{{ c.balance?.toLocaleString('en-IN') }}</p>
+                  <p class="wallet-limit">Spend limit ₹{{ c.spendLimit?.toLocaleString('en-IN') }} per fueling</p>
+                </div>
+              </div>
             </div>
             <div class="dots">
               <button type="button" *ngFor="let _ of cards(); let i = index" class="dot-btn" [class.on]="i === s.activeCardIndex" (click)="dotCard(i)"></button>
-            </div>
-            <div class="balance-block">
-              <p class="lbl-sm">Vehicle balance</p>
-              <p class="bal">₹{{ c.balance?.toLocaleString('en-IN') }}</p>
-              <p class="fine-print">Spend limit ₹{{ c.spendLimit?.toLocaleString('en-IN') }}</p>
             </div>
             <button type="button" class="btn primary full" (click)="tab('scan')">Scan & Pay</button>
             <p class="section-h">Recent</p>

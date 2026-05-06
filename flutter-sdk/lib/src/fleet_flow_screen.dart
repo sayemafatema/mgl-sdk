@@ -180,12 +180,12 @@ class _AuthPane extends StatelessWidget {
         return _confirmPin(context);
       case 'registered':
         return _registered(context);
-      case 'invite_code':
-        return _inviteCode(context);
       case 'invite_mobile':
         return _inviteMobile(context);
       case 'invite_otp':
         return _inviteOtp(context);
+      case 'invite_code':
+        return _inviteCode(context);
       case 'invite_pin':
         return _invitePin(context);
       case 'invite_confirm_pin':
@@ -829,6 +829,38 @@ class _MainPane extends StatelessWidget {
     }
   }
 
+  Widget _walletAuthBadge(FleetBinding c) {
+    late Color bg;
+    late Color fg;
+    late String label;
+    switch (c.authMode) {
+      case 'vehicle_linked':
+        bg = const Color(0xffe8f5e9);
+        fg = const Color(0xff1b5e20);
+        label = 'Vehicle-linked';
+        break;
+      case 'shift_based':
+        bg = const Color(0xfffef3c7);
+        fg = const Color(0xff78350f);
+        label = 'Shift · ends ${c.shiftEnd ?? ''}';
+        break;
+      case 'trip_linked':
+        bg = const Color(0xffdbeafe);
+        fg = const Color(0xff1e3a8a);
+        label = 'Trip · ends ${c.tripEnd ?? ''}';
+        break;
+      default:
+        bg = const Color(0xfff3f4f6);
+        fg = const Color(0xff374151);
+        label = c.authMode;
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
+      child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg)),
+    );
+  }
+
   Widget _tabCard(BuildContext context) {
     final c = engine.currentCard();
     final pending = engine.pendingAssignmentCount();
@@ -847,28 +879,110 @@ class _MainPane extends StatelessWidget {
           ),
         if (c != null) ...[
           Stack(
+            clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 24),
-                padding: const EdgeInsets.all(24),
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: const LinearGradient(colors: [Color(0xff059669), Color(0xff2563eb)]),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xffe5e7eb)),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x0a000000), blurRadius: 12, offset: Offset(0, 2)),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(c.fo, style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12)),
-                    Text(c.vrn, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                    Text(c.authMode, style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 12)),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            c.fo,
+                            style: TextStyle(fontSize: 12, height: 1.35, color: Colors.grey[600]),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _walletAuthBadge(c),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      c.vrn,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                        color: Color(0xff111827),
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(top: 16),
+                      padding: const EdgeInsets.only(top: 16),
+                      decoration: const BoxDecoration(
+                        border: Border(top: BorderSide(color: Color(0xfff3f4f6))),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'VEHICLE BALANCE',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 2.2,
+                              color: Colors.grey[400],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '₹${c.balance}',
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w700,
+                              height: 1,
+                              color: Color(0xff111827),
+                            ),
+                          ),
+                          if ((c.incentiveBalance ?? 0) > 0) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              'Card ₹${c.cardBalance} · Incentive ₹${c.incentiveBalance}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          Text(
+                            'Spend limit ₹${c.spendLimit} per fueling',
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
               if (s.activeCardIndex > 0)
-                Positioned(left: 0, child: IconButton(onPressed: () => engine.setActiveCardIndex(s.activeCardIndex - 1), icon: const Icon(Icons.chevron_left))),
+                Positioned(
+                  left: 0,
+                  child: IconButton(
+                    onPressed: () => engine.setActiveCardIndex(s.activeCardIndex - 1),
+                    icon: const Icon(Icons.chevron_left),
+                  ),
+                ),
               if (s.activeCardIndex < cards.length - 1)
-                Positioned(right: 0, child: IconButton(onPressed: () => engine.setActiveCardIndex(s.activeCardIndex + 1), icon: const Icon(Icons.chevron_right))),
+                Positioned(
+                  right: 0,
+                  child: IconButton(
+                    onPressed: () => engine.setActiveCardIndex(s.activeCardIndex + 1),
+                    icon: const Icon(Icons.chevron_right),
+                  ),
+                ),
             ],
           ),
           Row(
@@ -878,21 +992,17 @@ class _MainPane extends StatelessWidget {
                 onTap: () => engine.setActiveCardIndex(i),
                 child: Container(
                   margin: const EdgeInsets.all(4),
-                  width: i == s.activeCardIndex ? 22 : 8,
+                  width: i == s.activeCardIndex ? 28 : 8,
                   height: 8,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(6),
-                    color: i == s.activeCardIndex ? const Color(0xff059669) : const Color(0xffd1d5db),
+                    borderRadius: BorderRadius.circular(999),
+                    color: i == s.activeCardIndex ? const Color(0xff43a047) : const Color(0xffd1d5db),
                   ),
                 ),
               );
             }),
           ),
-          ListTile(
-            title: const Text('Vehicle balance', style: TextStyle(fontSize: 11)),
-            subtitle: Text('₹${c.balance}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          ),
-          Text('Spend limit ₹${c.spendLimit}', style: const TextStyle(fontSize: 11)),
+          const SizedBox(height: 8),
           FilledButton(onPressed: () => engine.setTab('scan'), child: const Text('Scan & Pay')),
           const SizedBox(height: 16),
           const Text('Recent', style: TextStyle(fontWeight: FontWeight.bold)),
