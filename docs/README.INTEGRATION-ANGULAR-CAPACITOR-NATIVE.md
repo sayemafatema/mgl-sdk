@@ -32,11 +32,28 @@ Use **`openMglFleetNativeFlow()`** from `@mgl/capacitor-fleet-sdk`. It calls the
 npm install @mgl/capacitor-fleet-sdk
 ```
 
-**From this repo (path):**
+**From this repo (path):** the `file:` path is **relative to your host app’s `package.json`** (not to `src/`). Example: if the app is `…/bolt-pwa` and `mgl-sdk` is **`…/bolt-pwa/../mgl-sdk`** → use `file:../mgl-sdk/plugins/capacitor-fleet`. If `mgl-sdk` lives elsewhere, use the correct number of `../` segments or an **absolute** `file:/Users/…/mgl-sdk/plugins/capacitor-fleet`.
 
 ```bash
 npm install file:/absolute/path/to/mgl-sdk/plugins/capacitor-fleet
 ```
+
+After editing `package.json`, run **`npm install`** from the **host app root** and confirm:
+
+```bash
+node -p "require.resolve('@mgl/capacitor-fleet-sdk/package.json')"
+```
+
+If that throws, the path is wrong or install did not run — Angular will report **Cannot find module '@mgl/capacitor-fleet-sdk'**.
+
+**Build the plugin’s `dist/`** (required for imports):
+
+```bash
+cd /path/to/mgl-sdk/plugins/capacitor-fleet
+npm install && npm run build
+```
+
+If Angular still fails to resolve a **`file:`** dependency (symlink / hoisting), in **`angular.json`** under **`architect.build.options`** add **`"preserveSymlinks": true`** for the browser builder, then **`ng cache clean`** and rebuild.
 
 If you depend on **source without a prebuilt `dist/`**:
 
