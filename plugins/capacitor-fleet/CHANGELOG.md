@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Android:** Depend on **`project(':capacitor-android')`** instead of Maven **`com.capacitorjs:capacitor-android`** so host apps resolve Capacitor core from **`node_modules`** (standard Capacitor plugin pattern).
-- **JS:** **`@capacitor/core`** is a runtime **`dependency`** so bundlers resolve **`require('@capacitor/core')`** from **`dist/`**; run **`npm install`** in **`plugins/capacitor-fleet`** after clone.
+- **JS:** **`openMglFleetNativeFlow()`** exported so host apps always call **`initialize`** before **`presentFleetFlow`** (fixes “button does nothing” when only **`presentFleetFlow`** was used).
 
 ## 0.1.0
 

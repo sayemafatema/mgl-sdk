@@ -12,6 +12,9 @@ export class MGLFleetSdkWeb extends WebPlugin implements MGLFleetSdkPlugin {
   }
 
   async presentFleetFlow(_options?: FleetSdkPresentOptions): Promise<FleetSdkSuccessPayload> {
+    console.warn(
+      '[@mgl/capacitor-fleet-sdk] presentFleetFlow: use a real Android/iOS build (`cap run` / Xcode / Android Studio), not the web dev server.',
+    );
     throw this.unavailable(
       'MGL Fleet flow is available on iOS and Android only.',
     );

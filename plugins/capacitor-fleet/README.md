@@ -6,6 +6,8 @@ Capacitor bridge for **MGL Fleet** native cores (**`fleet-android`** + **`MGLFle
 
 See **[`docs/README.NATIVE-SDK.md`](../../docs/README.NATIVE-SDK.md)** and **[`docs/README.INTEGRATION-ANGULAR-CAPACITOR-NATIVE.md`](../../docs/README.INTEGRATION-ANGULAR-CAPACITOR-NATIVE.md)**.
 
+From the host app import **`openMglFleetNativeFlow`** (not only **`presentFleetFlow`**) so **`initialize`** runs before the native fullscreen flow.
+
 ## Maintainer publish
 
 ```bash

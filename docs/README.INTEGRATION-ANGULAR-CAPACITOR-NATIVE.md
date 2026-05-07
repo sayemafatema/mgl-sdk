@@ -130,13 +130,53 @@ npx cap sync ios
 
 ---
 
-## Step 6 — Angular: initialize once, present on demand
+## Step 6 — Angular: open the native flow (recommended API)
 
-### 6a. One-time initialization
+The native Android/iOS SDK **requires `initialize` before `presentFleetFlow`**. If you only call **`presentFleetFlow`** from a button, nothing will open. Prefer **`openMglFleetNativeFlow`**, which chains both in the correct order.
 
-Call **`initialize`** after the native layer is ready—e.g. **`APP_INITIALIZER`** (with `inject` + `firstValueFrom` if you wrap in an Observable), or **`MainComponent.ngOnInit`**, or a dedicated **`FleetBootstrapService`** invoked from the app module.
+### 6a. Service + button (recommended)
 
-Example (simplified service):
+```typescript
+import { Injectable } from '@angular/core';
+import { openMglFleetNativeFlow } from '@mgl/capacitor-fleet-sdk';
+
+@Injectable({ providedIn: 'root' })
+export class FleetNativeService {
+  async openFleet(correlationId?: string) {
+    try {
+      const result = await openMglFleetNativeFlow({
+        initialize: {
+          apiBaseUrl: 'https://your-api.example.com',
+          authToken: undefined,
+          useMock: true,
+        },
+        present: correlationId ? { correlationId } : {},
+      });
+      console.log('[MGL Fleet] done:', result?.event, result?.payload);
+    } catch (e) {
+      console.error('[MGL Fleet] Failed:', e);
+    }
+  }
+}
+```
+
+Wire the Fleet button so the **async** method runs (**do not drop `await`** inside the handler):
+
+```html
+<button type="button" (click)="onFleetClick()">Fleet</button>
+```
+
+```typescript
+async onFleetClick() {
+  await this.fleetNative.openFleet();
+}
+```
+
+Testing in **Chrome/`ng serve` only**: the helper returns **`null`** and logs a warning — you must run **`npx cap run android`** / **`npx cap run ios`** (or Xcode / Android Studio) to see the native UI.
+
+### 6b. Manual (`initialize` + `presentFleetFlow`)
+
+If you call the plugin yourself, **`initialize` must succeed first** on every cold start:
 
 ```typescript
 import { Injectable } from '@angular/core';
@@ -171,20 +211,9 @@ export class FleetNativeService {
 }
 ```
 
-### 6b. Button (or route guard) opens the flow
+### 6c. Completion callback
 
-```typescript
-async onOpenFleet() {
-  try {
-    const result = await this.fleet.openFleet('order-123');
-    console.log(result?.event, result?.payload);
-  } catch (e) {
-    console.error(e);
-  }
-}
-```
-
-You do **not** need Angular routes for Fleet screens when using this path—the **native SDK** owns the fullscreen stack.
+After the driver finishes or logs out, handle the promise returned by **`openMglFleetNativeFlow`** / **`presentFleetFlow`** (see **`6a`** **`try/catch`**).
 
 ---
 
@@ -209,6 +238,7 @@ npx cap run ios
 | iOS: reject about **MGLFleetSDK** / **canImport** | Complete **Step 5** and target the **App** app, not only the Pods project. |
 | iOS deployment / compile errors on older iOS | The SwiftUI Fleet shell targets **iOS 16+**; align the host app and SPM minimum. |
 | **`FragmentActivity`** error | Ensure the main Capacitor activity extends **`FragmentActivity`**. |
+| Fleet button runs but **nothing opens** | Use **`openMglFleetNativeFlow`** (Step **6a**) or **`await initialize` then `await presentFleetFlow`**. Test on a **native** run (**`cap run`**), not **`ng serve`**. Use **`async` click handlers** so promises are awaited; check the browser/device **console** for **`[MGL Fleet]`** errors. |
 | TypeScript / build errors for the plugin | Run **`npm run build`** inside the plugin package so **`dist/`** exists. |
 
 ---
