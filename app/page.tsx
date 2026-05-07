@@ -2401,10 +2401,10 @@ export default function Page() {
                         <span className="text-gray-600">Available balance</span>
                         <span className="font-medium text-green-700">₹{activeScanBinding.balance?.toLocaleString('en-IN') || '0'}</span>
                       </div>
-                      <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
+                      {/* <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
                         <span className="text-gray-600">Spend limit</span>
                         <span className="font-medium text-gray-900">₹{activeScanBinding.spendLimit?.toLocaleString('en-IN') || '5,000'}</span>
-                      </div>
+                      </div> */}
                     </div>
 
                     <button
