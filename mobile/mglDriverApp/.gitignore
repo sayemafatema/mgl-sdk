@@ -35,6 +35,9 @@ local.properties
 !debug.keystore
 .kotlin/
 
+# Local Gradle user home (optional workaround; do not commit)
+.gradle-user-home/
+
 # node.js
 #
 node_modules/
