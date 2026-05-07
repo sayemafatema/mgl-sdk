@@ -40,7 +40,12 @@ public final class FleetSdk {
 
         let vc = FleetSdkViewController()
         vc.modalPresentationStyle = .fullScreen
-        viewController.present(vc, animated: true)
+        let present = { viewController.present(vc, animated: true) }
+        if Thread.isMainThread {
+            present()
+        } else {
+            DispatchQueue.main.async(execute: present)
+        }
     }
 
     public func addListener(tag: String, listener: FleetSdkEventListener) {

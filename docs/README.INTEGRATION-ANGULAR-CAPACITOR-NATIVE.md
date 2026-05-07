@@ -242,6 +242,7 @@ npx cap run ios
 | **`FragmentActivity`** error | Ensure the main Capacitor activity extends **`FragmentActivity`**. |
 | Fleet button runs but **nothing opens** | Use **`openMglFleetNativeFlow`** (Step **6a**) or **`await initialize` then `await presentFleetFlow`**. Test on a **native** run (**`cap run`**), not **`ng serve`**. Use **`async` click handlers** so promises are awaited; check the browser/device **console** for **`[MGL Fleet]`** errors. |
 | Repeated **`Stub: presentFleetFlow no-op`** / **`Replace with file:…/capacitor-fleet`** | Not from this SDK’s package. Search the **host app** source for **`Stub`** / **`presentFleetFlow no-op`**. Remove the stub service or **`paths`** alias that maps **`@mgl/capacitor-fleet-sdk`** to a local **`*.stub.ts`**. Confirm **`package.json`** depends on the real **`file:…/mgl-sdk/plugins/capacitor-fleet`** and imports **`openMglFleetNativeFlow`** from **`@mgl/capacitor-fleet-sdk`** only. |
+| Tap Fleet: **no UI**, **no** JS error | Republish **`fleet-android`** and sync. **`startActivity` / `present` must run on the main thread** (fixed in **`FleetSdk`**). Use **`async` click handler** + **`await`** **`openFleet()`**. Look for **`[MGL Fleet]`** **`console.info`** lines; use **Logcat** / **Xcode** if the native sheet still does not appear. |
 | TypeScript / build errors for the plugin | Run **`npm run build`** inside the plugin package so **`dist/`** exists. |
 
 ---

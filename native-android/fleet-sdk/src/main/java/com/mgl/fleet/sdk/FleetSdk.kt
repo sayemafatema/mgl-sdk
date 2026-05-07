@@ -2,6 +2,7 @@ package com.mgl.fleet.sdk
 
 import android.content.Context
 import android.content.Intent
+import android.os.Looper
 import androidx.fragment.app.FragmentActivity
 import com.mgl.fleet.sdk.internal.FleetPresentationBridge
 import com.mgl.fleet.sdk.internal.FleetSdkActivity
@@ -26,7 +27,13 @@ object FleetSdk {
         FleetSdkHolder.applicationContext()
         FleetPresentationBridge.pendingSession = session
         FleetPresentationBridge.pendingCallback = callback
-        activity.startActivity(Intent(activity, FleetSdkActivity::class.java))
+        val intent = Intent(activity, FleetSdkActivity::class.java)
+        val launch = Runnable { activity.startActivity(intent) }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            launch.run()
+        } else {
+            activity.runOnUiThread(launch)
+        }
     }
 
     /** Optional analytics hooks — bridges may subscribe via JNI/reflection layers later. */

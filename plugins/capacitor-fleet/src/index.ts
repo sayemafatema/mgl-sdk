@@ -33,8 +33,14 @@ export async function openMglFleetNativeFlow(
 
   const init = normalizeInitializeOptions(options.initialize);
 
+  console.info(
+    '[MGL Fleet] Opening native flow, platform=',
+    Capacitor.getPlatform(),
+  );
+
   try {
     await MGLFleetSdk.initialize(init);
+    console.info('[MGL Fleet] Initialized, presenting fullscreen…');
     const result = await MGLFleetSdk.presentFleetFlow(options.present ?? {});
     return result;
   } catch (err) {
