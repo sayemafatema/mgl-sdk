@@ -6,6 +6,9 @@
 # Node artifact files
 node_modules/
 dist/
+!plugins/capacitor-fleet/dist/
+!plugins/capacitor-fleet/dist/**
+
 pnpm-lock.yaml
 
 # Next.js
@@ -26,7 +29,6 @@ out/
 
 # Maven
 target/
-dist/
 
 # JetBrains IDE
 .idea/
