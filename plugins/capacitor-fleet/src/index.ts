@@ -35,11 +35,13 @@ export async function openMglFleetNativeFlow(
 
   console.info('[MGL Fleet] Opening native flow, platform=', platform);
 
+  const present = options.present ?? {};
+
   try {
     console.info('[MGL Fleet] Calling native openFleetNativeFlow (init + present in one bridge)…');
     const result = await MGLFleetSdk.openFleetNativeFlow({
       initialize: init,
-      present: options.present ?? {},
+      present,
     });
     return result;
   } catch (err: unknown) {
@@ -47,15 +49,27 @@ export async function openMglFleetNativeFlow(
     const o = err as { code?: string; message?: string };
     const code = o.code;
     const message = typeof o.message === 'string' ? o.message : '';
-    if (
+    const unimplemented =
       code === 'UNIMPLEMENTED' ||
       /not implemented/i.test(message) ||
-      /plugin.*not.*found/i.test(message)
-    ) {
-      console.error(
-        '[MGL Fleet] Native plugin is missing or out of date. Run: npx cap sync — then rebuild/reinstall the app from Android Studio or Xcode. Use the same @mgl/capacitor-fleet-sdk version as your mgl-sdk checkout and republish fleet-android if you use Maven Local.',
+      /plugin.*not.*found/i.test(message);
+
+    if (unimplemented) {
+      console.warn(
+        '[MGL Fleet] openFleetNativeFlow not on native binary — falling back to initialize + presentFleetFlow. Re-run npx cap sync and rebuild when possible.',
       );
+      try {
+        await MGLFleetSdk.initialize(init);
+        return await MGLFleetSdk.presentFleetFlow(present);
+      } catch (fallbackErr) {
+        console.error('[@mgl/capacitor-fleet-sdk] Fallback also failed:', fallbackErr);
+        console.error(
+          '[MGL Fleet] Run: npx cap sync — rebuild/reinstall the app. Ensure com.mgl.sdk:fleet-android resolves (mavenLocal + publishToMavenLocal if unpublished).',
+        );
+        throw fallbackErr;
+      }
     }
+
     throw err;
   }
 }

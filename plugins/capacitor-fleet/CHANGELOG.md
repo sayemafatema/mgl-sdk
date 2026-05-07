@@ -6,7 +6,8 @@
 - **Android `FleetSdk.isInitialized()`:** Public check used by the Capacitor plugin guard.
 - **iOS `FleetSdk.isInitialized()`:** Same; fixes **`presentFleetFlow`** failure **`reject`** arguments (code vs `Error`).
 - **Android:** Depend on **`project(':capacitor-android')`** instead of Maven **`com.capacitorjs:capacitor-android`** so host apps resolve Capacitor core from **`node_modules`** (standard Capacitor plugin pattern).
-- **JS:** **`openMglFleetNativeFlow`** now **throws** (with a clear message) when **`!Capacitor.isNativePlatform()`** instead of resolving **`null`**, so Angular **`catch`/snackbars** fire when the SPA is opened in Chrome or **`ng serve` only**. Return type is **`Promise<FleetSdkSuccessPayload>`** (no **`null`**). Logs extra guidance when the native bridge reports **UNIMPLEMENTED** / missing plugin (**`npx cap sync`** + rebuild).
+- **Android `FleetSdkPlugin`:** Coerce nested **`initialize` / `present`** options when the bridge delivers **`Map`** instead of **`JSONObject`** (fixes **`getObject("initialize")` == null** and no-op / stuck flows). **`Log.i` / `Log.e`** for **`MGLFleetSdk`** tag. **`openFleetNativeFlow`** wrapped in **`try/catch`** with reject on unexpected throw.
+- **JS:** If **`openFleetNativeFlow`** is **UNIMPLEMENTED** on native (stale APK / no sync), **fallback** to **`initialize` + `presentFleetFlow`** so Fleet still opens until the app is rebuilt.
 - **Native `FleetSdk`:** Run **`startActivity` (Android)** / **`present` (iOS)** on the **main thread** — Capacitor often calls plugins off the UI thread, which could previously result in no Fleet UI.
 - **Capacitor `android`:** **`consumer-rules.pro`** + **`consumerProguardFiles`** so R8 does not drop **`FleetSdkPlugin`** in release builds.
 
