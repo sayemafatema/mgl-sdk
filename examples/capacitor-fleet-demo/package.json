@@ -1,0 +1,29 @@
+{
+  "name": "capacitor-fleet-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "mkdir -p dist && cp index.html dist/ && esbuild src/main.ts --bundle --outfile=dist/main.js --format=esm --platform=browser",
+    "build:plugin": "cd ../../plugins/capacitor-fleet && npm ci && npm run build",
+    "prebuild:all": "npm run build:plugin",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:android": "npm run cap:sync && npx cap run android",
+    "cap:ios": "npm run cap:sync && npx cap run ios",
+    "publish:fleet-android": "cd ../../native-android && ./gradlew :fleet-sdk:publishToMavenLocal --no-daemon"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0",
+    "@mgl/capacitor-fleet-sdk": "file:../../plugins/capacitor-fleet"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0",
+    "esbuild": "^0.21.5",
+    "typescript": "^5.7.3"
+  }
+}

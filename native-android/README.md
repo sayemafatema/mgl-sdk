@@ -15,7 +15,7 @@
 ./gradlew :sample-host:installDebug
 ```
 
-Gradle wrapper (`gradlew`): generate via **`gradle wrapper`** or Android Studio after cloning — CI regenerates via **`docs/PUBLISH_FOR_EXTERNAL_CONSUMERS.md`** bootstrap snippet.
+Gradle wrapper (`gradlew`, **`gradle/wrapper/gradle-wrapper.jar`**) is checked in so **`./gradlew`** works after clone (set **`ANDROID_HOME`** / **`sdk.dir`** in **`local.properties`**).
 
 Staging folder for Sonatype portal bundle upload:
 

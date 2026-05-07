@@ -39,9 +39,11 @@ export async function openMglFleetNativeFlow(
   );
 
   try {
-    await MGLFleetSdk.initialize(init);
-    console.info('[MGL Fleet] Initialized, presenting fullscreen…');
-    const result = await MGLFleetSdk.presentFleetFlow(options.present ?? {});
+    console.info('[MGL Fleet] Calling native openFleetNativeFlow (init+present in one bridge)…');
+    const result = await MGLFleetSdk.openFleetNativeFlow({
+      initialize: init,
+      present: options.present ?? {},
+    });
     return result;
   } catch (err) {
     console.error('[@mgl/capacitor-fleet-sdk] Fleet flow failed:', err);
@@ -73,6 +75,7 @@ function normalizeInitializeOptions(
 
 export type {
   FleetSdkInitializeOptions,
+  FleetSdkOpenNativeUnifiedOptions,
   FleetSdkPresentOptions,
   FleetSdkSuccessPayload,
   MGLFleetSdkPlugin,

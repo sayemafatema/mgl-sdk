@@ -6,6 +6,9 @@ internal object FleetSdkHolder {
     private var applicationContext: Context? = null
     private var fleetSdkOptions: FleetSdkOptions? = null
 
+    internal fun isAttached(): Boolean =
+        applicationContext != null && fleetSdkOptions != null
+
     fun attach(context: Context, opts: FleetSdkOptions) {
         applicationContext = context.applicationContext
         fleetSdkOptions = opts

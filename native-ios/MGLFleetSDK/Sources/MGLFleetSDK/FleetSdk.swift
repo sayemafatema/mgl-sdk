@@ -21,6 +21,12 @@ public final class FleetSdk {
         self.options = options
     }
 
+    public func isInitialized() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return options != nil
+    }
+
     /// Present fullscreen Fleet flow modally from `viewController`.
     public func presentFleetFlow(
         from viewController: UIViewController,

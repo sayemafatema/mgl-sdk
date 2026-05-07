@@ -46,7 +46,7 @@ dependencies {
     implementation("androidx.core:core-ktx:$androidxCorePin")
     implementation(libs.appcompat)
     implementation(libs.material)
-    implementation(libs.fragment.ktx)
+    implementation(libs.fragmentKtx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
     implementation(platform(libs.compose.bom))

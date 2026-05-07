@@ -19,14 +19,72 @@ class FleetSdkPlugin : Plugin() {
 
     @PluginMethod
     fun initialize(call: PluginCall) {
-        val apiBaseUrlRaw = call.getString("apiBaseUrl") ?: run {
-            call.reject("apiBaseUrl is required")
+        if (!performInitialize(call)) return
+        call.resolve()
+    }
+
+    /** Single bridge call — initialize then present (avoids JS/plugin gaps between two native invokes). */
+    @PluginMethod
+    fun openFleetNativeFlow(call: PluginCall) {
+        if (!performInitializeFromNested(call)) return
+        executePresentFleetFlow(call)
+    }
+
+    @PluginMethod
+    fun presentFleetFlow(call: PluginCall) {
+        if (!FleetSdk.isInitialized()) {
+            call.reject(
+                "Fleet SDK is not initialized. Use openFleetNativeFlow() / openMglFleetNativeFlow() or await initialize() before presentFleetFlow().",
+                "NOT_INITIALIZED",
+                null,
+            )
             return
         }
-        val apiBaseUrl = apiBaseUrlRaw.trim()
+        executePresentFleetFlow(call)
+    }
+
+    /** @return false if rejected */
+    private fun performInitialize(call: PluginCall): Boolean {
+        val apiBaseUrlRaw = call.getString("apiBaseUrl") ?: run {
+            call.reject("apiBaseUrl is required")
+            return false
+        }
+        return applyFleetInitialize(call, apiBaseUrlRaw.trim())
+    }
+
+    /** @return false if rejected */
+    private fun performInitializeFromNested(call: PluginCall): Boolean {
+        val initObj = call.getObject("initialize") ?: run {
+            call.reject("initialize object is required")
+            return false
+        }
+        val apiBaseUrlRaw = initObj.getString("apiBaseUrl") ?: run {
+            call.reject("apiBaseUrl is required")
+            return false
+        }
+        val trimmed = apiBaseUrlRaw.trim()
+        if (trimmed.isEmpty()) {
+            call.reject("apiBaseUrl must not be blank")
+            return false
+        }
+        val useMock = initObj.getBoolean("useMock", true)
+        val authToken = initObj.getString("authToken")
+        FleetSdk.initialize(
+            bridge.activity.applicationContext,
+            FleetSdkOptions(
+                apiBaseUrl = trimmed,
+                authToken = authToken,
+                useMock = useMock,
+            ),
+        )
+        return true
+    }
+
+    /** @return false if rejected */
+    private fun applyFleetInitialize(call: PluginCall, apiBaseUrl: String): Boolean {
         if (apiBaseUrl.isEmpty()) {
             call.reject("apiBaseUrl must not be blank")
-            return
+            return false
         }
         val useMock = call.getBoolean("useMock", true)
         val authToken = call.getString("authToken")
@@ -38,18 +96,26 @@ class FleetSdkPlugin : Plugin() {
                 useMock = useMock,
             ),
         )
-        call.resolve()
+        return true
     }
 
-    @PluginMethod
-    fun presentFleetFlow(call: PluginCall) {
+    private fun readSession(call: PluginCall): FleetSessionOptions? {
+        val top = call.getString("correlationId")
+            ?: call.getObject("present")?.getString("correlationId")
+            ?: return null
+        return FleetSessionOptions(correlationId = top)
+    }
+
+    private fun executePresentFleetFlow(call: PluginCall) {
         val activity = bridge.activity as? FragmentActivity ?: run {
             call.reject("Host Activity must extend FragmentActivity")
             return
         }
         call.setKeepAlive(true)
-        val correlationId = call.getString("correlationId")
-        val session = correlationId?.let { FleetSessionOptions(correlationId = it) }
+        val correlationIdForSession =
+            call.getString("correlationId")
+                ?: call.getObject("present")?.getString("correlationId")
+        val session = correlationIdForSession?.let { FleetSessionOptions(correlationId = it) }
 
         try {
             FleetSdk.presentFleetFlow(activity, session, object : FleetSdkCompletionCallback {

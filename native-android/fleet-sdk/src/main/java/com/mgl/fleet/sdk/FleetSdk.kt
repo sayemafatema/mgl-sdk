@@ -16,6 +16,9 @@ object FleetSdk {
         FleetSdkHolder.attach(applicationContext, options)
     }
 
+    /** True once [initialize] has run successfully in this process. */
+    fun isInitialized(): Boolean = FleetSdkHolder.isAttached()
+
     /**
      * Presents native Fleet UI over [activity]. Completion runs on main thread when flow finishes.
      */

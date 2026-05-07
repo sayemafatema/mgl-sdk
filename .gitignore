@@ -1,12 +1,12 @@
 # These are some examples of commonly ignored file patterns.
 # You should customize this list as applicable to your project.
-# Learn more about .gitignore:
-#     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
+# Learn more about https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
-# Node artifact files
+# Node
 node_modules/
+
+# Build / web output (plugin + apps)
 dist/
-pnpm-lock.yaml
 
 # Next.js
 .next/
@@ -21,18 +21,30 @@ out/
 # Log files
 *.log
 
-# Package files
+# JARs (allow Gradle Wrapper — required for ./gradlew)
 *.jar
+!**/gradle/wrapper/gradle-wrapper.jar
 
 # Maven
 target/
-dist/
+
+pnpm-lock.yaml
 
 # JetBrains IDE
 .idea/
 
-# Gradle (Android native module caches)
+# Gradle — caches and outputs
 .gradle/
+**/build/
+
+# Kotlin
+.kotlin/
+
+# Android / NDK
+local.properties
+.cxx/
+externalNativeBuild/
+captures/
 
 # Swift Package Manager (local build products)
 .build/
@@ -62,3 +74,8 @@ Thumbs.db
 *.mov
 *.wmv
 
+# Capacitor example — regenerate with `npm i` / `npx cap add …`
+examples/capacitor-fleet-demo/node_modules/
+examples/capacitor-fleet-demo/dist/
+examples/capacitor-fleet-demo/android/
+examples/capacitor-fleet-demo/ios/

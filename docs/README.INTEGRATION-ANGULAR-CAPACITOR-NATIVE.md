@@ -13,9 +13,10 @@ Master overview (errors, distribution): [`README.NATIVE-SDK.md`](README.NATIVE-S
 | Call | Purpose |
 |------|--------|
 | **`initialize`** | Runs once (typically at app startup). Saves **`apiBaseUrl`**, optional **`authToken`**, **`useMock`**. Does **not** open UI or run the Fleet journey. |
-| **`presentFleetFlow`** | Opens the **fullscreen native Fleet UI** (Kotlin Activity / Swift modal). Call this when the user taps “Fleet”, checkout, etc. Resolves when the flow completes or fails. |
+| **`openFleetNativeFlow` (native)** / **`openMglFleetNativeFlow` (JS)** | Recommended for Capacitor hosts: **single bridge call** that runs **`initialize`** then **`presentFleetFlow`** atomically on the native side. Use this from button handlers to avoid split-invoke ordering issues. |
+| **`presentFleetFlow`** alone | Opens the UI only if **`initialize`** already ran in this process — otherwise the plugin rejects with **`NOT_INITIALIZED`**. |
 
-So: **initialize = configuration**, **presentFleetFlow = launch the experience**.
+So: **initialize = configuration**, **`presentFleetFlow` = launch UI**, **`openMglFleetNativeFlow` = both in one trip (preferred on device)**.
 
 The fullscreen UI is the **native** implementation that mirrors the repo web demo **`app/page.tsx`** (onboarding, PIN, forgot-PIN/OTP, pairing, assignment overlays, tabs)—implemented in **Android** Compose (`native-android/fleet-sdk/.../FleetDriverComposeApp.kt`) and **iOS** SwiftUI (`native-ios/MGLFleetSDK/.../FleetDriverNativeView.swift`). **Minimum iOS:** **16** (sheet detents used in the pairing help sheet).
 
@@ -240,7 +241,7 @@ npx cap run ios
 | iOS: reject about **MGLFleetSDK** / **canImport** | Complete **Step 5** and target the **App** app, not only the Pods project. |
 | iOS deployment / compile errors on older iOS | The SwiftUI Fleet shell targets **iOS 16+**; align the host app and SPM minimum. |
 | **`FragmentActivity`** error | Ensure the main Capacitor activity extends **`FragmentActivity`**. |
-| Fleet button runs but **nothing opens** | Use **`openMglFleetNativeFlow`** (Step **6a**) or **`await initialize` then `await presentFleetFlow`**. Test on a **native** run (**`cap run`**), not **`ng serve`**. Use **`async` click handlers** so promises are awaited; check the browser/device **console** for **`[MGL Fleet]`** errors. |
+| Fleet button runs but **nothing opens** | Use **`openMglFleetNativeFlow`** — it calls **`openFleetNativeFlow`** natively (initialize + present **in one invoke**). Older two-step **`initialize` then `presentFleetFlow`** can mis-order under **Zone.js** / load. Test on **native** **`cap run`**; **`async` + `await`** on the click handler; DevTools / Logcat for **`[MGL Fleet]`** and **`NOT_INITIALIZED`**. |
 | Repeated **`Stub: presentFleetFlow no-op`** / **`Replace with file:…/capacitor-fleet`** | Not from this SDK’s package. Search the **host app** source for **`Stub`** / **`presentFleetFlow no-op`**. Remove the stub service or **`paths`** alias that maps **`@mgl/capacitor-fleet-sdk`** to a local **`*.stub.ts`**. Confirm **`package.json`** depends on the real **`file:…/mgl-sdk/plugins/capacitor-fleet`** and imports **`openMglFleetNativeFlow`** from **`@mgl/capacitor-fleet-sdk`** only. |
 | Tap Fleet: **no UI**, **no** JS error | Republish **`fleet-android`** and sync. **`startActivity` / `present` must run on the main thread** (fixed in **`FleetSdk`**). Use **`async` click handler** + **`await`** **`openFleet()`**. Look for **`[MGL Fleet]`** **`console.info`** lines; use **Logcat** / **Xcode** if the native sheet still does not appear. |
 | TypeScript / build errors for the plugin | Run **`npm run build`** inside the plugin package so **`dist/`** exists. |
