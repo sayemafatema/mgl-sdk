@@ -1,3 +1,5 @@
+import type { FleetpayQrApiFields } from './fleetpay-qr';
+
 /** Driver App API (Phase 2 auth + Phase 3 features).
  *  Per environment: set `NEXT_PUBLIC_DRIVER_API_BASE` (e.g. local `http://localhost:8080`, other UAT/prod hosts).
  *  When unset, defaults to fleet UAT: `https://api-fleet-uat.enkash.in`
@@ -402,10 +404,16 @@ export async function driverAcceptPairing(
   return unwrapIfWrapped(body) as { vehicleRegNo: string; status: string };
 }
 
+export type DriverQrPayPayload = {
+  txnId: string;
+  vehicleRegNo: string;
+  pin: string;
+} & FleetpayQrApiFields;
+
 export async function driverQrPay(
   baseUrl: string,
   token: string,
-  payload: { txnId: string; vehicleRegNo: string; pin: string }
+  payload: DriverQrPayPayload
 ): Promise<QrPayResult> {
   const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/qr/pay`, {
     method: 'POST',

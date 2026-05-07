@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Phone, Shield, LogOut, Eye, EyeOff, Home, Route, CheckCircle, ArrowDown, ArrowUp } from 'lucide-react';
 import {
   driverAcceptPairing,
@@ -28,6 +28,12 @@ import {
   type DriverUiBinding,
   type FoListEntry,
 } from '../components/mgl/driver-api';
+import { QrCameraScanner } from '../components/mgl/qr-camera-scanner';
+import {
+  parseFleetpayPayUri,
+  paiseToInrDisplay,
+  type FleetpayQrPayload,
+} from '../components/mgl/fleetpay-qr';
 
 const DRIVER_API_BASE = getDriverApiBase();
 const USE_DRIVER_API = DRIVER_API_BASE.length > 0;
@@ -281,6 +287,7 @@ export default function Page() {
   const [apiBanner, setApiBanner] = useState<string | null>(null);
   const [foPinEntry, setFoPinEntry] = useState('');
   const [qrTxnId, setQrTxnId] = useState('QR-DEMO-LOCAL');
+  const [qrPayFields, setQrPayFields] = useState<FleetpayQrPayload | null>(null);
 
   const pairingRefs = [
     useRef(null), useRef(null), useRef(null),
@@ -353,6 +360,26 @@ export default function Page() {
   const handleSessionPinBackspace = () => {
     setSessionPin(sessionPin.slice(0, -1));
   };
+
+  const handleFleetpayScan = useCallback(
+    (text: string) => {
+      setApiBanner(null);
+      const parsed = parseFleetpayPayUri(text);
+      if (!parsed) {
+        setApiBanner('Invalid Fleetpay QR. Point at the station QR (must include tid).');
+        return;
+      }
+      if (!selectedScanBinding) {
+        setApiBanner('Select a vehicle first.');
+        return;
+      }
+      setQrTxnId(parsed.txnId);
+      setQrPayFields(parsed);
+      setActiveScanBinding(selectedScanBinding);
+      setSessionState('confirmation');
+    },
+    [selectedScanBinding]
+  );
 
   const handleSessionOtpChange = (idx: number, val: string) => {
     const digit = val.replace(/\D/g, '').slice(-1);
@@ -2287,15 +2314,29 @@ export default function Page() {
                         </div>
                       )}
 
-                      <div className="bg-black rounded-2xl aspect-square flex items-center justify-center relative border-4 border-white">
-                        <div className="absolute inset-4 border-2 border-white/30 rounded-lg" />
-                        <div className="absolute top-1/3 left-0 right-0 h-1 bg-gradient-to-b from-green-500 to-transparent animate-pulse" />
-                        <QrCode className="w-12 h-12 text-white/50" />
+                      <div className="relative aspect-square w-full overflow-hidden rounded-2xl border-4 border-white bg-black">
+                        <QrCameraScanner
+                          active={
+                            (sessionState === 'idle' || sessionState === 'scanning') &&
+                            !!selectedScanBinding
+                          }
+                          onScan={handleFleetpayScan}
+                          onCameraError={(msg) => setApiBanner(msg)}
+                          className="h-full min-h-[220px]"
+                        />
                       </div>
 
                       <button 
+                        type="button"
                         onClick={() => {
-                          setQrTxnId(`QR-${Date.now()}`);
+                          if (!selectedScanBinding) return;
+                          setApiBanner(null);
+                          const exp = Math.floor(Date.now() / 1000) + 3600;
+                          const demo = `fleetpay://pay?txn=QR-DEMO-${Date.now()}&mid=ADX7353085&mn=MGL+Hind+CNG+Filling&am=120000&cu=INR&exp=${exp}&tid=TID-DEMO1&sign=demo`;
+                          const parsed = parseFleetpayPayUri(demo);
+                          if (!parsed) return;
+                          setQrTxnId(parsed.txnId);
+                          setQrPayFields(parsed);
                           setActiveScanBinding(selectedScanBinding);
                           setSessionState('confirmation');
                         }} 
@@ -2317,6 +2358,7 @@ export default function Page() {
                           setSessionState('idle');
                           setActiveScanBinding(null);
                           setSessionPin('');
+                          setQrPayFields(null);
                         }}
                         className="text-gray-600 hover:text-gray-900"
                       >
@@ -2329,8 +2371,12 @@ export default function Page() {
                       <div className="flex items-start gap-3">
                         <MapPin className="w-5 h-5 text-green-700 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="font-semibold text-gray-900">MGL Hind CNG Filling Station</p>
-                          <p className="text-sm text-gray-600">Andheri, Mumbai</p>
+                          <p className="font-semibold text-gray-900">
+                            {qrPayFields?.merchantName ?? 'MGL Hind CNG Filling Station'}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            {qrPayFields?.mid ? `MID ${qrPayFields.mid}` : 'Andheri, Mumbai'}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -2338,10 +2384,16 @@ export default function Page() {
                     {/* Fueling Details */}
                     <div className="bg-gray-50 rounded-2xl p-4 space-y-2 mb-4">
                       <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Amount</span>
+                        <span className="font-medium text-gray-900">
+                          ₹{qrPayFields ? paiseToInrDisplay(qrPayFields.amountPaise) : '—'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
                         <span className="text-gray-600">Vehicle</span>
                         <span className="font-medium text-gray-900">{activeScanBinding.vrn}</span>
                       </div>
-                      <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
+                      <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Fleet Operator</span>
                         <span className="font-medium text-gray-900">{activeScanBinding.fo}</span>
                       </div>
@@ -2395,14 +2447,19 @@ export default function Page() {
                       type="button"
                       onClick={() => {
                         void (async () => {
-                          if (USE_DRIVER_API && foScopedToken && activeScanBinding) {
+                          if (USE_DRIVER_API && foScopedToken && activeScanBinding && qrPayFields) {
                             if (sessionPin.length < 4 || sessionPin.length > 6) return;
                             try {
                               setApiBanner(null);
                               await driverQrPay(DRIVER_API_BASE, foScopedToken, {
-                                txnId: qrTxnId,
+                                txnId: qrPayFields.txnId,
                                 vehicleRegNo: activeScanBinding.vrn.replace(/\s+/g, ''),
                                 pin: sessionPin,
+                                mid: qrPayFields.mid,
+                                terminalId: qrPayFields.terminalId,
+                                amountPaise: qrPayFields.amountPaise,
+                                expiryEpoch: qrPayFields.expiryEpoch,
+                                sign: qrPayFields.sign,
                               });
                               setSessionPin('');
                               setSessionState('complete');
@@ -2424,7 +2481,7 @@ export default function Page() {
                       }}
                       disabled={
                         USE_DRIVER_API
-                          ? sessionPin.length < 4 || sessionPin.length > 6
+                          ? sessionPin.length < 4 || sessionPin.length > 6 || !qrPayFields
                           : sessionPin.length !== 6
                       }
                       className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
@@ -2448,7 +2505,10 @@ export default function Page() {
                     </div>
 
                     <div className="bg-gray-100 rounded-2xl p-3 mb-4">
-                      <p className="text-xs text-gray-600">{activeScanBinding.vrn} · MGL Hind Station · ₹1,200</p>
+                      <p className="text-xs text-gray-600">
+                        {activeScanBinding.vrn} · {qrPayFields?.merchantName ?? 'Station'} · ₹
+                        {qrPayFields ? paiseToInrDisplay(qrPayFields.amountPaise) : '1,200.00'}
+                      </p>
                     </div>
 
                     <div className="flex justify-center gap-1 mb-4">
@@ -2478,8 +2538,11 @@ export default function Page() {
                     </div>
 
                     <div className="bg-white border border-gray-200 rounded-2xl p-4 mb-4">
-                      <p className="text-xs text-gray-600 mb-2">MGL Hind Station</p>
-                      <p className="font-semibold text-gray-900">Pre-authorized: ₹1,200</p>
+                      <p className="text-xs text-gray-600 mb-2">{qrPayFields?.merchantName ?? 'Station'}</p>
+                      <p className="font-semibold text-gray-900">
+                        Pre-authorized: ₹
+                        {qrPayFields ? paiseToInrDisplay(qrPayFields.amountPaise) : '1,200.00'}
+                      </p>
                     </div>
 
                     <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3 mb-4">
