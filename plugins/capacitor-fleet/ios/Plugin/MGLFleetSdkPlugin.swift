@@ -9,10 +9,12 @@ public class MGLFleetSdkPlugin: CAPPlugin {
 
     @objc func initialize(_ call: CAPPluginCall) {
         #if canImport(MGLFleetSDK)
-        guard let apiBaseUrl = call.getString("apiBaseUrl") else {
-            call.reject("apiBaseUrl is required")
+        guard let apiBaseUrlRaw = call.getString("apiBaseUrl"),
+              !apiBaseUrlRaw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            call.reject("apiBaseUrl is required and must not be blank")
             return
         }
+        let apiBaseUrl = apiBaseUrlRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         let useMock = call.getBool("useMock") ?? true
         let authToken = call.getString("authToken")
         FleetSdk.shared.initialize(options: FleetSdkOptions(apiBaseUrl: apiBaseUrl, authToken: authToken, useMock: useMock))

@@ -134,6 +134,8 @@ npx cap sync ios
 
 The native Android/iOS SDK **requires `initialize` before `presentFleetFlow`**. If you only call **`presentFleetFlow`** from a button, nothing will open. Prefer **`openMglFleetNativeFlow`**, which chains both in the correct order.
 
+**Angular `environment`:** Ensure **`initialize.apiBaseUrl`** is never **`undefined`/empty**. If **`environment.base_url`** and **`v2_base_url`** can both be missing, **`openMglFleetNativeFlow`** now substitutes a placeholder when **`useMock: true`** and logs **`[@mgl/capacitor-fleet-sdk]`** warnings — still set a real URL when you ship. Avoid an extra **`if (!Capacitor.isNativePlatform()) return`** that hides issues with **commented-out** **`console.warn`** unless you duplicate the SDK’s messaging.
+
 ### 6a. Service + button (recommended)
 
 ```typescript

@@ -19,8 +19,13 @@ class FleetSdkPlugin : Plugin() {
 
     @PluginMethod
     fun initialize(call: PluginCall) {
-        val apiBaseUrl = call.getString("apiBaseUrl") ?: run {
+        val apiBaseUrlRaw = call.getString("apiBaseUrl") ?: run {
             call.reject("apiBaseUrl is required")
+            return
+        }
+        val apiBaseUrl = apiBaseUrlRaw.trim()
+        if (apiBaseUrl.isEmpty()) {
+            call.reject("apiBaseUrl must not be blank")
             return
         }
         val useMock = call.getBoolean("useMock", true)

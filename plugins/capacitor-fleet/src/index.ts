@@ -30,8 +30,39 @@ export async function openMglFleetNativeFlow(
     );
     return null;
   }
-  await MGLFleetSdk.initialize(options.initialize);
-  return MGLFleetSdk.presentFleetFlow(options.present ?? {});
+
+  const init = normalizeInitializeOptions(options.initialize);
+
+  try {
+    await MGLFleetSdk.initialize(init);
+    const result = await MGLFleetSdk.presentFleetFlow(options.present ?? {});
+    return result;
+  } catch (err) {
+    console.error('[@mgl/capacitor-fleet-sdk] Fleet flow failed:', err);
+    throw err;
+  }
+}
+
+/** Host apps often pass `environment.base_url` which may be unset — native requires a non-empty string. */
+function normalizeInitializeOptions(
+  opts: FleetSdkInitializeOptions,
+): FleetSdkInitializeOptions {
+  let apiBaseUrl =
+    typeof opts.apiBaseUrl === 'string' ? opts.apiBaseUrl.trim() : '';
+  const useMock = opts.useMock !== false;
+  if (!apiBaseUrl) {
+    if (useMock) {
+      apiBaseUrl = 'https://mock.fleet.local';
+      console.warn(
+        '[@mgl/capacitor-fleet-sdk] initialize.apiBaseUrl was empty — using placeholder for mock mode. Set apiBaseUrl in environment.',
+      );
+    } else {
+      throw new Error(
+        '[@mgl/capacitor-fleet-sdk] initialize.apiBaseUrl is required when useMock is false.',
+      );
+    }
+  }
+  return { ...opts, apiBaseUrl };
 }
 
 export type {

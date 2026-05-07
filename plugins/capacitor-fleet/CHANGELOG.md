@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **Android:** Depend on **`project(':capacitor-android')`** instead of Maven **`com.capacitorjs:capacitor-android`** so host apps resolve Capacitor core from **`node_modules`** (standard Capacitor plugin pattern).
-- **JS:** **`openMglFleetNativeFlow()`** exported so host apps always call **`initialize`** before **`presentFleetFlow`** (fixes “button does nothing” when only **`presentFleetFlow`** was used).
+- **JS:** **`openMglFleetNativeFlow()`** validates **`apiBaseUrl`** (fills mock placeholder when empty + **`useMock`**), **`try/catch`** + **`console.error`** on failures; **`initialize`** rejects blank **`apiBaseUrl`** on Android/iOS.
 
 ## 0.1.0
 
