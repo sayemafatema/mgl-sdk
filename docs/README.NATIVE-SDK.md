@@ -118,8 +118,8 @@ cd plugins/react-native-fleet
 npm install && npm run build   # emits lib/
 ```
 
-Install from **`npm`** / path in your RN app; register **`MglFleetSdkPackage`** on Android (**`MainApplication`**) per RN docs; Android resolves **`fleet-android`** from **Maven Central** (§1), or **`mavenLocal()`** during SDK development.  
-iOS: add **`MGLFleetSDK`** SPM to the host app target (same pattern as §2), then CocoaPods/`pod install` as usual.
+Install from **`npm`** / path in your RN app; register **`MglFleetSdkPackage`** on Android (**`MainApplication`**) when autolinking doesn’t; **`pod install`** on iOS. Android resolves **`fleet-android`** from **Maven Central** (§1), or **`mavenLocal()`** during SDK development.  
+**iOS:** link **`MGLFleetSDK`** SPM to the host app ([**`plugins/react-native-fleet/ios`**](../plugins/react-native-fleet/ios) + **`MglFleetSdk.podspec`**) — see [**`plugins/react-native-fleet/README.md`**](../plugins/react-native-fleet/README.md).
 
 ```typescript
 import {
