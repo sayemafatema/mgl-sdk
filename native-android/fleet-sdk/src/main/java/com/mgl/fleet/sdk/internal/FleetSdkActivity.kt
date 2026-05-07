@@ -6,7 +6,6 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.mgl.fleet.sdk.FleetPresentationBridge
 import com.mgl.fleet.sdk.FleetSdkResult
 import com.mgl.fleet.sdk.demo.ui.FleetDriverFlow
 import java.util.concurrent.atomic.AtomicBoolean

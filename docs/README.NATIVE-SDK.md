@@ -49,7 +49,7 @@ Sources live under [`native-ios/MGLFleetSDK/`](../native-ios/MGLFleetSDK/).
 Link library product **`MGLFleetSDK`** to the host **App** target.  
 For local dev you can still use **File → Add Local Packages…** → **`native-ios/MGLFleetSDK`**.
 
-**CocoaPods:** [`MGLFleetSDK.podspec`](../native-ios/MGLFleetSDK/MGLFleetSDK.podspec) — see **[`PUBLISH_FOR_EXTERNAL_CONSUMERS.md`](PUBLISH_FOR_EXTERNAL_CONSUMERS.md)**.
+**CocoaPods:** [`MGLFleetSDK.podspec`](../native-ios/MGLFleetSDK/MGLFleetSDK.podspec) — `source_files` and `LICENSE` are relative to the **`native-ios/MGLFleetSDK`** directory (matches `pod …, :path => '…/MGLFleetSDK'` or the same path inside a git checkout). See **[`PUBLISH_FOR_EXTERNAL_CONSUMERS.md`](PUBLISH_FOR_EXTERNAL_CONSUMERS.md)**.
 
 ```bash
 swift build              # from repo root (uses root Package.swift)
