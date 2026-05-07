@@ -1,143 +1,112 @@
-# Angular + Capacitor: Fleet native SDK integration
+# Angular + Capacitor: MGL Fleet native SDK
 
-Step-by-step guide for wiring **`@mgl/capacitor-fleet-sdk`** into an Angular app that ships with Capacitor on **Android** and **iOS**.
+Integrate **`@mgl/capacitor-fleet-sdk`** into an Angular app with Capacitor on **Android** and **iOS**. The fullscreen Fleet UI is **native** (Compose on Android, SwiftUI on iOS). **Minimum iOS: 16.**
 
-Master overview (errors, distribution): [`README.NATIVE-SDK.md`](README.NATIVE-SDK.md).
+Deeper background: [`README.NATIVE-SDK.md`](README.NATIVE-SDK.md).
 
 ---
 
-## Does the whole flow run on `initialize` only?
+## How opening the flow works
 
-**No.** They do different jobs:
+Use **`openMglFleetNativeFlow()`** from `@mgl/capacitor-fleet-sdk`. It calls the native method **`openFleetNativeFlow`**, which runs **`initialize` + `presentFleetFlow` in a single Capacitor invoke** (reliable on device; avoids split-bridge ordering issues).
 
-| Call | Purpose |
-|------|--------|
-| **`initialize`** | Runs once (typically at app startup). Saves **`apiBaseUrl`**, optional **`authToken`**, **`useMock`**. Does **not** open UI or run the Fleet journey. |
-| **`openFleetNativeFlow` (native)** / **`openMglFleetNativeFlow` (JS)** | Recommended for Capacitor hosts: **single bridge call** that runs **`initialize`** then **`presentFleetFlow`** atomically on the native side. Use this from button handlers to avoid split-invoke ordering issues. |
-| **`presentFleetFlow`** alone | Opens the UI only if **`initialize`** already ran in this process — otherwise the plugin rejects with **`NOT_INITIALIZED`**. |
-
-So: **initialize = configuration**, **`presentFleetFlow` = launch UI**, **`openMglFleetNativeFlow` = both in one trip (preferred on device)**.
-
-The fullscreen UI is the **native** implementation that mirrors the repo web demo **`app/page.tsx`** (onboarding, PIN, forgot-PIN/OTP, pairing, assignment overlays, tabs)—implemented in **Android** Compose (`native-android/fleet-sdk/.../FleetDriverComposeApp.kt`) and **iOS** SwiftUI (`native-ios/MGLFleetSDK/.../FleetDriverNativeView.swift`). **Minimum iOS:** **16** (sheet detents used in the pairing help sheet).
+- **`initialize`** / **`presentFleetFlow`** on the plugin remain available; **`presentFleetFlow`** alone returns **`NOT_INITIALIZED`** if **`initialize`** was never run in this process.
+- **`ng serve` / browser**: not supported for native UI — the helper exits early (or web throws). Test with **`npx cap run android`** / **`npx cap run ios`**.
 
 ---
 
 ## Prerequisites
 
-- **Node / npm** (match your Capacitor major version).
-- **Android:** JDK 17+, Android SDK (same as your Capacitor app).
-- **iOS:** Xcode on macOS.
-- **This repo** available locally (or your CI publishes **`fleet-android`** to Maven and **`MGLFleetSDK`** via SPM/CocoaPods).
+- **Node** aligned with your Capacitor major (**Capacitor CLI 6+ expects Node 18+**).
+- **Angular** app with **Capacitor 6.x** (match **`@capacitor/core`** / **`@capacitor/android`** / **`@capacitor/ios`** to the plugin peer).
+- **Android:** JDK **17**, Android SDK.
+- **iOS:** Xcode; link **`MGLFleetSDK`** (below).
 
 ---
 
-## Step 1 — Android: resolve `fleet-android`
+## 1. Install the npm package
 
-**Production:** After publish, integrators use **Maven Central** only:
-
-```gradle
-repositories {
-    google()
-    mavenCentral()
-}
-```
-
-Coordinate **`com.mgl.sdk:fleet-android`** — version **[`VERSIONS.md`](VERSIONS.md)**.
-
-**Working against an unpublished checkout**, publish locally:
-
-```bash
-cd native-android   # inside your clone of mgl-sdk
-./gradlew :fleet-sdk:publishToMavenLocal
-```
-
-…and add **`mavenLocal()`** to repositories until **`fleet-android`** is on Central.
-
-Maintainers: **[`PUBLISH_FOR_EXTERNAL_CONSUMERS.md`](PUBLISH_FOR_EXTERNAL_CONSUMERS.md)**.
-
----
-
-## Step 2 — Install the Capacitor plugin in your Angular project
-
-**Published:** once **`@mgl/capacitor-fleet-sdk`** is on npm:
+**Published:**
 
 ```bash
 npm install @mgl/capacitor-fleet-sdk
 ```
 
-**From this monorepo:**
+**From this repo (path):**
 
 ```bash
-npm install /absolute/path/to/mgl-sdk/plugins/capacitor-fleet
-# or: npm install file:../mgl-sdk/plugins/capacitor-fleet
+npm install file:/absolute/path/to/mgl-sdk/plugins/capacitor-fleet
 ```
 
-Ensure **`@capacitor/core`** (and **`@capacitor/android`** / **`@capacitor/ios`**) versions align with what the plugin expects (Capacitor **6.x** peer).
-
-Build the plugin’s TypeScript facade if you installed from source without `dist/`:
+If you depend on **source without a prebuilt `dist/`**:
 
 ```bash
-cd node_modules/@mgl/capacitor-fleet-sdk   # path may vary
+cd node_modules/@mgl/capacitor-fleet-sdk
 npm install && npm run build
 ```
 
-Prefer consuming a built tarball or npm release where **`dist/`** is already committed.
+---
+
+## 2. Android — `fleet-android` on Maven
+
+The plugin depends on **`com.mgl.sdk:fleet-android`** (version in the plugin’s **`android/build.gradle`**, typically **`0.1.0`**).
+
+**After the library is on Maven Central:** root **`settings.gradle` / `dependencyResolutionManagement`** needs **`google()`** and **`mavenCentral()`** (usual Capacitor setup).
+
+**Until then, or while developing against a local clone:**
+
+```bash
+cd native-android    # mgl-sdk checkout
+./gradlew :fleet-sdk:publishToMavenLocal
+```
+
+Add **`mavenLocal()`** to the **same repository list the app uses** for dependency resolution (often the **root** `dependencyResolutionManagement.repositories` block). If **`fleet-android`** does not resolve, the root block is missing **`mavenLocal()`** — mirror it there, not only inside a submodule.
+
+Keep **Java / Kotlin 17** (compileOptions / **jvmTarget 17**).
+
+**When you update the SDK from Git:** republish **`fleet-android`** and refresh Gradle so the Kotlin API matches the Capacitor plugin (e.g. **`FleetSdk.isInitialized()`**).
+
+**AGP 8.7.x / `androidx.core` 1.17 metadata:** use a **`fleet-android`** build that pins core **1.15.x** (this repo). If another dependency still pulls **1.17+**, add a host-level constraint or upgrade AGP — see troubleshooting in [`README.NATIVE-SDK.md`](README.NATIVE-SDK.md).
+
+**Note:** The plugin resolves **`capacitor-android`** via **`project(':capacitor-android')`** after **`npx cap sync`** — not from Maven **`com.capacitorjs:capacitor-android`**.
 
 ---
 
-## Step 3 — Register Capacitor native projects and sync
+## 3. Capacitor native projects
 
 ```bash
-npx cap add android   # if not already added
-npx cap add ios       # if not already added
+npx cap add android    # if missing
+npx cap add ios       # if missing
 npx cap sync
 ```
 
----
-
-## Step 4 — Android: Gradle repositories (`fleet-android`)
-
-After **`fleet-android`** is on **Maven Central**, consumer apps typically only need **`google()`** + **`mavenCentral()`** — no **`mavenLocal()`**.
-
-While you depend on an unpublished `.aar`, keep **`mavenLocal()`** in the **project-level** Gradle repositories list.
-
-The Capacitor plugin’s **`android/build.gradle`** lists **`mavenLocal()`**, **`google()`**, and **`mavenCentral()`**, and pulls Capacitor core from **`project(':capacitor-android')`** (not from Maven). If **`fleet-android`** fails to resolve, mirror **`mavenLocal()`** at the root **`settings.gradle`** repositories — Capacitor 8+ templates often resolve dependencies only from the root block.
-
-Keep **Java/Kotlin 17** compatibility consistent with the plugin (`compileOptions` / `jvmTarget` **17**).
-
-**AGP 8.7.x hosts:** The **`fleet-android`** library is built to **pin `androidx.core` / `core-ktx` to 1.15.x** and uses a **Compose BOM / `activity-compose`** line that avoids **`androidx.core` 1.17+** (that 1.17 line’s AAR metadata requires **AGP 8.9.1+**). Rebuild and **`publishToMavenLocal`** / refresh the dependency so your app picks up this version. If the **AAR metadata** warning **still** names **`androidx.core:1.17`**, another dependency in the host app (often **`@capacitor/android`**) is pulling 1.17 — that case cannot be fixed from **`fleet-android`** alone without a small Gradle exclusion/constraint in the app.
-
-The host **`Activity`** must be a **`FragmentActivity`** (Capacitor’s default satisfies this).
+Repeat **`npx cap sync`** whenever you change the plugin version or its native code.
 
 ---
 
-## Step 5 — iOS: link `MGLFleetSDK` (Swift Package)
+## 4. iOS — Swift package `MGLFleetSDK`
 
-The Capacitor plugin’s Swift code uses **`#if canImport(MGLFleetSDK)`**. Until the package is linked, **iOS calls will reject** with instructions to add SPM.
+Plugin code is behind **`#if canImport(MGLFleetSDK)`**. Without the package, native calls **reject** with an add-package message.
 
-1. Open **`ios/App/App.xcworkspace`** in Xcode.
-2. **File → Add Package Dependencies…**
-3. Add the local package folder: **`native-ios/MGLFleetSDK`** from your **`mgl-sdk`** checkout (use **Add Local…**).
-4. Add the library product **`MGLFleetSDK`** to the **App** target.
+1. Open **`ios/App/App.xcworkspace`** (or your app workspace) in Xcode.
+2. **File → Add Package Dependencies… → Add Local…**
+3. Select **`native-ios/MGLFleetSDK`** from your **`mgl-sdk`** checkout.
+4. Add product **`MGLFleetSDK`** to the **App** target.
 
-**Published monorepo:** instead of a local folder, add **`https://github.com/YOUR_ORG/mgl-sdk.git`** with dependency rule **from `0.1.0`** (uses root **`Package.swift`**).
-
-Then:
+If you use **CocoaPods** for `ios/App`:
 
 ```bash
-cd ios/App && pod install   # if your workflow uses CocoaPods from `ios/App`
+cd ios/App && pod install
 npx cap sync ios
 ```
 
 ---
 
-## Step 6 — Angular: open the native flow (recommended API)
+## 5. Angular — recommended usage
 
-The native Android/iOS SDK **requires `initialize` before `presentFleetFlow`**. If you only call **`presentFleetFlow`** from a button, nothing will open. Prefer **`openMglFleetNativeFlow`**, which chains both in the correct order.
+Use **`openMglFleetNativeFlow`**. Pass a non-empty **`apiBaseUrl`** (or rely on mock placeholder + warning when **`useMock: true`** and URL is empty — see package implementation). Use **`async` / `await`** on the button path.
 
-**Angular `environment`:** Ensure **`initialize.apiBaseUrl`** is never **`undefined`/empty**. If **`environment.base_url`** and **`v2_base_url`** can both be missing, **`openMglFleetNativeFlow`** now substitutes a placeholder when **`useMock: true`** and logs **`[@mgl/capacitor-fleet-sdk]`** warnings — still set a real URL when you ship. Avoid an extra **`if (!Capacitor.isNativePlatform()) return`** that hides issues with **commented-out** **`console.warn`** unless you duplicate the SDK’s messaging.
-
-### 6a. Service + button (recommended)
+**Service:**
 
 ```typescript
 import { Injectable } from '@angular/core';
@@ -145,7 +114,7 @@ import { openMglFleetNativeFlow } from '@mgl/capacitor-fleet-sdk';
 
 @Injectable({ providedIn: 'root' })
 export class FleetNativeService {
-  async openFleet(correlationId?: string) {
+  async openFleet(correlationId?: string): Promise<void> {
     try {
       const result = await openMglFleetNativeFlow({
         initialize: {
@@ -157,97 +126,50 @@ export class FleetNativeService {
       });
       console.log('[MGL Fleet] done:', result?.event, result?.payload);
     } catch (e) {
-      console.error('[MGL Fleet] Failed:', e);
+      console.error('[MGL Fleet] failed:', e);
     }
   }
 }
 ```
 
-Wire the Fleet button so the **async** method runs (**do not drop `await`** inside the handler):
+**Template + component:**
 
 ```html
 <button type="button" (click)="onFleetClick()">Fleet</button>
 ```
 
 ```typescript
-async onFleetClick() {
+async onFleetClick(): Promise<void> {
   await this.fleetNative.openFleet();
 }
 ```
 
-Testing in **Chrome/`ng serve` only**: the helper returns **`null`** and logs a warning — you must run **`npx cap run android`** / **`npx cap run ios`** (or Xcode / Android Studio) to see the native UI.
-
-### 6b. Manual (`initialize` + `presentFleetFlow`)
-
-If you call the plugin yourself, **`initialize` must succeed first** on every cold start:
-
-```typescript
-import { Injectable } from '@angular/core';
-import { MGLFleetSdk } from '@mgl/capacitor-fleet-sdk';
-import { Capacitor } from '@capacitor/core';
-
-@Injectable({ providedIn: 'root' })
-export class FleetNativeService {
-  private ready = false;
-
-  async ensureInitialized(): Promise<void> {
-    if (!Capacitor.isNativePlatform()) return;
-    if (this.ready) return;
-    await MGLFleetSdk.initialize({
-      apiBaseUrl: 'https://your-api.example.com',
-      authToken: undefined,
-      useMock: true,
-    });
-    this.ready = true;
-  }
-
-  async openFleet(correlationId?: string) {
-    if (!Capacitor.isNativePlatform()) {
-      console.warn('Fleet native UI runs on iOS/Android only');
-      return;
-    }
-    await this.ensureInitialized();
-    return MGLFleetSdk.presentFleetFlow(
-      correlationId ? { correlationId } : {},
-    );
-  }
-}
-```
-
-### 6c. Completion callback
-
-After the driver finishes or logs out, handle the promise returned by **`openMglFleetNativeFlow`** / **`presentFleetFlow`** (see **`6a`** **`try/catch`**).
+**Optional — manual two-step** (only if you need fine control): **`await MGLFleetSdk.initialize(...)`** then **`await MGLFleetSdk.presentFleetFlow(...)`**. Do not call **`presentFleetFlow`** without a successful **`initialize`** in the same process.
 
 ---
 
-## Step 7 — Run on device or emulator
+## 6. Run on device or emulator
 
 ```bash
 npx cap run android
 npx cap run ios
 ```
 
-`initialize` / `presentFleetFlow` are **no-ops or errors on the web** unless you add a separate web fallback; guard with **`Capacitor.isNativePlatform()`** as above.
+---
+
+## 7. Troubleshooting (short)
+
+| Issue | Action |
+|------|--------|
+| **`com.mgl.sdk:fleet-android` not found** | **`publishToMavenLocal`** from **`native-android`**; **`mavenLocal()`** in root repos. |
+| **`NOT_INITIALIZED`** on present | Use **`openMglFleetNativeFlow`**, or **`initialize`** before **`presentFleetFlow`**. |
+| **Plugin not implemented / old native** | **`npm install`**, **`npx cap sync`**, full rebuild and reinstall the app. |
+| **iOS reject: add MGLFleetSDK** | Complete step 4; product on **App** target. |
+| **Stub / no-op in console** | Remove host **path aliases** or stub modules shadowing **`@mgl/capacitor-fleet-sdk`**. |
+| **Nothing opens, no clear error** | Native run only; **`await`** in handler; check WebView console for **`[MGL Fleet]`**; Logcat / Xcode for crashes. |
 
 ---
 
-## Troubleshooting
+## Legacy: in-app Angular Fleet routes
 
-| Symptom | What to check |
-|--------|----------------|
-| Android: could not resolve **`com.mgl.sdk:fleet-android`** | Publish locally (**`./gradlew :fleet-sdk:publishToMavenLocal`** from **`native-android`**) or use Maven Central once published; add **`mavenLocal()`** at the **root** **`dependencyResolutionManagement` / `repositories`** block (not only inside the plugin subproject). |
-| Android: could not resolve **`com.capacitorjs:capacitor-android`** from Maven | Expected: the plugin uses **`project(':capacitor-android')`**. Ensure **`npx cap sync android`** ran and **`settings.gradle`** includes **`capacitor-android`** (default Capacitor template). |
-| Android: **AAR metadata** — `androidx.core:1.17` requires **AGP 8.9.1+** | Use the latest **`fleet-android`** build (pins core **1.15.x**). Republish **`publishToMavenLocal`** and sync. If it still appears, **Capacitor** or another library is pulling 1.17 — resolve/force an older **`androidx.core`** in the **app** Gradle file (minimal one-line change) or upgrade AGP. |
-| iOS: reject about **MGLFleetSDK** / **canImport** | Complete **Step 5** and target the **App** app, not only the Pods project. |
-| iOS deployment / compile errors on older iOS | The SwiftUI Fleet shell targets **iOS 16+**; align the host app and SPM minimum. |
-| **`FragmentActivity`** error | Ensure the main Capacitor activity extends **`FragmentActivity`**. |
-| Fleet button runs but **nothing opens** | Use **`openMglFleetNativeFlow`** — it calls **`openFleetNativeFlow`** natively (initialize + present **in one invoke**). Older two-step **`initialize` then `presentFleetFlow`** can mis-order under **Zone.js** / load. Test on **native** **`cap run`**; **`async` + `await`** on the click handler; DevTools / Logcat for **`[MGL Fleet]`** and **`NOT_INITIALIZED`**. |
-| Repeated **`Stub: presentFleetFlow no-op`** / **`Replace with file:…/capacitor-fleet`** | Not from this SDK’s package. Search the **host app** source for **`Stub`** / **`presentFleetFlow no-op`**. Remove the stub service or **`paths`** alias that maps **`@mgl/capacitor-fleet-sdk`** to a local **`*.stub.ts`**. Confirm **`package.json`** depends on the real **`file:…/mgl-sdk/plugins/capacitor-fleet`** and imports **`openMglFleetNativeFlow`** from **`@mgl/capacitor-fleet-sdk`** only. |
-| Tap Fleet: **no UI**, **no** JS error | Republish **`fleet-android`** and sync. **`startActivity` / `present` must run on the main thread** (fixed in **`FleetSdk`**). Use **`async` click handler** + **`await`** **`openFleet()`**. Look for **`[MGL Fleet]`** **`console.info`** lines; use **Logcat** / **Xcode** if the native sheet still does not appear. |
-| TypeScript / build errors for the plugin | Run **`npm run build`** inside the plugin package so **`dist/`** exists. |
-
----
-
-## Legacy path (embedded Angular Fleet UI)
-
-If you still use **`initFleetNativeSdk`** and in-app Angular routes for Fleet, see [`README.ANGULAR-CAPACITOR.md`](README.ANGULAR-CAPACITOR.md). Native-first integration **prefers** this Capacitor plugin + **`presentFleetFlow`**, not merchant-app routing into Fleet screens.
+For **`initFleetNativeSdk`** and Angular-routed Fleet UI, see [`README.ANGULAR-CAPACITOR.md`](README.ANGULAR-CAPACITOR.md). Prefer this document’s **native fullscreen** flow for new work.
