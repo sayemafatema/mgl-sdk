@@ -166,7 +166,8 @@ npx cap run ios
 | **Plugin not implemented / old native** | **`npm install`**, **`npx cap sync`**, full rebuild and reinstall the app. |
 | **iOS reject: add MGLFleetSDK** | Complete step 4; product on **App** target. |
 | **Stub / no-op in console** | Remove host **path aliases** or stub modules shadowing **`@mgl/capacitor-fleet-sdk`**. |
-| **Nothing opens, no clear error** | Native run only; **`await`** in handler; check WebView console for **`[MGL Fleet]`**; Logcat / Xcode for crashes. |
+| **Nothing happens / no snackbar** | If you only use **`ng serve`** or open the app URL in desktop Chrome, **`openMglFleetNativeFlow` throws** (so **`catch`** can show a message). You must run **`npx cap run android`** / **`ios`** (or install from Android Studio / Xcode). |
+| **Nothing opens on device** | **`npx cap sync`**, rebuild + reinstall; republish **`fleet-android`** if using Maven Local; WebView console **`[MGL Fleet]`**; Logcat / Xcode for crashes. |
 
 ---
 

@@ -99,13 +99,6 @@ class FleetSdkPlugin : Plugin() {
         return true
     }
 
-    private fun readSession(call: PluginCall): FleetSessionOptions? {
-        val top = call.getString("correlationId")
-            ?: call.getObject("present")?.getString("correlationId")
-            ?: return null
-        return FleetSessionOptions(correlationId = top)
-    }
-
     private fun executePresentFleetFlow(call: PluginCall) {
         val activity = bridge.activity as? FragmentActivity ?: run {
             call.reject("Host Activity must extend FragmentActivity")
