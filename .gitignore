@@ -34,8 +34,9 @@ dist/
 # Gradle (Android native module caches)
 .gradle/
 
-# VS Code local settings
-.vscode/
+# VS Code (share workspace Git/SCM UX; keep other local files ignored)
+.vscode/*
+!.vscode/settings.json
 
 # Unit test reports
 TEST*.xml

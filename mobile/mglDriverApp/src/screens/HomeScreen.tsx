@@ -1,0 +1,49 @@
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useEffect, useState } from 'react';
+import { Alert, Button, StyleSheet, Text, View } from 'react-native';
+import type { RootStackParamList } from '../navigation/RootNavigator';
+import { getAccessToken, setAccessToken } from '../storage/session';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
+
+export default function HomeScreen({ navigation }: Props) {
+  const [hasToken, setHasToken] = useState<boolean>(false);
+
+  useEffect(() => {
+    void (async () => {
+      const t = await getAccessToken();
+      setHasToken(Boolean(t));
+    })();
+  }, []);
+
+  async function onLogout() {
+    await setAccessToken(null);
+    setHasToken(false);
+    Alert.alert('Logged out');
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Driver App</Text>
+      <Text style={styles.meta}>{hasToken ? 'Session: ready' : 'Session: not logged in'}</Text>
+
+      <View style={styles.actions}>
+        <Button title="Scan & Pay" onPress={() => navigation.navigate('Scan')} />
+      </View>
+      <View style={styles.actions}>
+        <Button title="Share receipt (demo)" onPress={() => navigation.navigate('Receipt', { receiptText: 'Demo receipt' })} />
+      </View>
+      <View style={styles.actions}>
+        <Button title="Logout" onPress={onLogout} />
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 16, gap: 12, justifyContent: 'center' },
+  title: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
+  meta: { fontSize: 14, textAlign: 'center', color: '#666' },
+  actions: { marginTop: 6 },
+});
+
