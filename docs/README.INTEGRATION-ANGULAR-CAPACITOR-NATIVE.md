@@ -104,6 +104,8 @@ The Capacitor plugin’s **`android/build.gradle`** lists **`mavenLocal()`**, **
 
 Keep **Java/Kotlin 17** compatibility consistent with the plugin (`compileOptions` / `jvmTarget` **17**).
 
+**AGP 8.7.x hosts:** The **`fleet-android`** library is built to **pin `androidx.core` / `core-ktx` to 1.15.x** and uses a **Compose BOM / `activity-compose`** line that avoids **`androidx.core` 1.17+** (that 1.17 line’s AAR metadata requires **AGP 8.9.1+**). Rebuild and **`publishToMavenLocal`** / refresh the dependency so your app picks up this version. If the **AAR metadata** warning **still** names **`androidx.core:1.17`**, another dependency in the host app (often **`@capacitor/android`**) is pulling 1.17 — that case cannot be fixed from **`fleet-android`** alone without a small Gradle exclusion/constraint in the app.
+
 The host **`Activity`** must be a **`FragmentActivity`** (Capacitor’s default satisfies this).
 
 ---
@@ -203,7 +205,7 @@ npx cap run ios
 |--------|----------------|
 | Android: could not resolve **`com.mgl.sdk:fleet-android`** | Publish locally (**`./gradlew :fleet-sdk:publishToMavenLocal`** from **`native-android`**) or use Maven Central once published; add **`mavenLocal()`** at the **root** **`dependencyResolutionManagement` / `repositories`** block (not only inside the plugin subproject). |
 | Android: could not resolve **`com.capacitorjs:capacitor-android`** from Maven | Expected: the plugin uses **`project(':capacitor-android')`**. Ensure **`npx cap sync android`** ran and **`settings.gradle`** includes **`capacitor-android`** (default Capacitor template). |
-| Android: “multiple versions of the Android Gradle plugin (8.7.2, 8.9.1)” | Use **one** AGP version across the root **`build.gradle`** / **`libs.versions.toml`** and all included modules; remove duplicate **`plugins { id 'com.android…' version '…' }`** in subprojects if any. |
+| Android: **AAR metadata** — `androidx.core:1.17` requires **AGP 8.9.1+** | Use the latest **`fleet-android`** build (pins core **1.15.x**). Republish **`publishToMavenLocal`** and sync. If it still appears, **Capacitor** or another library is pulling 1.17 — resolve/force an older **`androidx.core`** in the **app** Gradle file (minimal one-line change) or upgrade AGP. |
 | iOS: reject about **MGLFleetSDK** / **canImport** | Complete **Step 5** and target the **App** app, not only the Pods project. |
 | iOS deployment / compile errors on older iOS | The SwiftUI Fleet shell targets **iOS 16+**; align the host app and SPM minimum. |
 | **`FragmentActivity`** error | Ensure the main Capacitor activity extends **`FragmentActivity`**. |

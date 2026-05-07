@@ -26,4 +26,6 @@ Staging folder for Sonatype portal bundle upload:
 
 Published builds flow to **Maven Central** — operator checklist **[`docs/PUBLISH_FOR_EXTERNAL_CONSUMERS.md`](../docs/PUBLISH_FOR_EXTERNAL_CONSUMERS.md)**.
 
+**Capacitor / AGP 8.7.x:** `:fleet-sdk` pins **`androidx.core`** to **1.15.x** and uses Compose BOM / AndroidX versions that avoid **`androidx.core` 1.17+** (stricter AAR metadata). Consumers should not need to raise host AGP solely for this SDK.
+
 Until **`fleet-android`** is public on Central, bridges rely on **Maven Local** — publish before **`cap sync`** / Gradle resolves **`com.mgl.sdk:fleet-android`** from **`plugins/*/android/build.gradle`**.

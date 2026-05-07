@@ -2,8 +2,9 @@
 agp = "8.7.2"
 kotlin = "2.0.21"
 coroutines = "1.9.0"
-compose-bom = "2024.11.00"
-activity-compose = "1.9.3"
+# BOM / APIs aligned so androidx.core stays below 1.17 (1.17+ AAR metadata requires AGP 8.9.1+).
+compose-bom = "2024.09.00"
+activity-compose = "1.8.2"
 compileSdk = "35"
 minSdk = "24"
 targetSdk = "35"
