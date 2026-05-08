@@ -11,11 +11,60 @@ buildscript {
         google()
         mavenCentral()
     }
+    configurations.classpath {
+        resolutionStrategy {
+            force("com.android.tools.build:gradle:8.11.0")
+        }
+    }
     dependencies {
-        classpath("com.android.tools.build:gradle")
+        classpath("com.android.tools.build:gradle:8.11.0")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
     }
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+def asyncStorageLocalRepo = file("${rootDir}/../node_modules/@react-native-async-storage/async-storage/android/local_repo")
+allprojects {
+    repositories {
+        if (asyncStorageLocalRepo.exists()) {
+            maven {
+                name = "async-storage-local"
+                url = asyncStorageLocalRepo.toURI()
+                content {
+                    includeGroup("org.asyncstorage.shared_storage")
+                }
+            }
+        }
+    }
+}
+
+// Runs once all projects are configured (avoids sub.afterEvaluate after a project is already evaluated during IDE sync).
+gradle.projectsEvaluated {
+    def root = gradle.rootProject
+    def worklets = root.findProject(":react-native-worklets")
+    def reanimated = root.findProject(":react-native-reanimated")
+    if (worklets != null) {
+        try {
+            worklets.layout.buildDirectory.dir("prefab-headers/worklets").get().asFile.mkdirs()
+        } catch (Exception ignored) { }
+    }
+    if (reanimated == null || worklets == null) {
+        return
+    }
+
+    reanimated.tasks.configureEach { t ->
+        def n = t.name
+        if (!n.startsWith("configureCMake")) {
+            return
+        }
+        try {
+            if (n.contains("Release")) {
+                t.dependsOn(worklets.tasks.named("externalNativeBuildRelease"))
+            } else {
+                t.dependsOn(worklets.tasks.named("externalNativeBuildDebug"))
+            }
+        } catch (Exception ignored) { }
+    }
+}

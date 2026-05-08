@@ -1,6 +1,136 @@
 pluginManagement { includeBuild("../node_modules/@react-native/gradle-plugin") }
 plugins { id("com.facebook.react.settings") }
-extensions.configure(com.facebook.react.ReactSettingsExtension){ ex -> ex.autolinkLibrariesFromCommand() }
+
+def appRoot = new File(settingsDir, "..").canonicalFile
+def localProps = new Properties()
+def localPropsFile = new File(settingsDir, "local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
+}
+
+// Must match ../package.json engines.node. Old Node + community bin.js exits 0 with no stdout → empty autolinking.json.
+def engineProbeJs = '''const v=process.version.slice(1).split('.').map(Number);const a=v[0]||0,b=v[1]||0,c=v[2]||0;const ok=a>22||(a===22&&(b>11||(b===11&&c>=0)));process.exit(ok?0:1);'''
+
+def satisfiesEngines = { String exe ->
+    try {
+        def probe = new ProcessBuilder(exe, '-e', engineProbeJs)
+        probe.directory(appRoot)
+        probe.redirectErrorStream(true)
+        probe.start().waitFor() == 0
+    } catch (Exception ignored) {
+        false
+    }
+}
+
+def semverKey = { String folderName ->
+    def m = (folderName.replaceFirst(/^v/, '') =~ /^(\d+)\.(\d+)\.(\d+)/)
+    if (!m.find()) return [0, 0, 0]
+    [m.group(1) as int, m.group(2) as int, m.group(3) as int]
+}
+
+def orderedNvmNodes = { String home ->
+    def root = new File(home, '.nvm/versions/node')
+    if (!root.isDirectory()) return [] as List<String>
+    def sub = root.listFiles({ f -> f?.isDirectory() } as FileFilter)
+    if (!sub) return [] as List<String>
+    def semverLike = { String n -> n ==~ /^v?\d+\.\d+\.\d+/ }
+    def dirs = sub.findAll { semverLike(it.name) }
+    dirs.sort { a, b ->
+        def pa = semverKey(a.name)
+        def pb = semverKey(b.name)
+        for (int i = 0; i < 3; i++) {
+            int c = pa[i] <=> pb[i]
+            if (c != 0) return c
+        }
+        0
+    }
+    dirs.reverse().collect { new File(it, 'bin/node').absolutePath }
+}
+
+def nodeFail = { String chosen ->
+    throw new GradleException(
+            "Gradle is using Node at: ${chosen}\n" +
+                    "That binary does not satisfy mglDriverApp (Node >= 22.11).\n" +
+                    "Fix one of:\n" +
+                    "  nvm install 22 && nvm alias default 22\n" +
+                    "  or add to android/local.properties: node.executable=<path from `which node`>\n"
+    )
+}
+
+def resolveNode = {
+    def fromFile = localProps.getProperty('node.executable')?.trim()
+    if (fromFile) {
+        if (!satisfiesEngines(fromFile)) nodeFail(fromFile)
+        return fromFile
+    }
+    def fromEnv = System.getenv('NODE_BINARY')?.trim()
+    if (fromEnv) {
+        if (!satisfiesEngines(fromEnv)) nodeFail(fromEnv)
+        return fromEnv
+    }
+    def home = System.getenv('HOME')
+    def candidates = []
+    def brew = new File('/opt/homebrew/bin/node')
+    if (brew.exists()) candidates << brew.absolutePath
+    def usrLocal = new File('/usr/local/bin/node')
+    if (usrLocal.exists()) candidates << usrLocal.absolutePath
+    if (home) candidates.addAll(orderedNvmNodes(home))
+    candidates << 'node'
+
+    for (String exe : candidates) {
+        if (exe != 'node' && !new File(exe).isFile()) continue
+        if (satisfiesEngines(exe)) return exe
+    }
+
+    throw new GradleException(
+            'No Node.js >= 22.11 found for Gradle. Install Node 22+, or set node.executable in android/local.properties.'
+    )
+}
+
+def nodeExecutable = resolveNode()
+
+// Reanimated / Worklets Android scripts use bare `commandLine("node", ...)` → fails when Gradle daemon PATH has no Node.
+def patchBareNodeCliInMavenLibs = {
+    def exe = nodeExecutable.contains(File.separator)
+            ? new File(nodeExecutable).canonicalPath.replace('\\', '/')
+            : nodeExecutable
+    def replaceWith = 'commandLine("' + java.util.regex.Matcher.quoteReplacement(exe) + '",'
+    [
+            new File(appRoot, 'node_modules/react-native-reanimated/android/build.gradle'),
+            new File(appRoot, 'node_modules/react-native-worklets/android/build.gradle'),
+    ].each { f ->
+        if (!f.exists()) return
+        def text = f.getText('UTF-8')
+        def patched = text.replaceAll(/(?m)commandLine\s*\(\s*"node"\s*,/, replaceWith)
+        if (patched != text) f.write(patched, 'UTF-8')
+    }
+}
+patchBareNodeCliInMavenLibs()
+
+gradle.projectsLoaded {
+    gradle.rootProject.ext.ngmNodeExecutable = nodeExecutable
+    def rnPkgDir = new File(appRoot, "node_modules/react-native").canonicalFile.absolutePath
+    gradle.rootProject.ext.REACT_NATIVE_NODE_MODULES_DIR = rnPkgDir
+    gradle.rootProject.project(":app").ext.REACT_NATIVE_NODE_MODULES_DIR = rnPkgDir
+}
+
+def rnCliJs = new File(appRoot, "node_modules/react-native/cli.js")
+def communityCliJs = new File(appRoot, "node_modules/@react-native-community/cli/build/bin.js")
+def autolinkCmd = null
+if (rnCliJs.exists()) {
+    autolinkCmd = [nodeExecutable, rnCliJs.absolutePath, "config"]
+} else if (communityCliJs.exists()) {
+    autolinkCmd = [nodeExecutable, communityCliJs.absolutePath, "config"]
+}
+
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
+    if (autolinkCmd != null) {
+        ex.autolinkLibrariesFromCommand(autolinkCmd, appRoot)
+    } else {
+        ex.autolinkLibrariesFromCommand()
+    }
+}
+
 rootProject.name = 'mglDriverApp'
 include ':app'
 includeBuild('../node_modules/@react-native/gradle-plugin')

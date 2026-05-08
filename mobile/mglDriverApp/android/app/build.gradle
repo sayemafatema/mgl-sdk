@@ -7,6 +7,11 @@ apply plugin: "com.facebook.react"
  * By default you don't need to apply any configuration, just uncomment the lines you need.
  */
 react {
+    def ngmNode = rootProject.findProperty("ngmNodeExecutable")
+    if (ngmNode != null) {
+        nodeExecutableAndArgs = [ngmNode as String]
+    }
+
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
     // root = file("../../")
