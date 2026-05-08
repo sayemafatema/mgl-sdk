@@ -191,6 +191,21 @@ function unwrapIfWrapped<T>(raw: unknown): T {
   return peeled as T;
 }
 
+/** Unwrap `{ "data": T }` inside fleet payload (driver-app auth JSON). */
+function unwrapDriverBody<T>(raw: unknown): T {
+  const step = unwrapIfWrapped<unknown>(raw);
+  if (
+    step !== null &&
+    typeof step === 'object' &&
+    !Array.isArray(step) &&
+    Object.keys(step as object).length === 1 &&
+    'data' in step
+  ) {
+    return (step as { data: T }).data;
+  }
+  return step as T;
+}
+
 async function fetchJsonOk<T>(
   url: string,
   init?: RequestInit
@@ -214,7 +229,7 @@ async function fetchJsonOk<T>(
 }
 
 export function parseCheckMobileStatus(body: unknown): CheckMobileStatus {
-  const cand = unwrapIfWrapped<{ status?: unknown }>(body);
+  const cand = unwrapDriverBody<{ status?: unknown }>(body);
   const s =
     cand && typeof cand === 'object' && cand !== null && 'status' in cand
       ? (cand as { status: unknown }).status
@@ -234,13 +249,13 @@ export async function driverCheckMobile(baseUrl: string, mobile: string): Promis
   return parseCheckMobileStatus(body);
 }
 
-/** Flow 2 — returning driver: triggers login OTP (user must exist). */
+/** Flow 2 — returning driver: GET login OTP (User must exist). */
 export async function driverSendLoginOtp(baseUrl: string, mobile: string): Promise<void> {
   const q = encodeURIComponent(mobile);
   await fetchJsonOk(`${baseUrl}/api/v0/otp/login?username=${q}`);
 }
 
-/** @deprecated Use {@link driverSendLoginOtp}. Old path `/otp/send` is not supported. */
+/** @deprecated Use {@link driverSendLoginOtp}. */
 export const driverSendOtp = driverSendLoginOtp;
 
 /** Flow 1 — new user (no User): rate-limited send; returns otp ref for verify-otp. */
@@ -250,7 +265,7 @@ export async function driverInviteMobileSendOtp(baseUrl: string, mobile: string)
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mobile }),
   });
-  const data = unwrapIfWrapped<string>(body);
+  const data = unwrapDriverBody<string>(body);
   if (typeof data !== 'string' || data.length === 0) throw new Error('Unexpected send-otp response');
   return data;
 }
@@ -266,7 +281,7 @@ export async function driverInviteMobileVerifyOtp(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mobile, otpRefNumber, otp }),
   });
-  const data = unwrapIfWrapped<{ mobileVerificationToken?: string }>(body);
+  const data = unwrapDriverBody<{ mobileVerificationToken?: string }>(body);
   const tok =
     data && typeof data === 'object' && typeof data.mobileVerificationToken === 'string'
       ? data.mobileVerificationToken
@@ -286,7 +301,7 @@ export async function driverInviteValidate(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mobile, inviteCode, mobileVerificationToken }),
   });
-  return unwrapIfWrapped(body) as InviteValidateResult;
+  return unwrapDriverBody(body) as InviteValidateResult;
 }
 
 export async function driverInviteSetPin(
@@ -299,28 +314,46 @@ export async function driverInviteSetPin(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sessionToken, pin }),
   });
-  return unwrapIfWrapped(body) as TokenResponse;
+  return unwrapDriverBody(body) as TokenResponse;
 }
 
-export async function driverExchangeOtpToken(
+/** Flow 2 — exchange login OTP for token-1 (fo-list / fo-select only; not FO-scoped). */
+export async function driverOauthOtpGrant(
+  baseUrl: string,
   mobile: string,
   otp: string,
-  apiBase: string
+  clientId = 'mgl-driver-app-client',
+  clientSecret = 'driver-app-secret'
 ): Promise<TokenResponse> {
-  const res = await fetch('/api/driver/oauth-token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mobile, otp, apiBase }),
+  const form = new URLSearchParams({
+    grant_type: 'otp',
+    username: mobile.trim(),
+    otp: otp.trim(),
+    client_id: clientId,
+    client_secret: clientSecret,
   });
-  const body = await parseJson(res);
+  const res = await fetch(`${baseUrl.replace(/\/$/, '')}/oauth/token`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+    },
+    body: form.toString(),
+  });
+  const parsed = await parseJson(res);
   if (!res.ok) {
     const msg =
-      body && typeof body === 'object' && 'error' in body
-        ? String((body as { error: unknown }).error)
-        : `HTTP ${res.status}`;
+      parsed &&
+      typeof parsed === 'object' &&
+      'error_description' in parsed &&
+      typeof (parsed as { error_description: string }).error_description === 'string'
+        ? (parsed as { error_description: string }).error_description
+        : parsed && typeof parsed === 'object' && 'error' in parsed
+          ? String((parsed as { error: unknown }).error)
+          : `oauth ${res.status}`;
     throw new Error(msg);
   }
-  return body as TokenResponse;
+  return parsed as TokenResponse;
 }
 
 export function oauthAccessToken(t: TokenResponse): string | undefined {
@@ -331,7 +364,7 @@ export async function driverFoList(baseUrl: string, bearerPartial: string): Prom
   const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/auth/fo-list`, {
     headers: { Authorization: `Bearer ${bearerPartial}` },
   });
-  const data = unwrapIfWrapped<FoListEntry[]>(body);
+  const data = unwrapDriverBody<FoListEntry[]>(body);
   return Array.isArray(data) ? data : [];
 }
 
@@ -349,7 +382,7 @@ export async function driverFoSelect(
     },
     body: JSON.stringify({ foCompanyId, pin }),
   });
-  return unwrapIfWrapped(body) as TokenResponse;
+  return unwrapDriverBody(body) as TokenResponse;
 }
 
 function foAuthHeader(bearerFoScoped: string) {
@@ -360,7 +393,7 @@ export async function driverGetHome(baseUrl: string, token: string): Promise<Dri
   const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/home`, {
     headers: foAuthHeader(token),
   });
-  return unwrapIfWrapped<DriverHome>(body);
+  return unwrapDriverBody<DriverHome>(body);
 }
 
 export async function driverGetBalance(baseUrl: string, token: string): Promise<number> {
@@ -368,7 +401,7 @@ export async function driverGetBalance(baseUrl: string, token: string): Promise<
     headers: foAuthHeader(token),
   });
   if (typeof body === 'number') return body;
-  const wrapped = unwrapIfWrapped<number>(body);
+  const wrapped = unwrapDriverBody<number>(body);
   if (typeof wrapped === 'number') return wrapped;
   return Number(body);
 }
@@ -377,7 +410,7 @@ export async function driverGetProfile(baseUrl: string, token: string): Promise<
   const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/profile`, {
     headers: foAuthHeader(token),
   });
-  return unwrapIfWrapped(body) as DriverProfile;
+  return unwrapDriverBody(body) as DriverProfile;
 }
 
 export async function driverGetAssignments(
@@ -387,7 +420,7 @@ export async function driverGetAssignments(
   const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/assignments`, {
     headers: foAuthHeader(token),
   });
-  const data = unwrapIfWrapped<DriverAssignment[]>(body);
+  const data = unwrapDriverBody<DriverAssignment[]>(body);
   return Array.isArray(data) ? data : [];
 }
 
@@ -401,7 +434,7 @@ export async function driverAcceptPairing(
     headers: { ...foAuthHeader(token), 'Content-Type': 'application/json' },
     body: JSON.stringify({ pairingCode }),
   });
-  return unwrapIfWrapped(body) as { vehicleRegNo: string; status: string };
+  return unwrapDriverBody(body) as { vehicleRegNo: string; status: string };
 }
 
 export type DriverQrPayPayload = {
@@ -420,7 +453,7 @@ export async function driverQrPay(
     headers: { ...foAuthHeader(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return unwrapIfWrapped(body) as QrPayResult;
+  return unwrapDriverBody(body) as QrPayResult;
 }
 
 export async function driverGetTransactions(
@@ -432,7 +465,7 @@ export async function driverGetTransactions(
   const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/transactions${q}`, {
     headers: foAuthHeader(token),
   });
-  const data = unwrapIfWrapped<DriverTxnRow[]>(body);
+  const data = unwrapDriverBody<DriverTxnRow[]>(body);
   return Array.isArray(data) ? data : [];
 }
 

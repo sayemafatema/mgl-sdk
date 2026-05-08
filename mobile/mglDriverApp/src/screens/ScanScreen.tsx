@@ -60,16 +60,12 @@ export default function ScanScreen({ navigation }: Props) {
           pin: p,
         });
 
-        const receiptText =
-          `Payment successful\n` +
-          `Txn: ${res.serverTxnId}\n` +
-          `Vehicle: ${res.vehicleRegNo}\n` +
-          `Amount: ₹${res.amountINR}\n` +
-          `Balance: ₹${res.newBalanceINR}\n` +
-          (res.authCode ? `Auth: ${res.authCode}\n` : '') +
-          (res.txnTime ? `Time: ${res.txnTime}\n` : '');
-
-        navigation.replace('Receipt', { receiptText });
+        navigation.replace('Receipt', {
+          stationName: parsed.merchantName ?? '—',
+          vehicleRegNo: vrn,
+          amountDisplay: paiseToInrDisplay(parsed.amountPaise),
+          serverTxnId: res.serverTxnId,
+        });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         Alert.alert('Pay failed', msg);

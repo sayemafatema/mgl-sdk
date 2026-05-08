@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 const CID = process.env.DRIVER_OAUTH_CLIENT_ID ?? 'mgl-driver-app-client';
 const SECRET = process.env.DRIVER_OAUTH_CLIENT_SECRET ?? 'driver-app-secret';
 
+/** Proxies Flow-2 `POST /oauth/token` with `grant_type=otp` (optional CORS workaround). */
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as { mobile?: string; otp?: string; apiBase?: string };
@@ -15,20 +16,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'mobile, otp, and apiBase required' }, { status: 400 });
     }
 
-    const basic = Buffer.from(`${CID}:${SECRET}`, 'utf8').toString('base64');
     const params = new URLSearchParams({
-      grant_type: 'password',
+      grant_type: 'otp',
       username: mobile,
-      password: otp,
+      otp,
       client_id: CID,
       client_secret: SECRET,
-      scope: 'read write',
     });
 
     const res = await fetch(`${apiBase}/oauth/token`, {
       method: 'POST',
       headers: {
-        Authorization: `Basic ${basic}`,
         'Content-Type': 'application/x-www-form-urlencoded',
         Accept: 'application/json',
       },

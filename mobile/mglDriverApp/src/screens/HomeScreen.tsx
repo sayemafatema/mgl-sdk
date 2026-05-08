@@ -39,7 +39,17 @@ export default function HomeScreen({ navigation }: Props) {
         <Button title="Scan & Pay" onPress={() => navigation.navigate('Scan')} />
       </View>
       <View style={styles.actions}>
-        <Button title="Share receipt (demo)" onPress={() => navigation.navigate('Receipt', { receiptText: 'Demo receipt' })} />
+        <Button
+          title="Share receipt (demo)"
+          onPress={() =>
+            navigation.navigate('Receipt', {
+              stationName: 'MGL Hind Station',
+              vehicleRegNo: 'MH56SA3453',
+              amountDisplay: '672.00',
+              serverTxnId: 'DEMO-TXN',
+            })
+          }
+        />
       </View>
       <View style={styles.actions}>
         <Button title="Logout" onPress={onLogout} />

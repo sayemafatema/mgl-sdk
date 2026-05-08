@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Phone, Shield, LogOut, Eye, EyeOff, Home, Route, CheckCircle, ArrowDown, ArrowUp } from 'lucide-react';
+import { ChevronLeft, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Phone, Shield, LogOut, Eye, EyeOff, Home, Route, CheckCircle, ArrowDown, ArrowUp, Share } from 'lucide-react';
 import {
   driverAcceptPairing,
-  driverExchangeOtpToken,
   driverFoList,
   driverFoSelect,
   driverInviteMobileSendOtp,
   driverInviteMobileVerifyOtp,
+  driverOauthOtpGrant,
   driverSendLoginOtp,
   driverQrPay,
   driverCheckMobile,
@@ -27,6 +27,7 @@ import {
   type DriverTxnRow,
   type DriverUiBinding,
   type FoListEntry,
+  type QrPayResult,
 } from '../components/mgl/driver-api';
 import { QrCameraScanner } from '../components/mgl/qr-camera-scanner';
 import {
@@ -239,7 +240,7 @@ export default function Page() {
   >('idle');
   const [sessionPin, setSessionPin] = useState('');
   const [sessionOtp, setSessionOtp] = useState('');
-  const [dispensingAmount, setDispensingAmount] = useState(0);
+  const [lastQrPayResult, setLastQrPayResult] = useState<QrPayResult | null>(null);
   const [pairingCode, setPairingCode] = useState('');
   const [pairingError, setPairingError] = useState('');
   const [activeTab, setActiveTab] = useState<'card' | 'scan' | 'assignments' | 'transactions' | 'profile'>('card');
@@ -417,7 +418,7 @@ export default function Page() {
     try {
       setApiBanner(null);
       setOtpError('');
-      const tr = await driverExchangeOtpToken(mobileNumber, enteredOtp, DRIVER_API_BASE);
+      const tr = await driverOauthOtpGrant(DRIVER_API_BASE, mobileNumber, enteredOtp);
       const partial = oauthAccessToken(tr);
       if (!partial) {
         setOtpError('Login failed: no token.');
@@ -481,6 +482,8 @@ export default function Page() {
     setApiTxns([]);
     setApiBanner(null);
     setFoPinEntry('');
+    setInviteOtpRefNumber(null);
+    setInviteMobileVerificationToken(null);
     setOtpDigits(Array(6).fill(''));
   };
 
@@ -545,23 +548,27 @@ export default function Page() {
     (async () => {
       try {
         setApiBanner(null);
-        const [home, profile, assignments, tx] = await Promise.all([
+        const [homeRes, profileRes, assignmentsRes, txRes] = await Promise.allSettled([
           driverGetHome(DRIVER_API_BASE, foScopedToken),
           driverGetProfile(DRIVER_API_BASE, foScopedToken),
           driverGetAssignments(DRIVER_API_BASE, foScopedToken),
           driverGetTransactions(DRIVER_API_BASE, foScopedToken, 0),
         ]);
-        if (!cancelled) {
-          setApiHome(home);
-          setApiProfileState(profile);
-          setApiAssignments(assignments);
-          setApiTxns(tx);
-        }
-      } catch (e) {
         if (cancelled) return;
-        const msg = e instanceof Error ? e.message : String(e);
-        setApiBanner(msg);
-        if (/\b401\b|Unauthorized|invalid_token|expired/i.test(msg)) {
+
+        if (homeRes.status === 'fulfilled') setApiHome(homeRes.value);
+        if (profileRes.status === 'fulfilled') setApiProfileState(profileRes.value);
+        if (assignmentsRes.status === 'fulfilled') setApiAssignments(assignmentsRes.value);
+        if (txRes.status === 'fulfilled') setApiTxns(txRes.value);
+
+        const failures = [homeRes, profileRes, assignmentsRes, txRes].filter(
+          (r): r is PromiseRejectedResult => r.status === 'rejected'
+        );
+        const authFailure = failures.find((r) => {
+          const m = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          return /\b401\b|Unauthorized|invalid_token|expired/i.test(m);
+        });
+        if (authFailure) {
           try {
             localStorage.removeItem(DRIVER_APP_FO_TOKEN_KEY);
           } catch {
@@ -573,7 +580,16 @@ export default function Page() {
           setApiAssignments([]);
           setApiTxns([]);
           setOnboardingStep('login');
+          const m = authFailure.reason instanceof Error ? authFailure.reason.message : String(authFailure.reason);
+          setApiBanner(m);
+        } else if (failures.length > 0) {
+          const m = failures[0].reason instanceof Error ? failures[0].reason.message : String(failures[0].reason);
+          setApiBanner(m);
         }
+      } catch (e) {
+        if (cancelled) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        setApiBanner(msg);
       }
     })();
     return () => {
@@ -2451,7 +2467,7 @@ export default function Page() {
                             if (sessionPin.length < 4 || sessionPin.length > 6) return;
                             try {
                               setApiBanner(null);
-                              await driverQrPay(DRIVER_API_BASE, foScopedToken, {
+                              const payRes = await driverQrPay(DRIVER_API_BASE, foScopedToken, {
                                 txnId: qrPayFields.txnId,
                                 vehicleRegNo: activeScanBinding.vrn.replace(/\s+/g, ''),
                                 pin: sessionPin,
@@ -2461,6 +2477,7 @@ export default function Page() {
                                 expiryEpoch: qrPayFields.expiryEpoch,
                                 sign: qrPayFields.sign,
                               });
+                              setLastQrPayResult(payRes);
                               setSessionPin('');
                               setSessionState('complete');
                               const [home, tx] = await Promise.all([
@@ -2555,7 +2572,7 @@ export default function Page() {
                       <p className="text-sm text-gray-600 mt-1">₹384</p>
                     </div>
 
-                    <button onClick={() => { setSessionState('complete'); setDispensingAmount(4.2); }} className="w-full bg-green-700 text-white font-medium py-3 rounded-2xl">
+                    <button onClick={() => { setSessionState('complete'); }} className="w-full bg-green-700 text-white font-medium py-3 rounded-2xl">
                       Fueling Complete
                     </button>
                   </>
@@ -2571,26 +2588,66 @@ export default function Page() {
                       </div>
                       <h2 className="text-xl font-bold text-gray-900 mb-1">Fueling Complete</h2>
                       <div className="border-t border-gray-200 my-4 pt-4 text-left space-y-2 text-sm">
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-gray-600">Station</span>
-                          <span className="font-medium">MGL Hind Station</span>
+                          <span className="font-medium text-right">{qrPayFields?.merchantName ?? '—'}</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-2">
                           <span className="text-gray-600">Vehicle</span>
-                          <span className="font-medium">{activeScanBinding.vrn}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Quantity</span>
-                          <span className="font-bold">4.2 kg</span>
+                          <span className="font-medium text-right">{activeScanBinding.vrn}</span>
                         </div>
                         <div className="flex justify-between border-t border-gray-200 pt-2">
                           <span className="text-gray-900 font-semibold">Amount</span>
-                          <span className="font-bold text-green-700">₹672</span>
+                          <span className="font-bold text-green-700">
+                            ₹{qrPayFields ? paiseToInrDisplay(qrPayFields.amountPaise) : '—'}
+                          </span>
                         </div>
                       </div>
                     </div>
 
-                    <button onClick={() => { setSessionState('idle'); setActiveTab('card'); setActiveScanBinding(null); }} className="w-full bg-green-700 text-white font-medium py-3 rounded-2xl">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void (async () => {
+                          const station = qrPayFields?.merchantName ?? '—';
+                          const vrn = activeScanBinding.vrn;
+                          const amountStr = qrPayFields ? paiseToInrDisplay(qrPayFields.amountPaise) : '—';
+                          let text = `Fueling complete\nStation: ${station}\nVehicle: ${vrn}\nAmount: ₹${amountStr}`;
+                          if (lastQrPayResult?.serverTxnId) text += `\nTxn: ${lastQrPayResult.serverTxnId}`;
+                          if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+                            try {
+                              await navigator.share({ title: 'Fueling complete', text });
+                              return;
+                            } catch (e: unknown) {
+                              if (e && typeof e === 'object' && 'name' in e && (e as { name: string }).name === 'AbortError')
+                                return;
+                            }
+                          }
+                          try {
+                            await navigator.clipboard.writeText(text);
+                            setSuccessToast('Receipt copied to clipboard');
+                            setTimeout(() => setSuccessToast(null), 2000);
+                          } catch {
+                            setApiBanner('Could not share or copy receipt');
+                          }
+                        })();
+                      }}
+                      className="w-full border-2 border-green-700 text-green-700 font-medium py-3 rounded-2xl mb-2 flex items-center justify-center gap-2"
+                    >
+                      <Share className="w-5 h-5" aria-hidden />
+                      Share receipt
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setSessionState('idle');
+                        setActiveTab('card');
+                        setActiveScanBinding(null);
+                        setQrPayFields(null);
+                        setLastQrPayResult(null);
+                      }}
+                      className="w-full bg-green-700 text-white font-medium py-3 rounded-2xl"
+                    >
                       Done
                     </button>
                   </>
