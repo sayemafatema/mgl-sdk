@@ -9,6 +9,13 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 export default function HomeScreen({ navigation }: Props) {
   const [hasToken, setHasToken] = useState<boolean>(false);
 
+  function timeGreeting(): string {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12) return 'Good morning';
+    if (h >= 12 && h < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
   useEffect(() => {
     void (async () => {
       const t = await getAccessToken();
@@ -24,6 +31,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
+      <Text style={styles.greeting}>{timeGreeting()}</Text>
       <Text style={styles.title}>Driver App</Text>
       <Text style={styles.meta}>{hasToken ? 'Session: ready' : 'Session: not logged in'}</Text>
 
@@ -42,6 +50,7 @@ export default function HomeScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, gap: 12, justifyContent: 'center' },
+  greeting: { fontSize: 14, textAlign: 'center', color: '#666' },
   title: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
   meta: { fontSize: 14, textAlign: 'center', color: '#666' },
   actions: { marginTop: 6 },

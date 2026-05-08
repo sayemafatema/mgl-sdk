@@ -267,6 +267,13 @@ export class FleetFlowHostComponent implements OnInit, OnDestroy {
     return this.engine().pendingAssignmentCount();
   }
 
+  timeGreeting(): string {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12) return 'Good morning';
+    if (h >= 12 && h < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
+
   nums(): number[] {
     return [1, 2, 3, 4, 5, 6, 7, 8, 9];
   }

@@ -211,7 +211,7 @@
     <ng-container *ngIf="s.mainOverlay === 'home'">
       <header class="hero">
         <div>
-          <p class="hero-sub">Good morning</p>
+          <p class="hero-sub">{{ timeGreeting() }}</p>
           <p class="hero-name">{{ s.profile.name }}</p>
         </div>
         <div class="avatar">{{ s.profile.initials }}</div>
