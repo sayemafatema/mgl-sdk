@@ -34,10 +34,11 @@ class FleetSdkPlugin : Plugin() {
             executePresentFleetFlow(call)
         } catch (t: Throwable) {
             Log.e(TAG, "openFleetNativeFlow crashed", t)
+            val ex = t as? Exception ?: RuntimeException(t)
             call.reject(
-                t.message ?: "openFleetNativeFlow failed",
+                ex.message ?: "openFleetNativeFlow failed",
                 FleetSdkErrorCodes.INTERNAL_SDK_ERROR.toString(),
-                t,
+                ex,
             )
         }
     }
@@ -48,7 +49,6 @@ class FleetSdkPlugin : Plugin() {
             call.reject(
                 "Fleet SDK is not initialized. Use openFleetNativeFlow() / openMglFleetNativeFlow() or await initialize() before presentFleetFlow().",
                 "NOT_INITIALIZED",
-                null,
             )
             return
         }
