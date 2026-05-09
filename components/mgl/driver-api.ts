@@ -3,14 +3,12 @@ import type { FleetpayQrApiFields } from './fleetpay-qr';
 /** Driver App API (Phase 2 auth + Phase 3 features).
  *  Per environment: set `NEXT_PUBLIC_DRIVER_API_BASE` (e.g. local `http://localhost:8080`, other UAT/prod hosts).
  *  When unset, defaults to fleet UAT: `https://api-fleet-uat.enkash.in`
- *  Force UI-only/mock: `NEXT_PUBLIC_DRIVER_API_MOCK=true`.
  */
 
 export const DEFAULT_DRIVER_API_BASE = 'https://api-fleet-uat.enkash.in';
 
 export const getDriverApiBase = (): string => {
   if (typeof process === 'undefined') return '';
-  if (process.env.NEXT_PUBLIC_DRIVER_API_MOCK === 'true') return '';
   const fromEnv = process.env.NEXT_PUBLIC_DRIVER_API_BASE?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, '');
   return DEFAULT_DRIVER_API_BASE;
