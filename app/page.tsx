@@ -38,6 +38,34 @@ import {
 
 const DRIVER_API_BASE = getDriverApiBase();
 const DRIVER_APP_FO_TOKEN_KEY = 'mgl_driver_app_fo_token';
+const DRIVER_APP_FO_NAME_KEY = 'mgl_driver_app_fo_name';
+const DRIVER_APP_FO_COMPANY_ID_KEY = 'mgl_driver_app_fo_company_id';
+
+function persistFleetOperatorLocalStorage(name: string, foCompanyId: number | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    const n = name.trim();
+    if (n) localStorage.setItem(DRIVER_APP_FO_NAME_KEY, n);
+    else localStorage.removeItem(DRIVER_APP_FO_NAME_KEY);
+    if (foCompanyId != null && Number.isFinite(foCompanyId)) {
+      localStorage.setItem(DRIVER_APP_FO_COMPANY_ID_KEY, String(foCompanyId));
+    } else {
+      localStorage.removeItem(DRIVER_APP_FO_COMPANY_ID_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearFleetOperatorLocalStorage() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(DRIVER_APP_FO_NAME_KEY);
+    localStorage.removeItem(DRIVER_APP_FO_COMPANY_ID_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 function driverInitialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -46,6 +74,43 @@ function driverInitialsFromName(name: string): string {
   if (one.length >= 2) return one.slice(0, 2).toUpperCase();
   return one.toUpperCase() || '?';
 }
+
+const MOBILE_INDIA_PATTERN = /^[6789]\d{9}$/;
+function isValidIndianMobile(m: string): boolean {
+  return MOBILE_INDIA_PATTERN.test(m);
+}
+
+const VALID_MOBILE_ERROR = 'Please enter a valid mobile number';
+
+function istHour(date: Date): number {
+  const hourPart = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: 'numeric',
+    hour12: false,
+  }).formatToParts(date).find((p) => p.type === 'hour');
+  const h = hourPart ? parseInt(hourPart.value, 10) : NaN;
+  return Number.isFinite(h) ? h : 12;
+}
+
+/** IST-based greeting (India does not observe DST). */
+function greetingForIndia(date = new Date()): string {
+  const h = istHour(date);
+  if (h >= 5 && h < 12) return 'Good Morning';
+  if (h >= 12 && h < 17) return 'Good Afternoon';
+  return 'Good Evening';
+}
+
+type OnboardingSubmitKey =
+  | null
+  | 'login_send_otp'
+  | 'login_verify_otp'
+  | 'login_resend_otp'
+  | 'fo_unlock'
+  | 'invite_validate'
+  | 'invite_send_otp'
+  | 'invite_verify_otp'
+  | 'invite_resend_otp'
+  | 'invite_set_pin';
 
 export default function Page() {
   // ============ STATE ============
@@ -69,6 +134,7 @@ export default function Page() {
   const [mobileNumber, setMobileNumber] = useState('');
   const [otp, setOtp] = useState('');
   const [otpCountdown, setOtpCountdown] = useState(0);
+  const [scanSessionOtpCountdown, setScanSessionOtpCountdown] = useState(0);
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
   const [pinError, setPinError] = useState('');
@@ -110,7 +176,11 @@ export default function Page() {
   const [inviteSessionToken, setInviteSessionToken] = useState<string | null>(null);
   const [inviteOtpRefNumber, setInviteOtpRefNumber] = useState<string | null>(null);
   const [inviteMobileVerificationToken, setInviteMobileVerificationToken] = useState<string | null>(null);
-  const [validatedInvitePreview, setValidatedInvitePreview] = useState<{ driverName: string; foName: string } | null>(null);
+  const [validatedInvitePreview, setValidatedInvitePreview] = useState<{
+    driverName: string;
+    foName: string;
+    foCompanyId?: number;
+  } | null>(null);
   const [foOrganizationList, setFoOrganizationList] = useState<FoListEntry[]>([]);
   const [selectedFoCompanyId, setSelectedFoCompanyId] = useState<number | null>(null);
   const [apiHome, setApiHome] = useState<DriverHome | null>(null);
@@ -119,6 +189,11 @@ export default function Page() {
   const [apiTxns, setApiTxns] = useState<DriverTxnRow[]>([]);
   const [apiBanner, setApiBanner] = useState<string | null>(null);
   const [apiLoading, setApiLoading] = useState(false);
+  const [onboardingActionLoading, setOnboardingActionLoading] = useState<OnboardingSubmitKey>(null);
+  const [pairingVerifyLoading, setPairingVerifyLoading] = useState(false);
+  const [qrPayVerifyLoading, setQrPayVerifyLoading] = useState(false);
+  const [shareReceiptLoading, setShareReceiptLoading] = useState(false);
+  const [sessionFoDisplayName, setSessionFoDisplayName] = useState<string | null>(null);
   const [foPinEntry, setFoPinEntry] = useState('');
   const [qrTxnId, setQrTxnId] = useState('');
   const [qrPayFields, setQrPayFields] = useState<FleetpayQrPayload | null>(null);
@@ -149,6 +224,10 @@ export default function Page() {
   const driverDisplayInitials = apiProfileState?.name
     ? driverInitialsFromName(apiProfileState.name)
     : '?';
+  const loginInviteOtpResendActive = otpCountdown > 0;
+  const scanSessionOtpResendActive = scanSessionOtpCountdown > 0;
+  const showMobileFormatError =
+    mobileNumber.length > 0 && !/^[6789]/.test(mobileNumber);
 
   // ============ HANDLERS ============
   const handleInviteCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -230,6 +309,7 @@ export default function Page() {
 
   const handleLoginOtpVerify = async () => {
     const enteredOtp = otpDigits.join('');
+    setOnboardingActionLoading('login_verify_otp');
     try {
       setApiBanner(null);
       setOtpError('');
@@ -264,6 +344,8 @@ export default function Page() {
         setOtpDigits(Array(6).fill(''));
         setOtpError('');
       }, 1700);
+    } finally {
+      setOnboardingActionLoading(null);
     }
   };
 
@@ -275,6 +357,7 @@ export default function Page() {
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem(DRIVER_APP_FO_TOKEN_KEY);
+        clearFleetOperatorLocalStorage();
       } catch {
         /* ignore */
       }
@@ -291,6 +374,7 @@ export default function Page() {
     setValidatedInvitePreview(null);
     setFoOrganizationList([]);
     setSelectedFoCompanyId(null);
+    setSessionFoDisplayName(null);
     setApiHome(null);
     setApiProfileState(null);
     setApiAssignments([]);
@@ -300,6 +384,10 @@ export default function Page() {
     setInviteOtpRefNumber(null);
     setInviteMobileVerificationToken(null);
     setOtpDigits(Array(6).fill(''));
+    setOnboardingActionLoading(null);
+    setPairingVerifyLoading(false);
+    setQrPayVerifyLoading(false);
+    setShareReceiptLoading(false);
   };
 
   // Numpad component
@@ -332,12 +420,42 @@ export default function Page() {
 
   // ============ EFFECTS ============
   useEffect(() => {
+    if (!loginInviteOtpResendActive) return undefined;
+    const id = window.setInterval(() => {
+      setOtpCountdown((c) => (c <= 1 ? 0 : c - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [loginInviteOtpResendActive]);
+
+  useEffect(() => {
+    if (!scanSessionOtpResendActive) return undefined;
+    const id = window.setInterval(() => {
+      setScanSessionOtpCountdown((c) => (c <= 1 ? 0 : c - 1));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [scanSessionOtpResendActive]);
+
+  useEffect(() => {
+    if (sessionState === 'otp_entry') {
+      setScanSessionOtpCountdown(60);
+    } else {
+      setScanSessionOtpCountdown(0);
+    }
+  }, [sessionState]);
+
+  useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
       const t = localStorage.getItem(DRIVER_APP_FO_TOKEN_KEY)?.trim();
       if (t) {
         setFoScopedToken(t);
         setOnboardingStep('complete');
+        try {
+          const foName = localStorage.getItem(DRIVER_APP_FO_NAME_KEY)?.trim();
+          if (foName) setSessionFoDisplayName(foName);
+        } catch {
+          /* ignore */
+        }
       }
     } catch {
       /* ignore */
@@ -364,11 +482,12 @@ export default function Page() {
       setApiLoading(true);
       try {
         setApiBanner(null);
-        const [homeRes, profileRes, assignmentsRes, txRes] = await Promise.allSettled([
+        const [homeRes, profileRes, assignmentsRes, txRes, foListRes] = await Promise.allSettled([
           driverGetHome(DRIVER_API_BASE, foScopedToken),
           driverGetProfile(DRIVER_API_BASE, foScopedToken),
           driverGetAssignments(DRIVER_API_BASE, foScopedToken),
           driverGetTransactions(DRIVER_API_BASE, foScopedToken, 0),
+          driverFoList(DRIVER_API_BASE, foScopedToken),
         ]);
         if (cancelled) return;
 
@@ -376,6 +495,28 @@ export default function Page() {
         if (profileRes.status === 'fulfilled') setApiProfileState(profileRes.value);
         if (assignmentsRes.status === 'fulfilled') setApiAssignments(assignmentsRes.value);
         if (txRes.status === 'fulfilled') setApiTxns(txRes.value);
+
+        if (foListRes.status === 'fulfilled') {
+          const active = foListRes.value.filter((f) => f.foStatus === 'ACTIVE');
+          let storedId: number | null = null;
+          try {
+            const raw = localStorage.getItem(DRIVER_APP_FO_COMPANY_ID_KEY);
+            if (raw != null) {
+              const p = parseInt(raw, 10);
+              if (Number.isFinite(p)) storedId = p;
+            }
+          } catch {
+            /* ignore */
+          }
+          const matched =
+            storedId != null ? active.find((f) => f.foCompanyId === storedId) : undefined;
+          const chosen = matched ?? active[0];
+          const foNm = chosen?.foName?.trim();
+          if (foNm) {
+            persistFleetOperatorLocalStorage(foNm, chosen?.foCompanyId ?? storedId);
+            setSessionFoDisplayName(foNm);
+          }
+        }
 
         const failures = [homeRes, profileRes, assignmentsRes, txRes].filter(
           (r): r is PromiseRejectedResult => r.status === 'rejected'
@@ -387,10 +528,12 @@ export default function Page() {
         if (authFailure) {
           try {
             localStorage.removeItem(DRIVER_APP_FO_TOKEN_KEY);
+            clearFleetOperatorLocalStorage();
           } catch {
             /* ignore */
           }
           setFoScopedToken(null);
+          setSessionFoDisplayName(null);
           setApiHome(null);
           setApiProfileState(null);
           setApiAssignments([]);
@@ -454,21 +597,32 @@ export default function Page() {
                         <input
                           type="tel"
                           value={mobileNumber}
-                          onChange={(e) => setMobileNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                          onChange={handleMobileChange}
                           placeholder="Enter your mobile number"
                           inputMode="numeric"
                           maxLength={10}
                           className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-700 focus:border-green-700"
                         />
                       </div>
+                      {showMobileFormatError && (
+                        <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 mt-3 text-red-900 text-sm">
+                          {VALID_MOBILE_ERROR}
+                        </div>
+                      )}
                     </div>
+
+                    {otpError && (
+                      <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{otpError}</div>
+                    )}
 
                     <button
                       onClick={() => {
                         void (async () => {
+                          if (!isValidIndianMobile(mobileNumber)) return;
                           setApiBanner(null);
                           setOtpDigits(Array(6).fill(''));
                           setOtpError('');
+                          setOnboardingActionLoading('login_send_otp');
                           try {
                             const cm = await driverCheckMobile(DRIVER_API_BASE, mobileNumber);
                             if (cm === 'NEW_USER') {
@@ -479,17 +633,26 @@ export default function Page() {
                               return;
                             }
                             await driverSendLoginOtp(DRIVER_API_BASE, mobileNumber);
-                            setOtpCountdown(30);
+                            setOtpCountdown(60);
                             setOnboardingStep('login_otp');
                           } catch (e) {
                             setOtpError(e instanceof Error ? e.message : String(e));
+                          } finally {
+                            setOnboardingActionLoading(null);
                           }
                         })();
                       }}
-                      disabled={mobileNumber.length !== 10}
-                      className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-xl transition"
+                      disabled={!isValidIndianMobile(mobileNumber) || onboardingActionLoading === 'login_send_otp'}
+                      className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-xl transition inline-flex items-center justify-center gap-2"
                     >
-                      Send OTP
+                      {onboardingActionLoading === 'login_send_otp' ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                          Sending…
+                        </>
+                      ) : (
+                        'Send OTP'
+                      )}
                     </button>
 
                     <div className="flex items-center gap-3 my-5">
@@ -514,7 +677,7 @@ export default function Page() {
                     </button>
 
                     <p className="text-xs text-gray-400 text-center mt-6">
-                      By continuing you agree to MGL Fleet Terms of Service
+                      By continuing, I agree to MGL Fleet Terms of Service
                     </p>
                   </div>
                 </div>
@@ -532,6 +695,10 @@ export default function Page() {
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-6">
                   <p className="text-sm text-blue-900">OTP sent to +91 {mobileNumber.slice(-4).padStart(10, '•')}</p>
                 </div>
+
+                {otpError && (
+                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{otpError}</div>
+                )}
 
                 <div className="flex justify-center gap-1 mb-6">
                   {Array.from({ length: 6 }).map((_, i) => (
@@ -554,16 +721,23 @@ export default function Page() {
                   ))}
                 </div>
 
-                {otpError && (
-                  <p className="text-red-500 text-sm text-center mt-2">{otpError}</p>
-                )}
-
                 <button
                   onClick={handleLoginOtpVerify}
-                  disabled={otpDigits.join("").length !== 6}
-                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-xl transition mb-3"
+                  disabled={
+                    otpDigits.join('').length !== 6 ||
+                    onboardingActionLoading === 'login_verify_otp' ||
+                    onboardingActionLoading === 'login_resend_otp'
+                  }
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-xl transition mb-3 inline-flex items-center justify-center gap-2"
                 >
-                  Verify
+                  {onboardingActionLoading === 'login_verify_otp' ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                      Verifying…
+                    </>
+                  ) : (
+                    'Verify'
+                  )}
                 </button>
 
                 {otpCountdown > 0 ? (
@@ -572,17 +746,31 @@ export default function Page() {
                   <button
                     onClick={() => {
                       void (async () => {
+                        setOnboardingActionLoading('login_resend_otp');
                         try {
                           await driverSendLoginOtp(DRIVER_API_BASE, mobileNumber);
-                          setOtpCountdown(30);
+                          setOtpCountdown(60);
                         } catch (e) {
                           setOtpError(e instanceof Error ? e.message : String(e));
+                        } finally {
+                          setOnboardingActionLoading(null);
                         }
                       })();
                     }}
-                    className="w-full text-green-700 hover:text-green-800 font-medium py-2 text-sm"
+                    disabled={
+                      onboardingActionLoading === 'login_resend_otp' ||
+                      onboardingActionLoading === 'login_verify_otp'
+                    }
+                    className="w-full text-green-700 hover:text-green-800 font-medium py-2 text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    Resend OTP
+                    {onboardingActionLoading === 'login_resend_otp' ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
+                        Sending…
+                      </>
+                    ) : (
+                      'Resend OTP'
+                    )}
                   </button>
                 )}
                 {apiBanner && !otpError && (
@@ -638,41 +826,65 @@ export default function Page() {
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
                 <h2 className="text-xl font-bold mb-2">Fleet PIN</h2>
-                <p className="text-sm text-gray-600 mb-6">Enter your PIN for this fleet (4–6 digits)</p>
+                <p className="text-sm text-gray-600 mb-6">Enter your PIN for this Fleet Operator</p>
+                {apiBanner && (
+                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{apiBanner}</div>
+                )}
                 <PinDisplay value={foPinEntry} />
                 <Numpad
                   onPress={(digit) => foPinEntry.length < 6 && setFoPinEntry(foPinEntry + digit)}
                   onBackspace={() => setFoPinEntry(foPinEntry.slice(0, -1))}
                 />
                 <button
-                  disabled={foPinEntry.length < 4 || foPinEntry.length > 6 || selectedFoCompanyId === null}
+                  disabled={
+                    foPinEntry.length !== 6 ||
+                    selectedFoCompanyId === null ||
+                    onboardingActionLoading === 'fo_unlock'
+                  }
                   onClick={() => {
                     void (async () => {
-                      if (selectedFoCompanyId === null || !otpPhaseToken) return;
+                      const selId = selectedFoCompanyId;
+                      const fos = foOrganizationList;
+                      if (selId === null || !otpPhaseToken) return;
+                      setOnboardingActionLoading('fo_unlock');
                       try {
                         const tr = await driverFoSelect(
                           DRIVER_API_BASE,
                           otpPhaseToken,
-                          selectedFoCompanyId,
+                          selId,
                           foPinEntry
                         );
                         const scoped = oauthAccessToken(tr);
                         if (!scoped) throw new Error('Missing fleet token');
                         setFoScopedToken(scoped);
+                        const picked = fos.find((f) => f.foCompanyId === selId && f.foStatus === 'ACTIVE');
+                        const foNm = picked?.foName?.trim();
+                        if (foNm) {
+                          persistFleetOperatorLocalStorage(foNm, selId);
+                          setSessionFoDisplayName(foNm);
+                        }
                         setOtpPhaseToken(null);
                         setFoPinEntry('');
                         setApiBanner(null);
                         setOnboardingStep('complete');
                       } catch (e) {
                         setApiBanner(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setOnboardingActionLoading(null);
                       }
                     })();
                   }}
-                  className="w-full mt-8 bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                  className="w-full mt-8 bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition inline-flex items-center justify-center gap-2"
                 >
-                  Unlock app
+                  {onboardingActionLoading === 'fo_unlock' ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                      Unlocking…
+                    </>
+                  ) : (
+                    'Unlock app'
+                  )}
                 </button>
-                {apiBanner && <p className="text-red-600 text-xs text-center mt-3">{apiBanner}</p>}
               </>
             )}
 
@@ -682,7 +894,7 @@ export default function Page() {
                 <h2 className="text-xl font-bold mb-2">{isNewUser ? 'Create your PIN' : 'Set new PIN'}</h2>
                 <p className="text-sm text-gray-600 mb-6">{isNewUser ? "You'll use this every time you sign in" : 'Choose a new 6-digit PIN'}</p>
                 <PinDisplay value={newPin} />
-                <Numpad onPress={(digit) => { setNewPin(newPin + digit); }} onBackspace={() => setNewPin(newPin.slice(0, -1))} />
+                <Numpad onPress={(digit) => { if (newPin.length < 6) setNewPin(newPin + digit); }} onBackspace={() => setNewPin(newPin.slice(0, -1))} />
                 <button onClick={() => { setPinConfirm(''); setPinError(''); setOnboardingStep('confirm_pin'); }} disabled={newPin.length !== 6} className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6">
                   Next
                 </button>
@@ -692,11 +904,22 @@ export default function Page() {
             {/* Screen: Confirm PIN */}
             {onboardingStep === 'confirm_pin' && (
               <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinConfirm('');
+                    setPinError('');
+                    setOnboardingStep('set_pin');
+                  }}
+                  className="flex items-center gap-2 text-gray-600 mb-6"
+                >
+                  <ChevronLeft className="w-5 h-5" /> Back
+                </button>
                 <h2 className="text-xl font-bold mb-2">Confirm your PIN</h2>
                 <p className="text-sm text-gray-600 mb-6">Enter the same PIN again</p>
                 {pinError && <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{pinError}</div>}
                 <PinDisplay value={pinConfirm} />
-                <Numpad onPress={(digit) => { setPinConfirm(pinConfirm + digit); }} onBackspace={() => setPinConfirm(pinConfirm.slice(0, -1))} isConfirm />
+                <Numpad onPress={(digit) => { if (pinConfirm.length < 6) setPinConfirm(pinConfirm + digit); }} onBackspace={() => setPinConfirm(pinConfirm.slice(0, -1))} isConfirm />
                 <button
                   onClick={() => {
                     if (newPin === pinConfirm) {
@@ -763,7 +986,7 @@ export default function Page() {
                 </button>
                 <h2 className="text-xl font-bold mb-2">Invite Code</h2>
                 <p className="text-sm text-gray-600 mb-6">
-                  Enter the code your Fleet Operator shared
+                  Enter the code shared by your Fleet Operator
                 </p>
                 <input
                   type="text"
@@ -786,6 +1009,9 @@ export default function Page() {
                     </div>
                   </div>
                 )}
+                {inviteFlowOtpError && onboardingStep === '1b' && (
+                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{inviteFlowOtpError}</div>
+                )}
                 <button
                   onClick={() => {
                     void (async () => {
@@ -794,29 +1020,42 @@ export default function Page() {
                           setInviteFlowOtpError('Complete mobile OTP verification first.');
                           return;
                         }
-                        const r = await driverInviteValidate(
-                          DRIVER_API_BASE,
-                          mobileNumber,
-                          inviteCode,
-                          inviteMobileVerificationToken
-                        );
-                        setInviteSessionToken(r.sessionToken);
-                        setValidatedInvitePreview({ driverName: r.driverName, foName: r.foName });
-                        setInviteFlowOtpError('');
-                        setOnboardingStep('1e');
+                        setOnboardingActionLoading('invite_validate');
+                        try {
+                          const r = await driverInviteValidate(
+                            DRIVER_API_BASE,
+                            mobileNumber,
+                            inviteCode,
+                            inviteMobileVerificationToken
+                          );
+                          setInviteSessionToken(r.sessionToken);
+                          setValidatedInvitePreview({
+                            driverName: r.driverName,
+                            foName: r.foName,
+                            foCompanyId: r.foCompanyId,
+                          });
+                          setInviteFlowOtpError('');
+                          setOnboardingStep('1e');
+                        } finally {
+                          setOnboardingActionLoading(null);
+                        }
                       } catch (e) {
                         setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
                       }
                     })();
                   }}
-                  disabled={inviteCode.length < 6}
-                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                  disabled={inviteCode.length < 6 || onboardingActionLoading === 'invite_validate'}
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition inline-flex items-center justify-center gap-2"
                 >
-                  Continue
+                  {onboardingActionLoading === 'invite_validate' ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                      Checking…
+                    </>
+                  ) : (
+                    'Continue'
+                  )}
                 </button>
-                {inviteFlowOtpError && onboardingStep === '1b' && (
-                  <p className="text-red-600 text-xs text-center mt-3">{inviteFlowOtpError}</p>
-                )}
               </>
             )}
 
@@ -838,13 +1077,29 @@ export default function Page() {
                 <p className="text-sm text-gray-600 mb-6">Must match number your Fleet Operator provided</p>
                 <div className="flex gap-2 mb-4">
                   <span className="text-lg font-bold text-gray-600 pt-3">+91</span>
-                  <input type="tel" value={mobileNumber} onChange={handleMobileChange} placeholder="98765 43210" className="flex-1 px-4 py-3 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-700" />
+                  <input
+                    type="tel"
+                    value={mobileNumber}
+                    onChange={handleMobileChange}
+                    placeholder="98765 43210"
+                    inputMode="numeric"
+                    maxLength={10}
+                    className="flex-1 px-4 py-3 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-700"
+                  />
                 </div>
+                {showMobileFormatError && (
+                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{VALID_MOBILE_ERROR}</div>
+                )}
+                {inviteFlowOtpError && onboardingStep === '1c' && (
+                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{inviteFlowOtpError}</div>
+                )}
                 <button
                   onClick={() => {
                     void (async () => {
+                      if (!isValidIndianMobile(mobileNumber)) return;
                       setApiBanner(null);
                       setInviteFlowOtpError('');
+                      setOnboardingActionLoading('invite_send_otp');
                       try {
                         const cm = await driverCheckMobile(DRIVER_API_BASE, mobileNumber);
                         if (cm !== 'NEW_USER') {
@@ -855,21 +1110,27 @@ export default function Page() {
                         setInviteOtpRefNumber(ref);
                         setOtp('');
                         setInviteFlowOtpError('');
-                        setOtpCountdown(30);
+                        setOtpCountdown(60);
                         setOnboardingStep('1d');
                       } catch (e) {
                         setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setOnboardingActionLoading(null);
                       }
                     })();
                   }}
-                  disabled={mobileNumber.length !== 10}
-                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                  disabled={!isValidIndianMobile(mobileNumber) || onboardingActionLoading === 'invite_send_otp'}
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition inline-flex items-center justify-center gap-2"
                 >
-                  Send OTP
+                  {onboardingActionLoading === 'invite_send_otp' ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                      Sending…
+                    </>
+                  ) : (
+                    'Send OTP'
+                  )}
                 </button>
-                {inviteFlowOtpError && onboardingStep === '1c' && (
-                  <p className="text-red-600 text-xs text-center mt-3">{inviteFlowOtpError}</p>
-                )}
               </>
             )}
 
@@ -889,6 +1150,9 @@ export default function Page() {
                 <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 mb-4">
                   <p className="text-sm text-blue-900">OTP sent to +91 {mobileNumber.slice(-4).padStart(10, '•')}</p>
                 </div>
+                {inviteFlowOtpError && (
+                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{inviteFlowOtpError}</div>
+                )}
                 <div className="flex justify-center gap-1 mb-4">
                   {Array.from({ length: 6 }).map((_, i) => (
                     <input
@@ -918,6 +1182,7 @@ export default function Page() {
                   onClick={() => {
                     void (async () => {
                       if (!inviteOtpRefNumber || otp.length !== 6) return;
+                      setOnboardingActionLoading('invite_verify_otp');
                       try {
                         const tok = await driverInviteMobileVerifyOtp(
                           DRIVER_API_BASE,
@@ -931,13 +1196,27 @@ export default function Page() {
                         setOnboardingStep('1b');
                       } catch (e) {
                         setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setOnboardingActionLoading(null);
                       }
                     })();
                   }}
-                  disabled={otp.length !== 6 || !inviteOtpRefNumber}
-                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mb-2"
+                  disabled={
+                    otp.length !== 6 ||
+                    !inviteOtpRefNumber ||
+                    onboardingActionLoading === 'invite_verify_otp' ||
+                    onboardingActionLoading === 'invite_resend_otp'
+                  }
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mb-2 inline-flex items-center justify-center gap-2"
                 >
-                  Verify OTP
+                  {onboardingActionLoading === 'invite_verify_otp' ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                      Verifying…
+                    </>
+                  ) : (
+                    'Verify OTP'
+                  )}
                 </button>
                 {otpCountdown > 0 ? (
                   <p className="text-center text-xs text-gray-500">Resend OTP in {otpCountdown}s</p>
@@ -945,19 +1224,33 @@ export default function Page() {
                   <button
                     onClick={() => {
                       void (async () => {
+                        setOnboardingActionLoading('invite_resend_otp');
                         try {
                           const ref = await driverInviteMobileSendOtp(DRIVER_API_BASE, mobileNumber);
                           setInviteOtpRefNumber(ref);
                           setInviteFlowOtpError('');
-                          setOtpCountdown(30);
+                          setOtpCountdown(60);
                         } catch (e) {
                           setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                        } finally {
+                          setOnboardingActionLoading(null);
                         }
                       })();
                     }}
-                    className="w-full text-green-700 hover:text-green-800 font-medium py-2 text-sm"
+                    disabled={
+                      onboardingActionLoading === 'invite_resend_otp' ||
+                      onboardingActionLoading === 'invite_verify_otp'
+                    }
+                    className="w-full text-green-700 hover:text-green-800 font-medium py-2 text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    Resend OTP
+                    {onboardingActionLoading === 'invite_resend_otp' ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin shrink-0" aria-hidden />
+                        Sending…
+                      </>
+                    ) : (
+                      'Resend OTP'
+                    )}
                   </button>
                 )}
               </>
@@ -967,14 +1260,12 @@ export default function Page() {
             {onboardingStep === '1e' && (
               <>
                 <h2 className="text-xl font-bold mb-2">Create your app PIN</h2>
-                <p className="text-sm text-gray-600 mb-6">4–6 digits for fleet login and fuel authorization</p>
+                <p className="text-sm text-gray-600 mb-6">6 digits for fleet login and fuel authorization</p>
                 <PinDisplay value={pin} />
                 <Numpad onPress={(digit) => { if (pin.length < 6) handlePinInput(digit, false); }} onBackspace={() => handlePinBackspace(false)} />
                 <button
                   onClick={() => setOnboardingStep('1f')}
-                  disabled={
-                    pin.length < 4 || pin.length > 6
-                  }
+                  disabled={pin.length !== 6}
                   className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6"
                 >
                   Next
@@ -985,6 +1276,17 @@ export default function Page() {
             {/* Screen 1f: PIN Confirm */}
             {onboardingStep === '1f' && (
               <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinConfirm('');
+                    setPinError('');
+                    setOnboardingStep('1e');
+                  }}
+                  className="flex items-center gap-2 text-gray-600 mb-4"
+                >
+                  <ChevronLeft className="w-5 h-5" /> Back
+                </button>
                 <h2 className="text-xl font-bold mb-2">Confirm your PIN</h2>
                 <p className="text-sm text-gray-600 mb-6">Enter the same PIN again</p>
                 {pinError && <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{pinError}</div>}
@@ -993,6 +1295,7 @@ export default function Page() {
                 <button
                   onClick={() => {
                     void (async () => {
+                      const preview = validatedInvitePreview;
                       if (pin !== pinConfirm) {
                         setPinError("PINs don't match, try again");
                         setPinConfirm('');
@@ -1003,11 +1306,17 @@ export default function Page() {
                         setPinError('Session missing — go back to invite step.');
                         return;
                       }
+                      setOnboardingActionLoading('invite_set_pin');
                       try {
                         const tr = await driverInviteSetPin(DRIVER_API_BASE, inviteSessionToken, pin);
                         const scoped = oauthAccessToken(tr);
                         if (!scoped) throw new Error('Missing access token');
                         setFoScopedToken(scoped);
+                        const inviteFo = preview?.foName?.trim();
+                        if (inviteFo) {
+                          persistFleetOperatorLocalStorage(inviteFo, preview?.foCompanyId ?? null);
+                          setSessionFoDisplayName(inviteFo);
+                        }
                         setInviteSessionToken(null);
                         setPin('');
                         setPinConfirm('');
@@ -1015,13 +1324,22 @@ export default function Page() {
                         setOnboardingStep('complete');
                       } catch (e) {
                         setPinError(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setOnboardingActionLoading(null);
                       }
                     })();
                   }}
-                  disabled={pinConfirm.length < 4 || pinConfirm.length > 6}
-                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6"
+                  disabled={pinConfirm.length !== 6 || onboardingActionLoading === 'invite_set_pin'}
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6 inline-flex items-center justify-center gap-2"
                 >
-                  Confirm PIN
+                  {onboardingActionLoading === 'invite_set_pin' ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                      Saving…
+                    </>
+                  ) : (
+                    'Confirm PIN'
+                  )}
                 </button>
               </>
             )}
@@ -1372,6 +1690,7 @@ export default function Page() {
                                   setPairingError('Sign in required.');
                                   return;
                                 }
+                                setPairingVerifyLoading(true);
                                 try {
                                   await driverAcceptPairing(DRIVER_API_BASE, foScopedToken, code);
                                   const next = await driverGetAssignments(DRIVER_API_BASE, foScopedToken);
@@ -1386,13 +1705,22 @@ export default function Page() {
                                     setPairingDigits(Array(6).fill(''));
                                     setPairingError('');
                                   }, 1500);
+                                } finally {
+                                  setPairingVerifyLoading(false);
                                 }
                               })();
                             }}
-                            disabled={pairingDigits.some(d => d === "")}
-                            className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                            disabled={pairingDigits.some((d) => d === '') || pairingVerifyLoading}
+                            className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition inline-flex items-center justify-center gap-2"
                           >
-                            Verify & Activate
+                            {pairingVerifyLoading ? (
+                              <>
+                                <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                                Verifying…
+                              </>
+                            ) : (
+                              'Verify & Activate'
+                            )}
                           </button>
                         )}
 
@@ -1528,7 +1856,7 @@ export default function Page() {
               <div className="bg-[#1a3020] px-5 pt-4 pb-5">
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="text-[#c8e6c9] text-sm font-normal">Good morning</p>
+                    <p className="text-[#c8e6c9] text-sm font-normal">{greetingForIndia()}</p>
                     <p className="text-white font-bold text-xl mt-0.5">{driverDisplayName}</p>
                   </div>
                   <div className="w-10 h-10 rounded-full bg-[#2d4a36] ring-2 ring-white/10 flex items-center justify-center">
@@ -1571,8 +1899,8 @@ export default function Page() {
                   <div className="relative mb-1">
                     <div className="rounded-[14px] border border-gray-200 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
                       <div className="flex justify-between items-start gap-3">
-                        <p className="text-xs text-gray-600 leading-snug pr-2 min-w-0 flex-1">
-                          {currentCard.fo}
+                        <p className="text-sm text-gray-600 leading-snug pr-2 min-w-0 flex-1">
+                          {(sessionFoDisplayName?.trim() || currentCard.fo?.trim()) || '—'}
                         </p>
                         <span
                           className={`shrink-0 rounded-md px-2.5 py-1 text-[11px] font-bold
@@ -1917,7 +2245,8 @@ export default function Page() {
                       onClick={() => {
                         void (async () => {
                           if (!foScopedToken || !activeScanBinding || !qrPayFields) return;
-                          if (sessionPin.length < 4 || sessionPin.length > 6) return;
+                          if (sessionPin.length !== 6) return;
+                          setQrPayVerifyLoading(true);
                           try {
                             setApiBanner(null);
                             const payRes = await driverQrPay(DRIVER_API_BASE, foScopedToken, {
@@ -1941,15 +2270,22 @@ export default function Page() {
                             setApiTxns(tx);
                           } catch (e) {
                             setApiBanner(e instanceof Error ? e.message : String(e));
+                          } finally {
+                            setQrPayVerifyLoading(false);
                           }
                         })();
                       }}
-                      disabled={
-                          sessionPin.length < 4 || sessionPin.length > 6 || !qrPayFields
-                      }
-                      className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                      disabled={sessionPin.length !== 6 || !qrPayFields || qrPayVerifyLoading}
+                      className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition inline-flex items-center justify-center gap-2"
                     >
-                      Verify PIN
+                      {qrPayVerifyLoading ? (
+                        <>
+                          <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                          Processing…
+                        </>
+                      ) : (
+                        'Verify PIN'
+                      )}
                     </button>
                   </>
                 )}
@@ -1986,7 +2322,17 @@ export default function Page() {
                       Verify & Authorize
                     </button>
 
-                    <button className="w-full text-green-700 font-medium py-2 text-sm">Resend OTP</button>
+                    {scanSessionOtpCountdown > 0 ? (
+                      <p className="text-center text-xs text-gray-500">Resend OTP in {scanSessionOtpCountdown}s</p>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setScanSessionOtpCountdown(60)}
+                        className="w-full text-green-700 font-medium py-2 text-sm"
+                      >
+                        Resend OTP
+                      </button>
+                    )}
                   </>
                 )}
 
@@ -2055,33 +2401,43 @@ export default function Page() {
                       type="button"
                       onClick={() => {
                         void (async () => {
-                          const station = qrPayFields?.merchantName ?? '—';
-                          const vrn = activeScanBinding.vrn;
-                          const amountStr = qrPayFields ? paiseToInrDisplay(qrPayFields.amountPaise) : '—';
-                          let text = `Fueling complete\nStation: ${station}\nVehicle: ${vrn}\nAmount: ₹${amountStr}`;
-                          if (lastQrPayResult?.serverTxnId) text += `\nTxn: ${lastQrPayResult.serverTxnId}`;
-                          if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-                            try {
-                              await navigator.share({ title: 'Fueling complete', text });
-                              return;
-                            } catch (e: unknown) {
-                              if (e && typeof e === 'object' && 'name' in e && (e as { name: string }).name === 'AbortError')
-                                return;
-                            }
-                          }
+                          setShareReceiptLoading(true);
                           try {
-                            await navigator.clipboard.writeText(text);
-                            setSuccessToast('Receipt copied to clipboard');
-                            setTimeout(() => setSuccessToast(null), 2000);
-                          } catch {
-                            setApiBanner('Could not share or copy receipt');
+                            const station = qrPayFields?.merchantName ?? '—';
+                            const vrn = activeScanBinding.vrn;
+                            const amountStr = qrPayFields ? paiseToInrDisplay(qrPayFields.amountPaise) : '—';
+                            let text = `Fueling complete\nStation: ${station}\nVehicle: ${vrn}\nAmount: ₹${amountStr}`;
+                            if (lastQrPayResult?.serverTxnId) text += `\nTxn: ${lastQrPayResult.serverTxnId}`;
+                            if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+                              try {
+                                await navigator.share({ title: 'Fueling complete', text });
+                                return;
+                              } catch (e: unknown) {
+                                if (e && typeof e === 'object' && 'name' in e && (e as { name: string }).name === 'AbortError')
+                                  return;
+                              }
+                            }
+                            try {
+                              await navigator.clipboard.writeText(text);
+                              setSuccessToast('Receipt copied to clipboard');
+                              setTimeout(() => setSuccessToast(null), 2000);
+                            } catch {
+                              setApiBanner('Could not share or copy receipt');
+                            }
+                          } finally {
+                            setShareReceiptLoading(false);
                           }
                         })();
                       }}
-                      className="w-full border-2 border-green-700 text-green-700 font-medium py-3 rounded-2xl mb-2 flex items-center justify-center gap-2"
+                      disabled={shareReceiptLoading}
+                      className="w-full border-2 border-green-700 text-green-700 font-medium py-3 rounded-2xl mb-2 inline-flex items-center justify-center gap-2 disabled:opacity-60"
                     >
-                      <Share className="w-5 h-5" aria-hidden />
-                      Share receipt
+                      {shareReceiptLoading ? (
+                        <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                      ) : (
+                        <Share className="w-5 h-5" aria-hidden />
+                      )}
+                      {shareReceiptLoading ? 'Sharing…' : 'Share receipt'}
                     </button>
 
                     <button

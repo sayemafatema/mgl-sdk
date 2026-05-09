@@ -149,30 +149,49 @@ async function parseJson(res: Response): Promise<unknown> {
   }
 }
 
+/** Resolves `errorResponse.errorMessage`, flat keys, or string `payload` on FAILURE envelopes. */
+function extractFleetApiErrorMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const o = body as Record<string, unknown>;
+
+  const er = o.errorResponse;
+  if (er != null && typeof er === 'object') {
+    const eo = er as Record<string, unknown>;
+    if (typeof eo.errorMessage === 'string' && eo.errorMessage.trim()) return eo.errorMessage.trim();
+    if (typeof eo.message === 'string' && eo.message.trim()) return eo.message.trim();
+  }
+
+  if (typeof o.errorMessage === 'string' && o.errorMessage.trim()) return o.errorMessage.trim();
+  if (typeof o.message === 'string' && o.message.trim()) return o.message.trim();
+
+  const p = o.payload;
+  if (typeof p === 'string' && p.trim() && String(o.response_message ?? '') === 'FAILURE') return p.trim();
+
+  return undefined;
+}
+
 /** Backend envelope (UAT): `{ "payload": ..., "errorResponse": null, "response_code": 200, "response_message": "SUCCESS" }` */
 function peelFleetEnvelope(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
   const o = raw as Record<string, unknown>;
   if (!('payload' in o) || !('response_message' in o)) return raw;
 
-  if (o.errorResponse != null) {
-    const e = o.errorResponse;
-    const em =
-      typeof e === 'object' && e !== null && 'message' in e
-        ? String((e as { message: unknown }).message)
-        : typeof e === 'string'
-          ? e
-          : JSON.stringify(e);
-    throw new Error(em || 'Request failed');
-  }
-
   const msg = String(o.response_message ?? '');
   const code = o.response_code;
-  if (msg === 'FAILURE') {
-    throw new Error('Request failed');
-  }
-  if (typeof code === 'number' && code >= 400) {
-    throw new Error(msg || `Error ${code}`);
+  const errDetail = extractFleetApiErrorMessage(o);
+
+  const isError =
+    o.errorResponse != null ||
+    msg === 'FAILURE' ||
+    (typeof code === 'number' && code >= 400);
+
+  if (isError) {
+    throw new Error(
+      errDetail ||
+        (typeof msg === 'string' && msg !== 'FAILURE' && msg.trim() ? msg.trim() : '') ||
+        (typeof code === 'number' ? `Error ${code}` : '') ||
+        'Request failed'
+    );
   }
 
   return o.payload;
@@ -181,9 +200,16 @@ function peelFleetEnvelope(raw: unknown): unknown {
 function unwrapIfWrapped<T>(raw: unknown): T {
   const peeled = peelFleetEnvelope(raw);
   if (peeled && typeof peeled === 'object' && 'status' in peeled && 'data' in peeled) {
-    const w = peeled as { status: string; data?: unknown; message?: string };
-    if (w.status === 'FAILURE')
-      throw new Error(w.message || 'Request failed');
+    const w = peeled as { status: string; data?: unknown; message?: string; errorMessage?: string };
+    if (w.status === 'FAILURE') {
+      const detail =
+        typeof w.errorMessage === 'string' && w.errorMessage.trim()
+          ? w.errorMessage.trim()
+          : typeof w.message === 'string' && w.message.trim()
+            ? w.message.trim()
+            : undefined;
+      throw new Error(detail ?? 'Request failed');
+    }
     return (w.data ?? null) as T;
   }
   return peeled as T;
@@ -217,11 +243,7 @@ async function fetchJsonOk<T>(
   });
   const body = await parseJson(res);
   if (!res.ok) {
-    const msg =
-      body && typeof body === 'object' && 'message' in body && typeof (body as { message: string }).message === 'string'
-        ? (body as { message: string }).message
-        : `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new Error(extractFleetApiErrorMessage(body) ?? `HTTP ${res.status}`);
   }
   return { res, body };
 }
@@ -340,15 +362,17 @@ export async function driverOauthOtpGrant(
   });
   const parsed = await parseJson(res);
   if (!res.ok) {
+    const fleetMsg = extractFleetApiErrorMessage(parsed);
     const msg =
-      parsed &&
+      fleetMsg ??
+      (parsed &&
       typeof parsed === 'object' &&
       'error_description' in parsed &&
       typeof (parsed as { error_description: string }).error_description === 'string'
         ? (parsed as { error_description: string }).error_description
         : parsed && typeof parsed === 'object' && 'error' in parsed
           ? String((parsed as { error: unknown }).error)
-          : `oauth ${res.status}`;
+          : `oauth ${res.status}`);
     throw new Error(msg);
   }
   return parsed as TokenResponse;
