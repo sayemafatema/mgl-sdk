@@ -60,6 +60,15 @@ export default function ScanScreen({ navigation }: Props) {
           pin: p,
         });
 
+        if (res.status === 'FAILED') {
+          Alert.alert(
+            'Transaction failed',
+            [res.serverTxnId, res.txnTime && `Time: ${res.txnTime}`].filter(Boolean).join('\n') ||
+              'Payment did not complete.'
+          );
+          return;
+        }
+
         navigation.replace('Receipt', {
           stationName: parsed.merchantName ?? '—',
           vehicleRegNo: vrn,

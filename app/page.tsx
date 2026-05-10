@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Shield, LogOut, Eye, EyeOff, Home, Route, CheckCircle, ArrowDown, ArrowUp, Share, Loader2 } from 'lucide-react';
+import { ChevronLeft, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Shield, LogOut, Eye, EyeOff, Home, CheckCircle, ArrowDown, ArrowUp, Share, Loader2, Truck, FileText, Info, XCircle } from 'lucide-react';
 import {
   driverAcceptPairing,
   driverFoList,
@@ -82,6 +82,89 @@ function isValidIndianMobile(m: string): boolean {
 
 const VALID_MOBILE_ERROR = 'Please enter a valid mobile number';
 
+function errTxt(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+function isLikelyNetworkFailure(msg: string): boolean {
+  return /network|fetch|failed to fetch|timeout|502|503|504|econn|aborted/i.test(msg.toLowerCase());
+}
+
+const BANNER_MSG_MAX = 280;
+
+/** Prefer server/client error text; only substitute for likely transport failures. */
+function bannerFromThrownError(e: unknown, transportFallback: string): string {
+  const m = errTxt(e);
+  if (isLikelyNetworkFailure(m)) return transportFallback;
+  const t = m.trim();
+  if (!t) return 'Request failed.';
+  return t.length <= BANNER_MSG_MAX ? t : `${t.slice(0, BANNER_MSG_MAX - 1)}…`;
+}
+
+function bannerForOtpFailure(e: unknown): string {
+  return bannerFromThrownError(e, 'Could not verify OTP. Check your connection and try again.');
+}
+
+function bannerForPinFailure(e: unknown): string {
+  return bannerFromThrownError(e, 'Could not verify PIN. Check your connection and try again.');
+}
+
+function bannerForGenericFailure(e: unknown): string {
+  return bannerFromThrownError(e, 'Something went wrong. Check your connection and try again.');
+}
+
+function formatPayApiTxnDate(iso: string | undefined | null): string {
+  if (!iso?.trim()) return '—';
+  const d = Date.parse(iso);
+  if (Number.isNaN(d)) return iso.trim();
+  return new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/** Common Indian VRN grouping for receipt display */
+function formatPrettyVrn(vrn: string | undefined | null): string {
+  if (!vrn?.trim()) return '—';
+  const s = vrn.replace(/\s+/g, '').toUpperCase();
+  const m = /^([A-Z]{2})(\d{2})([A-Z]{1,3})(\d{1,4})$/.exec(s);
+  if (m) return `${m[1]} ${m[2]} ${m[3]} ${m[4]}`;
+  return vrn.trim();
+}
+
+/** `--` when missing or not a finite number; otherwise `₹` + en-IN grouped amount. */
+function vehicleBalanceDisplay(value: unknown): string {
+  if (value == null) return '--';
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return '--';
+  return `₹${n.toLocaleString('en-IN')}`;
+}
+
+function profileRegisteredFromAssignments(assignments: DriverAssignment[]): string {
+  const times = assignments
+    .map((a) => a.assignedAt)
+    .filter((s): s is string => typeof s === 'string' && Boolean(s.trim()))
+    .map((s) => Date.parse(s))
+    .filter((n) => !Number.isNaN(n));
+  if (times.length === 0) return '—';
+  return new Date(Math.min(...times)).toLocaleString('en-IN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
+function vehicleIdForTransactions(
+  home: DriverHome | null,
+  assignments: DriverAssignment[],
+  activeCardsFiltered: DriverUiBinding[],
+  activeIndex: number
+): string | null {
+  const selected = activeCardsFiltered[activeIndex];
+  if (selected?.vehicleId?.trim()) return selected.vehicleId.trim();
+  if (home?.vehicleId?.trim()) return home.vehicleId.trim();
+  const row =
+    assignments.find((a) => a.status === 'ACTIVE' && !a.requiresPairing && a.vehicleId?.trim()) ??
+    assignments.find((a) => a.vehicleId?.trim());
+  return row?.vehicleId?.trim() ?? null;
+}
+
 function istHour(date: Date): number {
   const hourPart = new Intl.DateTimeFormat('en-IN', {
     timeZone: 'Asia/Kolkata',
@@ -137,7 +220,6 @@ export default function Page() {
   const [scanSessionOtpCountdown, setScanSessionOtpCountdown] = useState(0);
   const [pin, setPin] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
-  const [pinError, setPinError] = useState('');
   const [sessionState, setSessionState] = useState<
     'idle' | 'scanning' | 'confirmation' | 'pin_confirm' | 'otp_entry' | 'authorized' | 'complete'
   >('idle');
@@ -167,8 +249,6 @@ export default function Page() {
   const [isNewUser, setIsNewUser] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [otpDigits, setOtpDigits] = useState(Array(6).fill(''));
-  const [otpError, setOtpError] = useState('');
-  const [inviteFlowOtpError, setInviteFlowOtpError] = useState('');
   const [activeScanBinding, setActiveScanBinding] = useState<DriverUiBinding | null>(null);
   const [selectedScanBinding, setSelectedScanBinding] = useState<DriverUiBinding | null>(null);
   const [foScopedToken, setFoScopedToken] = useState<string | null>(null);
@@ -189,6 +269,7 @@ export default function Page() {
   const [apiTxns, setApiTxns] = useState<DriverTxnRow[]>([]);
   const [apiBanner, setApiBanner] = useState<string | null>(null);
   const [apiLoading, setApiLoading] = useState(false);
+  const [sessionRestored, setSessionRestored] = useState(false);
   const [onboardingActionLoading, setOnboardingActionLoading] = useState<OnboardingSubmitKey>(null);
   const [pairingVerifyLoading, setPairingVerifyLoading] = useState(false);
   const [qrPayVerifyLoading, setQrPayVerifyLoading] = useState(false);
@@ -197,6 +278,9 @@ export default function Page() {
   const [foPinEntry, setFoPinEntry] = useState('');
   const [qrTxnId, setQrTxnId] = useState('');
   const [qrPayFields, setQrPayFields] = useState<FleetpayQrPayload | null>(null);
+  const [scanReceiptFromHistory, setScanReceiptFromHistory] = useState(false);
+  const [receiptHistoryDriverName, setReceiptHistoryDriverName] = useState<string | null>(null);
+  const fuelReceiptCaptureRef = useRef<HTMLDivElement | null>(null);
 
   const pairingRefs = [
     useRef<HTMLInputElement | null>(null),
@@ -215,6 +299,44 @@ export default function Page() {
   const activeCards = screenBindings.filter((b) => b.paired && b.state === 'ACTIVE');
   const currentCard = activeCards[activeCard];
   const pendingAssignmentCount = screenBindings.filter((b) => b.state === 'PENDING_ACCEPTANCE' || (!b.paired && b.state === 'ACTIVE')).length;
+  const homeEmptyNoVehicle = activeCards.length === 0;
+  const homeEmptyNoTransactions = apiTxns.length === 0;
+  const filteredTxnRows = apiTxns.filter((t) => {
+    if (txnFilter === 'all') return true;
+    if (txnFilter === 'successful') return t.status === 'SUCCESS';
+    if (txnFilter === 'failed') return t.status !== 'SUCCESS';
+    return true;
+  });
+
+  /*
+  const openTxnInReceiptView = useCallback(
+    (txn: DriverTxnRow) => {
+      const vKey = (s: string) => s.replace(/\s+/g, '').toUpperCase();
+      const binding = screenBindings.find((b) => vKey(b.vrn) === vKey(txn.vehicleRegNo));
+      if (!binding) {
+        setApiBanner('Receipt unavailable: vehicle is not in your assignments.');
+        return;
+      }
+      setScanReceiptFromHistory(true);
+      setReceiptHistoryDriverName(txn.driverName?.trim() || null);
+      setQrPayFields(null);
+      setLastQrPayResult({
+        serverTxnId: txn.serverTxnId,
+        vehicleRegNo: txn.vehicleRegNo,
+        amountINR: txn.amountINR,
+        newBalanceINR: 0,
+        txnTime: txn.createdOn,
+        status: txn.status === 'FAILED' ? 'FAILED' : 'SUCCESS',
+      });
+      setActiveScanBinding(binding);
+      setSelectedScanBinding(binding);
+      setSessionPin('');
+      setSessionState('complete');
+      setActiveTab('scan');
+    },
+    [screenBindings],
+  );
+  */
   const activeBindings = screenBindings.filter((b) => b.paired && b.state === 'ACTIVE');
   const pendingBindings = screenBindings.filter((b) => b.state === 'PENDING_ACCEPTANCE');
   const repairBindings = screenBindings.filter((b) => !b.paired && b.state === 'ACTIVE');
@@ -228,6 +350,15 @@ export default function Page() {
   const scanSessionOtpResendActive = scanSessionOtpCountdown > 0;
   const showMobileFormatError =
     mobileNumber.length > 0 && !/^[6789]/.test(mobileNumber);
+  const fleetPinFoName =
+    selectedFoCompanyId != null
+      ? foOrganizationList.find(
+          (f) => f.foCompanyId === selectedFoCompanyId && f.foStatus === 'ACTIVE'
+        )?.foName?.trim() ?? ''
+      : '';
+  const profileRegisteredDisplay = profileRegisteredFromAssignments(apiAssignments);
+  const profileFleetOperatorDisplay =
+    sessionFoDisplayName?.trim() || apiHome?.foName?.trim() || '—';
 
   // ============ HANDLERS ============
   const handleInviteCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -241,6 +372,7 @@ export default function Page() {
     if (val !== mobileNumber) {
       setInviteOtpRefNumber(null);
       setInviteMobileVerificationToken(null);
+      setApiBanner(null);
     }
     setMobileNumber(val);
   };
@@ -251,6 +383,7 @@ export default function Page() {
   };
 
   const handlePinInput = (digit: string, isConfirm: boolean = false) => {
+    setApiBanner(null);
     if (isConfirm) {
       if (pinConfirm.length < 6) setPinConfirm(pinConfirm + digit);
     } else {
@@ -259,6 +392,7 @@ export default function Page() {
   };
 
   const handlePinBackspace = (isConfirm: boolean = false) => {
+    setApiBanner(null);
     if (isConfirm) {
       setPinConfirm(pinConfirm.slice(0, -1));
     } else {
@@ -267,10 +401,12 @@ export default function Page() {
   };
 
   const handleSessionPinInput = (digit: string) => {
+    setApiBanner(null);
     if (sessionPin.length < 6) setSessionPin(sessionPin + digit);
   };
 
   const handleSessionPinBackspace = () => {
+    setApiBanner(null);
     setSessionPin(sessionPin.slice(0, -1));
   };
 
@@ -296,6 +432,7 @@ export default function Page() {
   );
 
   const handleSessionOtpChange = (idx: number, val: string) => {
+    setApiBanner(null);
     const digit = val.replace(/\D/g, '').slice(-1);
     let newOtp = sessionOtp.split('');
     newOtp[idx] = digit;
@@ -312,11 +449,10 @@ export default function Page() {
     setOnboardingActionLoading('login_verify_otp');
     try {
       setApiBanner(null);
-      setOtpError('');
       const tr = await driverOauthOtpGrant(DRIVER_API_BASE, mobileNumber, enteredOtp);
       const partial = oauthAccessToken(tr);
       if (!partial) {
-        setOtpError('Login failed: no token.');
+        setApiBanner('Login failed: no token.');
         return;
       }
       setOtpPhaseToken(partial);
@@ -324,7 +460,7 @@ export default function Page() {
       const active = fos.filter((f) => f.foStatus === 'ACTIVE');
       setFoOrganizationList(active);
       if (!active.length) {
-        setOtpError('No active fleet — use your invite code.');
+        setApiBanner('No active fleet — use your invite code.');
         setOtpPhaseToken(null);
         setOtpDigits(Array(6).fill(''));
         return;
@@ -339,17 +475,15 @@ export default function Page() {
       }
       setOtpDigits(Array(6).fill(''));
     } catch (e) {
-      setOtpError(e instanceof Error ? e.message : String(e));
-      setTimeout(() => {
-        setOtpDigits(Array(6).fill(''));
-        setOtpError('');
-      }, 1700);
+      setApiBanner(bannerForOtpFailure(e));
+      setOtpDigits(Array(6).fill(''));
     } finally {
       setOnboardingActionLoading(null);
     }
   };
 
   const completeOnboarding = () => {
+    setActiveTab('card');
     setOnboardingStep('complete');
   };
 
@@ -363,6 +497,7 @@ export default function Page() {
       }
     }
     setOnboardingStep('login');
+    setActiveTab('card');
     setInviteCode('');
     setMobileNumber('');
     setOtp('');
@@ -388,6 +523,7 @@ export default function Page() {
     setPairingVerifyLoading(false);
     setQrPayVerifyLoading(false);
     setShareReceiptLoading(false);
+    setApiLoading(false);
   };
 
   // Numpad component
@@ -444,10 +580,11 @@ export default function Page() {
   }, [sessionState]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     try {
+      if (typeof window === 'undefined') return;
       const t = localStorage.getItem(DRIVER_APP_FO_TOKEN_KEY)?.trim();
       if (t) {
+        setApiLoading(true);
         setFoScopedToken(t);
         setOnboardingStep('complete');
         try {
@@ -459,6 +596,8 @@ export default function Page() {
       }
     } catch {
       /* ignore */
+    } finally {
+      setSessionRestored(true);
     }
   }, []);
 
@@ -482,11 +621,10 @@ export default function Page() {
       setApiLoading(true);
       try {
         setApiBanner(null);
-        const [homeRes, profileRes, assignmentsRes, txRes, foListRes] = await Promise.allSettled([
+        const [homeRes, profileRes, assignmentsRes, foListRes] = await Promise.allSettled([
           driverGetHome(DRIVER_API_BASE, foScopedToken),
           driverGetProfile(DRIVER_API_BASE, foScopedToken),
           driverGetAssignments(DRIVER_API_BASE, foScopedToken),
-          driverGetTransactions(DRIVER_API_BASE, foScopedToken, 0),
           driverFoList(DRIVER_API_BASE, foScopedToken),
         ]);
         if (cancelled) return;
@@ -494,7 +632,6 @@ export default function Page() {
         if (homeRes.status === 'fulfilled') setApiHome(homeRes.value);
         if (profileRes.status === 'fulfilled') setApiProfileState(profileRes.value);
         if (assignmentsRes.status === 'fulfilled') setApiAssignments(assignmentsRes.value);
-        if (txRes.status === 'fulfilled') setApiTxns(txRes.value);
 
         if (foListRes.status === 'fulfilled') {
           const active = foListRes.value.filter((f) => f.foStatus === 'ACTIVE');
@@ -518,7 +655,7 @@ export default function Page() {
           }
         }
 
-        const failures = [homeRes, profileRes, assignmentsRes, txRes].filter(
+        const failures = [homeRes, profileRes, assignmentsRes].filter(
           (r): r is PromiseRejectedResult => r.status === 'rejected'
         );
         const authFailure = failures.find((r) => {
@@ -539,6 +676,7 @@ export default function Page() {
           setApiAssignments([]);
           setApiTxns([]);
           setOnboardingStep('login');
+          setActiveTab('card');
           const m = authFailure.reason instanceof Error ? authFailure.reason.message : String(authFailure.reason);
           setApiBanner(m);
         } else if (failures.length > 0) {
@@ -559,6 +697,57 @@ export default function Page() {
   }, [foScopedToken, onboardingStep]);
 
   useEffect(() => {
+    if (!foScopedToken || onboardingStep !== 'complete') return;
+    let cancelled = false;
+    (async () => {
+      const bindings = mapAssignmentsToUiBindings(apiHome, apiAssignments);
+      const cards = bindings.filter((b) => b.paired && b.state === 'ACTIVE');
+      const idx = cards.length === 0 ? 0 : Math.min(activeCard, Math.max(0, cards.length - 1));
+      const vid = vehicleIdForTransactions(apiHome, apiAssignments, cards, idx);
+      if (!vid) {
+        if (!cancelled) setApiTxns([]);
+        return;
+      }
+      try {
+        const txResult = await driverGetTransactions(DRIVER_API_BASE, foScopedToken, vid, 0);
+        if (cancelled) return;
+        setApiTxns(txResult.rows);
+      } catch (e) {
+        if (cancelled) return;
+        const m = e instanceof Error ? e.message : String(e);
+        if (/\b401\b|Unauthorized|invalid_token|expired/i.test(m)) {
+          try {
+            localStorage.removeItem(DRIVER_APP_FO_TOKEN_KEY);
+            clearFleetOperatorLocalStorage();
+          } catch {
+            /* ignore */
+          }
+          setFoScopedToken(null);
+          setSessionFoDisplayName(null);
+          setApiHome(null);
+          setApiProfileState(null);
+          setApiAssignments([]);
+          setApiTxns([]);
+          setOnboardingStep('login');
+          setActiveTab('card');
+          setApiBanner(m);
+        } else {
+          setApiBanner(m);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [foScopedToken, onboardingStep, activeCard, apiHome, apiAssignments]);
+
+  useEffect(() => {
+    if (!apiBanner) return undefined;
+    const id = window.setTimeout(() => setApiBanner(null), 5000);
+    return () => window.clearTimeout(id);
+  }, [apiBanner]);
+
+  useEffect(() => {
     if (currentMainScreen === "pairing_code") {
       setPairingDigits(["","","","","",""])
       setTimeout(() => {
@@ -569,6 +758,15 @@ export default function Page() {
 
   // ============ RENDER SCREENS ============
 
+  if (!sessionRestored) {
+    return (
+      <div className="fixed inset-0 z-[500] flex min-h-screen w-full flex-col items-center justify-center bg-gray-100">
+        <Loader2 className="h-10 w-10 animate-spin text-green-700" aria-hidden />
+        <p className="mt-3 text-sm text-gray-600">Loading…</p>
+      </div>
+    );
+  }
+
   // Onboarding and PIN Login
   if (onboardingStep !== 'complete') {
     return (
@@ -577,51 +775,51 @@ export default function Page() {
             {/* Screen: Login */}
             {onboardingStep === 'login' && (
               <>
-                <div className="flex flex-col h-full">
-                  {/* Top Section */}
-                  <div className="text-center space-y-3 mb-8 flex flex-col items-center">
-                    <img src="/mgl-logo.png" alt="MGL Fleet" className="w-18 h-18 object-contain" />
-                    <p className="text-bold text-xl text-gray-900 font-poppins">MGL Fleet Connect</p>
-                    <p className="text-xs text-gray-500 font-poppins">Driver App</p>
+                <div className="mx-auto flex w-full max-w-md flex-col gap-6">
+                  <div className="flex flex-col items-center space-y-3 text-center">
+                    <div className="rounded-lg border border-zinc-600/80 bg-zinc-700 px-2.5 py-2">
+                      <img src="/mgl-logo.png" alt="MGL Fleet" className="w-20 object-contain" />
+                    </div>
+                    <p className="text-xl font-medium text-gray-500">Driver App</p>
                   </div>
 
-                  {/* Spacer */}
-                  <div className="flex-1" />
+                  <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_1px_3px_rgba(15,23,42,0.08)]">
+                    <h2 className="text-lg font-bold leading-tight text-[#1A202C]">Sign in to continue</h2>
 
-                  {/* Bottom Section */}
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-xs text-gray-600 font-medium">Mobile number</label>
-                      <div className="flex gap-2 mt-2">
-                        <span className="flex items-center px-3 py-3 border border-gray-300 rounded-xl text-gray-600 bg-gray-50 font-medium text-sm">+91</span>
-                        <input
-                          type="tel"
-                          value={mobileNumber}
-                          onChange={handleMobileChange}
-                          placeholder="Enter your mobile number"
-                          inputMode="numeric"
-                          maxLength={10}
-                          className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-700 focus:border-green-700"
-                        />
-                      </div>
+                    <div className="mt-6 space-y-2">
+                      <label htmlFor="login-mobile" className="block text-sm font-normal text-[#718096]">
+                        Mobile number
+                      </label>
                       {showMobileFormatError && (
-                        <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 mt-3 text-red-900 text-sm">
+                        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-900">
                           {VALID_MOBILE_ERROR}
                         </div>
                       )}
+                      <div className="flex overflow-hidden rounded-xl border border-gray-200 bg-white focus-within:border-gray-300 focus-within:ring-2 focus-within:ring-green-700/20">
+                        <span className="flex shrink-0 items-center border-r border-gray-200 bg-white px-3 py-3 text-sm text-[#718096]">
+                          +91
+                        </span>
+                        <input
+                          id="login-mobile"
+                          type="tel"
+                          value={mobileNumber}
+                          onChange={handleMobileChange}
+                          placeholder="98765 01234"
+                          inputMode="numeric"
+                          maxLength={10}
+                          autoComplete="tel-national"
+                          className="min-w-0 flex-1 border-0 bg-white px-3 py-3 text-sm text-[#1A202C] outline-none placeholder:text-[#94A3B8]"
+                        />
+                      </div>
                     </div>
 
-                    {otpError && (
-                      <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{otpError}</div>
-                    )}
-
                     <button
+                      type="button"
                       onClick={() => {
                         void (async () => {
                           if (!isValidIndianMobile(mobileNumber)) return;
                           setApiBanner(null);
                           setOtpDigits(Array(6).fill(''));
-                          setOtpError('');
                           setOnboardingActionLoading('login_send_otp');
                           try {
                             const cm = await driverCheckMobile(DRIVER_API_BASE, mobileNumber);
@@ -636,50 +834,53 @@ export default function Page() {
                             setOtpCountdown(60);
                             setOnboardingStep('login_otp');
                           } catch (e) {
-                            setOtpError(e instanceof Error ? e.message : String(e));
+                            setApiBanner(bannerForGenericFailure(e));
                           } finally {
                             setOnboardingActionLoading(null);
                           }
                         })();
                       }}
-                      disabled={!isValidIndianMobile(mobileNumber) || onboardingActionLoading === 'login_send_otp'}
-                      className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-xl transition inline-flex items-center justify-center gap-2"
+                      disabled={
+                        !isValidIndianMobile(mobileNumber) || onboardingActionLoading === 'login_send_otp'
+                      }
+                      className={`mt-6 w-full rounded-xl py-3.5 text-sm font-semibold transition ${
+                        onboardingActionLoading === 'login_send_otp' || isValidIndianMobile(mobileNumber)
+                          ? 'bg-[#43a047] text-white hover:bg-[#388e3c]'
+                          : 'cursor-not-allowed bg-[#E2E8F0] text-[#94A3B8]'
+                      }`}
                     >
                       {onboardingActionLoading === 'login_send_otp' ? (
-                        <>
-                          <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                        <span className="inline-flex items-center justify-center gap-2 text-white">
+                          <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
                           Sending…
-                        </>
+                        </span>
                       ) : (
                         'Send OTP'
                       )}
                     </button>
 
-                    <div className="flex items-center gap-3 my-5">
-                      <div className="flex-1 h-px bg-gray-300" />
-                      <span className="text-xs text-gray-500">or</span>
-                      <div className="flex-1 h-px bg-gray-300" />
-                    </div>
+                    <div className="my-6 h-px w-full bg-gray-200" aria-hidden />
 
                     <button
+                      type="button"
                       onClick={() => {
                         setInviteCode('');
                         setOtp('');
-                        setInviteFlowOtpError('');
+                        setApiBanner(null);
                         setInviteOtpRefNumber(null);
                         setInviteMobileVerificationToken(null);
                         setMobileNumber('');
                         setOnboardingStep('1c');
                       }}
-                      className="w-full border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-3 rounded-xl transition"
+                      className="w-full rounded-xl border border-gray-200 bg-white py-3.5 text-sm font-medium text-[#1A202C] transition hover:bg-gray-50"
                     >
                       New user? I have an invite code
                     </button>
-
-                    <p className="text-xs text-gray-400 text-center mt-6">
-                      By continuing, I agree to MGL Fleet Terms of Service
-                    </p>
                   </div>
+
+                  <p className="text-center text-xs text-gray-400">
+                    By continuing, I agree to MGL Fleet Terms of Service
+                  </p>
                 </div>
               </>
             )}
@@ -687,7 +888,14 @@ export default function Page() {
             {/* Screen: Login OTP */}
             {onboardingStep === 'login_otp' && (
               <>
-                <button onClick={() => setOnboardingStep('login')} className="flex items-center gap-2 text-gray-600 mb-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setApiBanner(null);
+                    setOnboardingStep('login');
+                  }}
+                  className="flex items-center gap-2 text-gray-600 mb-6"
+                >
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
                 <h2 className="text-xl font-bold mb-2">Verify mobile</h2>
@@ -695,10 +903,6 @@ export default function Page() {
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-6">
                   <p className="text-sm text-blue-900">OTP sent to +91 {mobileNumber.slice(-4).padStart(10, '•')}</p>
                 </div>
-
-                {otpError && (
-                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{otpError}</div>
-                )}
 
                 <div className="flex justify-center gap-1 mb-6">
                   {Array.from({ length: 6 }).map((_, i) => (
@@ -712,6 +916,7 @@ export default function Page() {
                         const newOtpDigits = [...otpDigits];
                         newOtpDigits[i] = e.target.value.replace(/\D/g, '').slice(-1);
                         setOtpDigits(newOtpDigits);
+                        setApiBanner(null);
                         if (newOtpDigits[i] && i < 5) {
                           (document.querySelectorAll('.otp-digit-login')[i + 1] as HTMLInputElement)?.focus();
                         }
@@ -750,8 +955,9 @@ export default function Page() {
                         try {
                           await driverSendLoginOtp(DRIVER_API_BASE, mobileNumber);
                           setOtpCountdown(60);
+                          setApiBanner(null);
                         } catch (e) {
-                          setOtpError(e instanceof Error ? e.message : String(e));
+                          setApiBanner(bannerForGenericFailure(e));
                         } finally {
                           setOnboardingActionLoading(null);
                         }
@@ -772,9 +978,6 @@ export default function Page() {
                       'Resend OTP'
                     )}
                   </button>
-                )}
-                {apiBanner && !otpError && (
-                  <p className="text-xs text-center text-amber-700 mt-3">{apiBanner}</p>
                 )}
               </>
             )}
@@ -826,14 +1029,18 @@ export default function Page() {
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
                 <h2 className="text-xl font-bold mb-2">Fleet PIN</h2>
-                <p className="text-sm text-gray-600 mb-6">Enter your PIN for this Fleet Operator</p>
-                {apiBanner && (
-                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{apiBanner}</div>
-                )}
+                <p className="text-sm text-gray-600 mb-1">Enter your PIN for this Fleet Operator</p>
+                <p className="mb-6 text-lg font-semibold text-gray-900">{fleetPinFoName || '—'}</p>
                 <PinDisplay value={foPinEntry} />
                 <Numpad
-                  onPress={(digit) => foPinEntry.length < 6 && setFoPinEntry(foPinEntry + digit)}
-                  onBackspace={() => setFoPinEntry(foPinEntry.slice(0, -1))}
+                  onPress={(digit) => {
+                    setApiBanner(null);
+                    if (foPinEntry.length < 6) setFoPinEntry(foPinEntry + digit);
+                  }}
+                  onBackspace={() => {
+                    setApiBanner(null);
+                    setFoPinEntry(foPinEntry.slice(0, -1));
+                  }}
                 />
                 <button
                   disabled={
@@ -848,6 +1055,7 @@ export default function Page() {
                       if (selId === null || !otpPhaseToken) return;
                       setOnboardingActionLoading('fo_unlock');
                       try {
+                        setApiBanner(null);
                         const tr = await driverFoSelect(
                           DRIVER_API_BASE,
                           otpPhaseToken,
@@ -856,6 +1064,7 @@ export default function Page() {
                         );
                         const scoped = oauthAccessToken(tr);
                         if (!scoped) throw new Error('Missing fleet token');
+                        setApiLoading(true);
                         setFoScopedToken(scoped);
                         const picked = fos.find((f) => f.foCompanyId === selId && f.foStatus === 'ACTIVE');
                         const foNm = picked?.foName?.trim();
@@ -867,8 +1076,9 @@ export default function Page() {
                         setFoPinEntry('');
                         setApiBanner(null);
                         setOnboardingStep('complete');
+                        setActiveTab('card');
                       } catch (e) {
-                        setApiBanner(e instanceof Error ? e.message : String(e));
+                        setApiBanner(bannerForPinFailure(e));
                       } finally {
                         setOnboardingActionLoading(null);
                       }
@@ -894,8 +1104,8 @@ export default function Page() {
                 <h2 className="text-xl font-bold mb-2">{isNewUser ? 'Create your PIN' : 'Set new PIN'}</h2>
                 <p className="text-sm text-gray-600 mb-6">{isNewUser ? "You'll use this every time you sign in" : 'Choose a new 6-digit PIN'}</p>
                 <PinDisplay value={newPin} />
-                <Numpad onPress={(digit) => { if (newPin.length < 6) setNewPin(newPin + digit); }} onBackspace={() => setNewPin(newPin.slice(0, -1))} />
-                <button onClick={() => { setPinConfirm(''); setPinError(''); setOnboardingStep('confirm_pin'); }} disabled={newPin.length !== 6} className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6">
+                <Numpad onPress={(digit) => { setApiBanner(null); if (newPin.length < 6) setNewPin(newPin + digit); }} onBackspace={() => { setApiBanner(null); setNewPin(newPin.slice(0, -1)); }} />
+                <button onClick={() => { setPinConfirm(''); setApiBanner(null); setOnboardingStep('confirm_pin'); }} disabled={newPin.length !== 6} className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6">
                   Next
                 </button>
               </>
@@ -908,7 +1118,7 @@ export default function Page() {
                   type="button"
                   onClick={() => {
                     setPinConfirm('');
-                    setPinError('');
+                    setApiBanner(null);
                     setOnboardingStep('set_pin');
                   }}
                   className="flex items-center gap-2 text-gray-600 mb-6"
@@ -917,13 +1127,12 @@ export default function Page() {
                 </button>
                 <h2 className="text-xl font-bold mb-2">Confirm your PIN</h2>
                 <p className="text-sm text-gray-600 mb-6">Enter the same PIN again</p>
-                {pinError && <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{pinError}</div>}
                 <PinDisplay value={pinConfirm} />
-                <Numpad onPress={(digit) => { if (pinConfirm.length < 6) setPinConfirm(pinConfirm + digit); }} onBackspace={() => setPinConfirm(pinConfirm.slice(0, -1))} isConfirm />
+                <Numpad onPress={(digit) => { setApiBanner(null); if (pinConfirm.length < 6) setPinConfirm(pinConfirm + digit); }} onBackspace={() => { setApiBanner(null); setPinConfirm(pinConfirm.slice(0, -1)); }} isConfirm />
                 <button
                   onClick={() => {
                     if (newPin === pinConfirm) {
-                      setPinError('');
+                      setApiBanner(null);
                       if (isNewUser) {
                         setOnboardingStep('registered');
                       } else {
@@ -935,7 +1144,7 @@ export default function Page() {
                         setOnboardingStep('login');
                       }
                     } else {
-                      setPinError("PINs didn't match. Try again.");
+                      setApiBanner("PINs didn't match. Try again.");
                       setPinConfirm('');
                       setOnboardingStep('set_pin');
                     }
@@ -960,6 +1169,7 @@ export default function Page() {
                     setPinConfirm('');
                     setIsNewUser(false);
                     setOnboardingStep('complete');
+                    setActiveTab('card');
                   }}
                   className="w-full bg-green-700 hover:bg-green-800 text-white font-medium py-3 rounded-2xl transition mt-8"
                 >
@@ -1009,15 +1219,12 @@ export default function Page() {
                     </div>
                   </div>
                 )}
-                {inviteFlowOtpError && onboardingStep === '1b' && (
-                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{inviteFlowOtpError}</div>
-                )}
                 <button
                   onClick={() => {
                     void (async () => {
                       try {
                         if (!inviteMobileVerificationToken) {
-                          setInviteFlowOtpError('Complete mobile OTP verification first.');
+                          setApiBanner('Complete mobile OTP verification first.');
                           return;
                         }
                         setOnboardingActionLoading('invite_validate');
@@ -1034,13 +1241,13 @@ export default function Page() {
                             foName: r.foName,
                             foCompanyId: r.foCompanyId,
                           });
-                          setInviteFlowOtpError('');
+                          setApiBanner(null);
                           setOnboardingStep('1e');
                         } finally {
                           setOnboardingActionLoading(null);
                         }
                       } catch (e) {
-                        setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                        setApiBanner(bannerForGenericFailure(e));
                       }
                     })();
                   }}
@@ -1075,6 +1282,9 @@ export default function Page() {
                 </button>
                 <h2 className="text-xl font-bold mb-2">Mobile Verification</h2>
                 <p className="text-sm text-gray-600 mb-6">Must match number your Fleet Operator provided</p>
+                {showMobileFormatError && (
+                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{VALID_MOBILE_ERROR}</div>
+                )}
                 <div className="flex gap-2 mb-4">
                   <span className="text-lg font-bold text-gray-600 pt-3">+91</span>
                   <input
@@ -1087,33 +1297,26 @@ export default function Page() {
                     className="flex-1 px-4 py-3 border border-gray-300 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-700"
                   />
                 </div>
-                {showMobileFormatError && (
-                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{VALID_MOBILE_ERROR}</div>
-                )}
-                {inviteFlowOtpError && onboardingStep === '1c' && (
-                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{inviteFlowOtpError}</div>
-                )}
                 <button
                   onClick={() => {
                     void (async () => {
                       if (!isValidIndianMobile(mobileNumber)) return;
                       setApiBanner(null);
-                      setInviteFlowOtpError('');
                       setOnboardingActionLoading('invite_send_otp');
                       try {
                         const cm = await driverCheckMobile(DRIVER_API_BASE, mobileNumber);
                         if (cm !== 'NEW_USER') {
-                          setInviteFlowOtpError('Use “Send OTP” on the login screen.');
+                          setApiBanner('Use “Send OTP” on the login screen.');
                           return;
                         }
                         const ref = await driverInviteMobileSendOtp(DRIVER_API_BASE, mobileNumber);
                         setInviteOtpRefNumber(ref);
                         setOtp('');
-                        setInviteFlowOtpError('');
+                        setApiBanner(null);
                         setOtpCountdown(60);
                         setOnboardingStep('1d');
                       } catch (e) {
-                        setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                        setApiBanner(bannerForGenericFailure(e));
                       } finally {
                         setOnboardingActionLoading(null);
                       }
@@ -1150,9 +1353,6 @@ export default function Page() {
                 <div className="bg-blue-50 border border-blue-200 rounded-2xl p-3 mb-4">
                   <p className="text-sm text-blue-900">OTP sent to +91 {mobileNumber.slice(-4).padStart(10, '•')}</p>
                 </div>
-                {inviteFlowOtpError && (
-                  <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{inviteFlowOtpError}</div>
-                )}
                 <div className="flex justify-center gap-1 mb-4">
                   {Array.from({ length: 6 }).map((_, i) => (
                     <input
@@ -1165,6 +1365,7 @@ export default function Page() {
                         const newOtp = otp.split('');
                         newOtp[i] = e.target.value.replace(/\D/g, '').slice(-1);
                         setOtp(newOtp.join(''));
+                        setApiBanner(null);
                         if (newOtp[i] && i < 5) {
                           (
                             document.querySelectorAll('.otp-digit-invite-api')[i + 1] as HTMLInputElement
@@ -1175,9 +1376,6 @@ export default function Page() {
                     />
                   ))}
                 </div>
-                {inviteFlowOtpError && (
-                  <p className="text-red-500 text-sm text-center mb-3">{inviteFlowOtpError}</p>
-                )}
                 <button
                   onClick={() => {
                     void (async () => {
@@ -1191,11 +1389,11 @@ export default function Page() {
                           otp
                         );
                         setInviteMobileVerificationToken(tok);
-                        setInviteFlowOtpError('');
+                        setApiBanner(null);
                         setOtp('');
                         setOnboardingStep('1b');
                       } catch (e) {
-                        setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                        setApiBanner(bannerForOtpFailure(e));
                       } finally {
                         setOnboardingActionLoading(null);
                       }
@@ -1228,10 +1426,10 @@ export default function Page() {
                         try {
                           const ref = await driverInviteMobileSendOtp(DRIVER_API_BASE, mobileNumber);
                           setInviteOtpRefNumber(ref);
-                          setInviteFlowOtpError('');
+                          setApiBanner(null);
                           setOtpCountdown(60);
                         } catch (e) {
-                          setInviteFlowOtpError(e instanceof Error ? e.message : String(e));
+                          setApiBanner(bannerForGenericFailure(e));
                         } finally {
                           setOnboardingActionLoading(null);
                         }
@@ -1280,7 +1478,7 @@ export default function Page() {
                   type="button"
                   onClick={() => {
                     setPinConfirm('');
-                    setPinError('');
+                    setApiBanner(null);
                     setOnboardingStep('1e');
                   }}
                   className="flex items-center gap-2 text-gray-600 mb-4"
@@ -1289,7 +1487,6 @@ export default function Page() {
                 </button>
                 <h2 className="text-xl font-bold mb-2">Confirm your PIN</h2>
                 <p className="text-sm text-gray-600 mb-6">Enter the same PIN again</p>
-                {pinError && <div className="bg-red-50 border border-red-300 rounded-2xl p-3 mb-4 text-red-900 text-sm">{pinError}</div>}
                 <PinDisplay value={pinConfirm} />
                 <Numpad onPress={(digit) => { if (pinConfirm.length < 6) handlePinInput(digit, true); }} onBackspace={() => handlePinBackspace(true)} isConfirm />
                 <button
@@ -1297,13 +1494,13 @@ export default function Page() {
                     void (async () => {
                       const preview = validatedInvitePreview;
                       if (pin !== pinConfirm) {
-                        setPinError("PINs don't match, try again");
+                        setApiBanner("PINs don't match. Try again.");
                         setPinConfirm('');
                         return;
                       }
-                      setPinError('');
+                      setApiBanner(null);
                       if (!inviteSessionToken) {
-                        setPinError('Session missing — go back to invite step.');
+                        setApiBanner('Session missing — go back to invite step.');
                         return;
                       }
                       setOnboardingActionLoading('invite_set_pin');
@@ -1311,6 +1508,7 @@ export default function Page() {
                         const tr = await driverInviteSetPin(DRIVER_API_BASE, inviteSessionToken, pin);
                         const scoped = oauthAccessToken(tr);
                         if (!scoped) throw new Error('Missing access token');
+                        setApiLoading(true);
                         setFoScopedToken(scoped);
                         const inviteFo = preview?.foName?.trim();
                         if (inviteFo) {
@@ -1322,8 +1520,9 @@ export default function Page() {
                         setPinConfirm('');
                         setApiBanner(null);
                         setOnboardingStep('complete');
+                        setActiveTab('card');
                       } catch (e) {
-                        setPinError(e instanceof Error ? e.message : String(e));
+                        setApiBanner(bannerForPinFailure(e));
                       } finally {
                         setOnboardingActionLoading(null);
                       }
@@ -1368,6 +1567,22 @@ export default function Page() {
               </>
             )}
           </div>
+          {apiBanner && (
+            <div
+              role="alert"
+              className="pointer-events-auto fixed left-3 right-3 z-[90] flex max-h-[min(40vh,220px)] items-start gap-2 overflow-y-auto rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-950 shadow-lg bottom-[max(12px,env(safe-area-inset-bottom,0px))]"
+            >
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
+              <span className="min-w-0 flex-1 leading-snug">{apiBanner}</span>
+              <button
+                type="button"
+                onClick={() => setApiBanner(null)}
+                className="shrink-0 font-semibold text-amber-900"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
       </div>
     );
   }
@@ -1375,7 +1590,7 @@ export default function Page() {
   return (
     <div className="relative flex min-h-screen w-full flex-col bg-gray-100">
         {foScopedToken && apiLoading && (
-          <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white/85 gap-3">
+          <div className="pointer-events-auto fixed inset-0 z-[500] flex flex-col items-center justify-center bg-gray-100 gap-3">
             <Loader2 className="h-10 w-10 animate-spin text-green-700" aria-hidden />
             <p className="text-sm text-gray-600">Loading…</p>
           </div>
@@ -1841,7 +2056,7 @@ export default function Page() {
                       }}
                       className="w-full bg-green-700 hover:bg-green-800 text-white font-medium py-3 rounded-2xl transition mt-4"
                     >
-                      Go to My Assignments
+                      Go to My Vehicles
                     </button>
                   </>
                 );
@@ -1874,12 +2089,15 @@ export default function Page() {
 
               {/* Tab Content */}
           <div
-            className={`flex-1 overflow-y-auto pb-24 ${
-              activeTab === 'card' && currentCard ? 'bg-[#eceff1]' : 'bg-white'
+            className={`flex-1 overflow-y-auto pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] ${
+              activeTab === 'card' || activeTab === 'assignments'
+                ? 'bg-[#eceff1]'
+                : 'bg-white'
             }`}
           >
             {/* Card Tab */}
-            {activeTab === 'card' && currentCard && (
+            {activeTab === 'card' && (
+              currentCard ? (
               <div className="p-4 space-y-4">
                 {/* Pending Assignment Banner */}
                 {pendingAssignmentCount > 0 && (
@@ -1925,12 +2143,12 @@ export default function Page() {
                           Vehicle balance
                         </p>
                         <p className="text-[1.75rem] leading-none font-bold text-gray-900 mt-2">
-                          ₹{activeCards[activeCard]?.balance?.toLocaleString('en-IN')}
+                          {vehicleBalanceDisplay(activeCards[activeCard]?.balance)}
                         </p>
                         {(activeCards[activeCard]?.incentiveBalance ?? 0) > 0 && (
                           <p className="text-xs text-gray-500 mt-2">
-                            Card ₹{activeCards[activeCard]?.cardBalance?.toLocaleString('en-IN')} · Incentive ₹
-                            {activeCards[activeCard]?.incentiveBalance?.toLocaleString('en-IN')}
+                            Card {vehicleBalanceDisplay(activeCards[activeCard]?.cardBalance)} · Incentive{' '}
+                            {vehicleBalanceDisplay(activeCards[activeCard]?.incentiveBalance)}
                           </p>
                         )}
                       </div>
@@ -1971,14 +2189,22 @@ export default function Page() {
                 {/* Recent Transactions */}
                 <div className="flex justify-between items-center pt-4 pb-2">
                   <p className="font-semibold text-base text-gray-900">Recent</p>
-                  <button type="button" onClick={() => setActiveTab('transactions')} className="text-sm text-[#2e7d32] font-semibold">
-                    View all
-                  </button>
+                  {!homeEmptyNoTransactions ? (
+                    <button type="button" onClick={() => setActiveTab('transactions')} className="text-sm text-[#2e7d32] font-semibold">
+                      View all
+                    </button>
+                  ) : null}
                 </div>
                 <div className="pb-2 space-y-3">
-                    {apiTxns.length === 0 ? (
-                      <div className="rounded-xl border border-gray-100 bg-white px-3.5 py-8 text-center shadow-[0_2px_12px_rgba(0,0,0,0.05)]">
-                        <p className="text-sm text-gray-500">No transaction found</p>
+                    {homeEmptyNoTransactions ? (
+                      <div className="rounded-xl border border-gray-100 bg-white px-3.5 py-10 text-center shadow-[0_2px_12px_rgba(0,0,0,0.05)]">
+                        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-50">
+                          <History className="h-7 w-7 text-gray-400" aria-hidden />
+                        </div>
+                        <p className="text-sm font-medium text-gray-800">No transactions yet</p>
+                        <p className="mt-1 text-xs text-gray-500 max-w-[260px] mx-auto leading-relaxed">
+                          Fuel payments and wallet activity will show here once you use Scan & Pay.
+                        </p>
                       </div>
                     ) : (
                       apiTxns.slice(0, 3).map((txn) => {
@@ -2034,11 +2260,137 @@ export default function Page() {
                     )}
                 </div>
               </div>
+              ) : (
+              <div className="p-4 space-y-4">
+                {pendingAssignmentCount > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-amber-900">{pendingAssignmentCount} assignment{pendingAssignmentCount > 1 ? 's' : ''} need your attention</p>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => setActiveTab('assignments')} className="text-sm font-medium text-green-700 hover:text-green-800">View</button>
+                  </div>
+                )}
+
+                {homeEmptyNoVehicle && homeEmptyNoTransactions ? (
+                  <div className="rounded-[14px] border border-gray-200 bg-white px-6 py-14 text-center shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+                    <div className="mx-auto mb-5 flex h-[72px] w-[72px] items-center justify-center rounded-full bg-[#f1f4f2]">
+                      <Truck className="h-9 w-9 text-[#7d9188]" aria-hidden />
+                    </div>
+                    <p className="text-lg font-semibold text-gray-900">No vehicles or transactions</p>
+                    <p className="mt-2 text-sm text-gray-500 leading-relaxed max-w-sm mx-auto">
+                      There&apos;s nothing to show yet. When your fleet operator assigns you a vehicle and you use Scan & Pay, your balance and activity will appear here.
+                    </p>
+                    {pendingAssignmentCount > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('assignments')}
+                        className="mt-8 w-full max-w-xs mx-auto bg-[#43a047] hover:bg-[#388e3c] text-white font-semibold py-3 rounded-2xl text-[15px] transition-colors shadow-sm"
+                      >
+                        Go to vehicles
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('assignments')}
+                        className="mt-8 text-sm font-semibold text-[#2e7d32] hover:text-[#1b5e20]"
+                      >
+                        Browse vehicles
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-[14px] border border-gray-200 bg-white px-6 py-12 text-center shadow-[0_2px_12px_rgba(0,0,0,0.04)]">
+                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#f1f4f2]">
+                        <Truck className="h-7 w-7 text-[#7d9188]" aria-hidden />
+                      </div>
+                      <p className="text-base font-semibold text-gray-900">No active vehicle</p>
+                      <p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto leading-relaxed">
+                        You don&apos;t have a paired vehicle right now. Accept an assignment to unlock Scan & Pay.
+                      </p>
+                      {pendingAssignmentCount > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('assignments')}
+                          className="mt-6 w-full max-w-xs mx-auto bg-[#43a047] hover:bg-[#388e3c] text-white font-semibold py-3 rounded-2xl text-[15px] transition-colors shadow-sm"
+                        >
+                          View vehicles
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2 pb-2">
+                      <p className="font-semibold text-base text-gray-900">Recent</p>
+                      {apiTxns.length > 0 ? (
+                        <button type="button" onClick={() => setActiveTab('transactions')} className="text-sm text-[#2e7d32] font-semibold">
+                          View all
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="pb-2 space-y-3">
+                      {apiTxns.slice(0, 3).map((txn) => {
+                        const isCredit = /credit|top-up|top up|wallet|neft/i.test(txn.status);
+                        let dayLine = txn.createdOn;
+                        let timeFromCreated = '';
+                        if (txn.createdOn.includes('T')) {
+                          const [d, t] = txn.createdOn.split('T');
+                          dayLine = d ?? txn.createdOn;
+                          timeFromCreated = t?.slice(0, 5) ?? '';
+                        } else {
+                          const m = /\d{1,2}:\d{2}/.exec(txn.createdOn);
+                          timeFromCreated = m?.[0] ?? '';
+                          dayLine =
+                            txn.createdOn.split(/\d{1,2}:\d{2}/)[0]?.replace(/[,\s]+$/u, '').trim() ??
+                            txn.createdOn;
+                        }
+                        return (
+                          <div
+                            key={txn.serverTxnId}
+                            className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white px-3.5 py-3 shadow-[0_2px_12px_rgba(0,0,0,0.05)]"
+                          >
+                            <div
+                              className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                                isCredit ? 'bg-green-50' : 'bg-red-50'
+                              }`}
+                            >
+                              {isCredit ? (
+                                <ArrowUp className="w-5 h-5 text-green-700" strokeWidth={2.5} />
+                              ) : (
+                                <ArrowDown className="w-5 h-5 text-red-600" strokeWidth={2.5} />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-gray-900 truncate">{txn.status}</p>
+                              <p className="text-xs text-gray-500 truncate">
+                                {txn.vehicleRegNo} · {dayLine || txn.createdOn}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p
+                                className={`text-sm font-bold tabular-nums ${isCredit ? 'text-green-600' : 'text-gray-900'}`}
+                              >
+                                {isCredit ? '+' : '-'}₹{txn.amountINR.toLocaleString('en-IN')}
+                              </p>
+                              {timeFromCreated ? (
+                                <p className="text-xs text-gray-400 mt-0.5">{timeFromCreated}</p>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+              )
             )}
 
             {/* Scan & Pay Tab */}
             {activeTab === 'scan' && (
-              <div className="p-4 space-y-4 pb-24">
+              <div className="p-4 space-y-4 pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]">
                 {(sessionState === 'idle' || sessionState === 'scanning') && (() => {
                   const availableForScan = screenBindings.filter((b) => 
                     b.paired === true && 
@@ -2086,7 +2438,7 @@ export default function Page() {
                           onClick={() => setActiveTab('assignments')}
                           className="w-full bg-green-700 hover:bg-green-800 text-white font-medium py-3 rounded-2xl transition"
                         >
-                          Go to My Assignments
+                          Go to My Vehicles
                         </button>
                       </div>
                     );
@@ -2115,15 +2467,10 @@ export default function Page() {
                       {selectedScanBinding && (
                         <div className="bg-gray-50 rounded-2xl p-3 space-y-2">
                           <p className="text-sm font-medium text-gray-900">Fueling: {selectedScanBinding.vrn}</p>
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                              selectedScanBinding.scanPayStatus === "always_available"
-                                ? "bg-green-100 text-green-700"
-                                : "bg-green-100 text-green-700"
-                            }`}>
-                              {selectedScanBinding.scanPayStatus === "always_available" && "Always available"}
-                              {selectedScanBinding.scanPayStatus === "in_window" && `Active · ends ${selectedScanBinding.shiftEnd || "today"}`}
-                              {selectedScanBinding.scanPayStatus === "trip_window" && `Active · ends ${selectedScanBinding.tripEnd || "today"}`}
+                          <div className="flex justify-between text-sm pt-1">
+                            <span className="text-gray-600">Available balance</span>
+                            <span className="font-semibold text-green-700 tabular-nums">
+                              {vehicleBalanceDisplay(selectedScanBinding.balance)}
                             </span>
                           </div>
                         </div>
@@ -2140,6 +2487,9 @@ export default function Page() {
                           className="h-full min-h-[220px]"
                         />
                       </div>
+                      <p className="text-center text-xs text-gray-600 leading-relaxed px-2">
+                        Point camera at the QR on the POS screen
+                      </p>
 
                     </div>
                   );
@@ -2196,7 +2546,9 @@ export default function Page() {
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-600">Available balance</span>
-                        <span className="font-medium text-green-700">₹{activeScanBinding.balance?.toLocaleString('en-IN') || '0'}</span>
+                        <span className="font-medium text-green-700">
+                          {vehicleBalanceDisplay(activeScanBinding.balance)}
+                        </span>
                       </div>
                       {/* <div className="flex justify-between text-sm border-t border-gray-200 pt-2">
                         <span className="text-gray-600">Spend limit</span>
@@ -2259,17 +2611,26 @@ export default function Page() {
                               expiryEpoch: qrPayFields.expiryEpoch,
                               sign: qrPayFields.sign,
                             });
+                            setScanReceiptFromHistory(false);
+                            setReceiptHistoryDriverName(null);
                             setLastQrPayResult(payRes);
                             setSessionPin('');
                             setSessionState('complete');
-                            const [home, tx] = await Promise.all([
+                            const payVid = activeScanBinding.vehicleId?.trim();
+                            if (!payVid) {
+                              const homeOnly = await driverGetHome(DRIVER_API_BASE, foScopedToken);
+                              setApiHome(homeOnly);
+                              setApiBanner('Could not refresh transactions (missing vehicle id).');
+                              return;
+                            }
+                            const [home, txResult] = await Promise.all([
                               driverGetHome(DRIVER_API_BASE, foScopedToken),
-                              driverGetTransactions(DRIVER_API_BASE, foScopedToken, 0),
+                              driverGetTransactions(DRIVER_API_BASE, foScopedToken, payVid, 0),
                             ]);
                             setApiHome(home);
-                            setApiTxns(tx);
+                            setApiTxns(txResult.rows);
                           } catch (e) {
-                            setApiBanner(e instanceof Error ? e.message : String(e));
+                            setApiBanner(bannerForPinFailure(e));
                           } finally {
                             setQrPayVerifyLoading(false);
                           }
@@ -2364,35 +2725,120 @@ export default function Page() {
                       <p className="text-sm text-gray-600 mt-1">₹384</p>
                     </div>
 
-                    <button onClick={() => { setSessionState('complete'); }} className="w-full bg-green-700 text-white font-medium py-3 rounded-2xl">
+                    <button onClick={() => { setScanReceiptFromHistory(false); setReceiptHistoryDriverName(null); setSessionState('complete'); }} className="w-full bg-green-700 text-white font-medium py-3 rounded-2xl">
                       Fueling Complete
                     </button>
                   </>
                 )}
 
-                {sessionState === 'complete' && activeScanBinding && (
-                  <>
-                    <div className="bg-white rounded-2xl p-6 text-center mb-4">
-                      <div className="flex justify-center mb-4">
-                        <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                          <Check className="w-6 h-6 text-green-700" />
-                        </div>
+                {sessionState === 'complete' && activeScanBinding && (() => {
+                  const payFailed = lastQrPayResult?.status === 'FAILED';
+                  const amtPaiseFallback = qrPayFields?.amountPaise;
+                  const amountInrNum =
+                    lastQrPayResult != null &&
+                    typeof lastQrPayResult.amountINR === 'number' &&
+                    Number.isFinite(lastQrPayResult.amountINR)
+                      ? lastQrPayResult.amountINR
+                      : amtPaiseFallback != null
+                        ? amtPaiseFallback / 100
+                        : NaN;
+                  const amountDisplay = Number.isFinite(amountInrNum)
+                    ? `₹${amountInrNum.toLocaleString('en-IN', {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2,
+                      })}`
+                    : '—';
+                  const vrnPretty = formatPrettyVrn(lastQrPayResult?.vehicleRegNo ?? activeScanBinding.vrn);
+                  const stationName = qrPayFields?.merchantName ?? '—';
+                  const txnIdDisp = lastQrPayResult?.serverTxnId ?? '—';
+                  const txnDateDisp = formatPayApiTxnDate(lastQrPayResult?.txnTime);
+                  const newBalDisp =
+                    !scanReceiptFromHistory &&
+                    lastQrPayResult != null &&
+                    typeof lastQrPayResult.newBalanceINR === 'number' &&
+                    Number.isFinite(lastQrPayResult.newBalanceINR)
+                      ? `₹${lastQrPayResult.newBalanceINR.toLocaleString('en-IN')}`
+                      : null;
+                  const hdrBar = payFailed ? 'bg-red-950' : 'bg-emerald-950';
+
+                  const receiptShareText = (): string => {
+                    const headline = payFailed ? 'Transaction failed' : 'Fueling complete';
+                    let t = `${headline}\nStation: ${stationName}\nVehicle: ${vrnPretty}`;
+                    if (receiptHistoryDriverName) t += `\nDriver: ${receiptHistoryDriverName}`;
+                    t += `\nAmount: ${amountDisplay}`;
+                    if (!payFailed && newBalDisp) t += `\nNew balance: ${newBalDisp}`;
+                    if (lastQrPayResult?.authCode?.trim())
+                      t += `\nAuth code: ${lastQrPayResult.authCode}`;
+                    t += `\nTXN ID: ${txnIdDisp}\nTransaction date: ${txnDateDisp}`;
+                    if (payFailed) t += `\nStatus: FAILED`;
+                    return t;
+                  };
+
+                  const receiptRow = (label: string, value: string, opts?: { valueClass?: string }) => (
+                    <div className="flex justify-between gap-3 py-3 text-sm border-b border-gray-100">
+                      <span className="shrink-0 text-gray-500">{label}</span>
+                      <span
+                        className={`min-w-0 text-right font-bold text-gray-900 ${opts?.valueClass ?? ''}`}
+                      >
+                        {value}
+                      </span>
+                    </div>
+                  );
+
+                  return (
+                  <div className="-mx-4 space-y-4 px-4 py-4">
+                    <div
+                      ref={fuelReceiptCaptureRef}
+                      className="overflow-hidden rounded-2xl bg-white shadow-[0_8px_30px_rgba(0,0,0,0.08)]"
+                    >
+                      <div className="border-b border-gray-100 bg-white px-6 pb-6 pt-8 text-center">
+                        {payFailed ? (
+                          <>
+                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-600">
+                              <XCircle className="h-9 w-9 text-white" strokeWidth={2.5} aria-hidden />
+                            </div>
+                            <h2 className="text-xl font-bold text-red-700">Transaction Failed</h2>
+                          </>
+                        ) : (
+                          <>
+                            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#2e7d32]">
+                              <Check className="h-9 w-9 text-white" strokeWidth={3} aria-hidden />
+                            </div>
+                            <h2 className="text-xl font-bold text-[#2e7d32]">Fueling Complete</h2>
+                          </>
+                        )}
                       </div>
-                      <h2 className="text-xl font-bold text-gray-900 mb-1">Fueling Complete</h2>
-                      <div className="border-t border-gray-200 my-4 pt-4 text-left space-y-2 text-sm">
-                        <div className="flex justify-between gap-2">
-                          <span className="text-gray-600">Station</span>
-                          <span className="font-medium text-right">{qrPayFields?.merchantName ?? '—'}</span>
+                      <div className={`flex flex-col items-center gap-2 px-4 py-5 ${hdrBar}`}>
+                        <div className="rounded-lg border border-zinc-600/80 bg-zinc-700 px-2.5 py-2">
+                          <img
+                            src="/mgl-logo.png"
+                            alt="MGL"
+                            className="mx-auto block h-9 w-auto max-w-[120px] object-contain"
+                          />
                         </div>
-                        <div className="flex justify-between gap-2">
-                          <span className="text-gray-600">Vehicle</span>
-                          <span className="font-medium text-right">{activeScanBinding.vrn}</span>
-                        </div>
-                        <div className="flex justify-between border-t border-gray-200 pt-2">
-                          <span className="text-gray-900 font-semibold">Amount</span>
-                          <span className="font-bold text-green-700">
-                            ₹{qrPayFields ? paiseToInrDisplay(qrPayFields.amountPaise) : '—'}
-                          </span>
+                        <p className="text-center text-xs font-normal text-white/90">Official Receipt</p>
+                      </div>
+                      <div className="px-4 pb-5 pt-0">
+                        {receiptRow('Station', stationName)}
+                        {receiptRow('Vehicle', vrnPretty)}
+                        {receiptHistoryDriverName ? receiptRow('Driver', receiptHistoryDriverName) : null}
+                        {payFailed
+                          ? receiptRow('Status', 'FAILED', { valueClass: 'text-red-600' })
+                          : null}
+                        {receiptRow('Amount', amountDisplay)}
+                        {!payFailed && newBalDisp
+                          ? receiptRow('New balance', newBalDisp, { valueClass: 'text-[#2e7d32]' })
+                          : null}
+                        {lastQrPayResult?.authCode?.trim()
+                          ? receiptRow('Auth code', lastQrPayResult.authCode.trim(), {
+                              valueClass: 'font-mono text-xs font-semibold tracking-wide',
+                            })
+                          : null}
+                        <div className="mt-4 border-t border-dashed border-gray-300 px-1 pb-1 pt-4 text-center">
+                          <p className="break-all font-mono text-[11px] tracking-tight text-gray-500">
+                            {txnIdDisp === '—' ? 'TXN ID: —' : `TXN ID: ${txnIdDisp}`}
+                          </p>
+                          <p className="mt-1 font-mono text-[11px] text-gray-500">{txnDateDisp}</p>
                         </div>
                       </div>
                     </div>
@@ -2400,29 +2846,117 @@ export default function Page() {
                     <button
                       type="button"
                       onClick={() => {
+                        setScanReceiptFromHistory(false);
+                        setReceiptHistoryDriverName(null);
+                        setSessionState('idle');
+                        setActiveTab('card');
+                        setActiveScanBinding(null);
+                        setQrPayFields(null);
+                        setLastQrPayResult(null);
+                      }}
+                      className={`w-full rounded-xl py-3.5 font-semibold text-white ${
+                        payFailed ? 'bg-gray-700 hover:bg-gray-800' : 'bg-[#2e7d32] hover:bg-[#27692a]'
+                      }`}
+                    >
+                      Done
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
                         void (async () => {
                           setShareReceiptLoading(true);
                           try {
-                            const station = qrPayFields?.merchantName ?? '—';
-                            const vrn = activeScanBinding.vrn;
-                            const amountStr = qrPayFields ? paiseToInrDisplay(qrPayFields.amountPaise) : '—';
-                            let text = `Fueling complete\nStation: ${station}\nVehicle: ${vrn}\nAmount: ₹${amountStr}`;
-                            if (lastQrPayResult?.serverTxnId) text += `\nTxn: ${lastQrPayResult.serverTxnId}`;
-                            if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-                              try {
-                                await navigator.share({ title: 'Fueling complete', text });
-                                return;
-                              } catch (e: unknown) {
-                                if (e && typeof e === 'object' && 'name' in e && (e as { name: string }).name === 'AbortError')
-                                  return;
-                              }
+                            await new Promise<void>((resolve) =>
+                              requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+                            );
+
+                            const el = fuelReceiptCaptureRef.current;
+                            if (!el) {
+                              setApiBanner('Receipt not ready to share.');
+                              return;
                             }
+
+                            const { toBlob } = await import('html-to-image');
+                            const blob = await toBlob(el, {
+                              cacheBust: true,
+                              backgroundColor: '#ffffff',
+                              pixelRatio: Math.min(3, typeof window !== 'undefined' ? window.devicePixelRatio || 2 : 2),
+                            });
+
+                            if (!blob) {
+                              setApiBanner('Could not create receipt image.');
+                              return;
+                            }
+
+                            const file = new File([blob], 'mgl-fueling-receipt.png', { type: 'image/png' });
+                            const title = payFailed ? 'MGL — Transaction failed' : 'MGL — Fueling complete';
+
+                            const tryShareFiles = async (payload: ShareData) => {
+                              if (typeof navigator === 'undefined' || typeof navigator.share !== 'function')
+                                return false;
+                              if (!navigator.canShare?.(payload)) return false;
+                              await navigator.share(payload);
+                              return true;
+                            };
+
                             try {
-                              await navigator.clipboard.writeText(text);
-                              setSuccessToast('Receipt copied to clipboard');
-                              setTimeout(() => setSuccessToast(null), 2000);
+                              if (await tryShareFiles({ title, files: [file] })) return;
+
+                              try {
+                                if (
+                                  navigator.canShare?.({ files: [file], text: title }) &&
+                                  (await tryShareFiles({ files: [file], text: title }))
+                                )
+                                  return;
+                              } catch {
+                                /* try next */
+                              }
+
+                              try {
+                                if (await tryShareFiles({ title, files: [file], text: receiptShareText() })) return;
+                              } catch {
+                                /* try download */
+                              }
+                            } catch (e: unknown) {
+                              if (
+                                e &&
+                                typeof e === 'object' &&
+                                'name' in e &&
+                                (e as { name: string }).name === 'AbortError'
+                              )
+                                return;
+                            }
+
+                            try {
+                              if (
+                                typeof navigator.clipboard?.write !== 'undefined' &&
+                                typeof ClipboardItem !== 'undefined'
+                              ) {
+                                await navigator.clipboard.write([
+                                  new ClipboardItem({ [blob.type]: blob }),
+                                ]);
+                                setSuccessToast('Receipt image copied');
+                                setTimeout(() => setSuccessToast(null), 2500);
+                                return;
+                              }
                             } catch {
-                              setApiBanner('Could not share or copy receipt');
+                              /* fallback download */
+                            }
+
+                            try {
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = 'mgl-fueling-receipt.png';
+                              document.body.appendChild(a);
+                              a.click();
+                              a.remove();
+                              URL.revokeObjectURL(url);
+                              setSuccessToast('Receipt saved to your device');
+                              setTimeout(() => setSuccessToast(null), 2500);
+                            } catch {
+                              setApiBanner('Could not share or save receipt image');
                             }
                           } finally {
                             setShareReceiptLoading(false);
@@ -2430,257 +2964,114 @@ export default function Page() {
                         })();
                       }}
                       disabled={shareReceiptLoading}
-                      className="w-full border-2 border-green-700 text-green-700 font-medium py-3 rounded-2xl mb-2 inline-flex items-center justify-center gap-2 disabled:opacity-60"
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white py-3.5 font-medium text-gray-900 disabled:opacity-60"
                     >
                       {shareReceiptLoading ? (
-                        <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
+                        <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
                       ) : (
-                        <Share className="w-5 h-5" aria-hidden />
+                        <Share className="h-5 w-5" aria-hidden />
                       )}
                       {shareReceiptLoading ? 'Sharing…' : 'Share receipt'}
                     </button>
-
-                    <button
-                      onClick={() => {
-                        setSessionState('idle');
-                        setActiveTab('card');
-                        setActiveScanBinding(null);
-                        setQrPayFields(null);
-                        setLastQrPayResult(null);
-                      }}
-                      className="w-full bg-green-700 text-white font-medium py-3 rounded-2xl"
-                    >
-                      Done
-                    </button>
-                  </>
-                )}
+                  </div>
+                  );
+                })()}
               </div>
             )}
 
-            {/* Assignments Tab */}
-            {/* Assignments Tab */}
+            {/* Assignments tab */}
             {activeTab === 'assignments' && (
-              <div className="p-4 pb-8 space-y-4">
-                {/* Header */}
+              <div className="space-y-4 bg-[#eceff1] p-4 pb-6 font-sans min-h-0">
                 <div>
-                  <h2 className="text-2xl font-bold text-gray-900">My Assignments</h2>
-                  <p className="text-xs text-gray-600 mt-1">{activeBindings.length} active · {pendingBindings.length + repairBindings.length} need attention</p>
+                  <h2 className="text-2xl font-bold text-gray-900">My Vehicles</h2>
+                  <p className="mt-1 text-xs text-gray-600">
+                    {activeBindings.length} active · {pendingBindings.length + repairBindings.length} need attention
+                  </p>
                 </div>
 
-                {/* SECTION 1: Active Assignments */}
                 {activeBindings.length > 0 && (
-                  <div className="space-y-3">
-                    <h3 className="text-xs uppercase font-semibold text-gray-500 tracking-wide">Active</h3>
-                    {activeBindings.map((binding) => (
-                      <div key={binding.id}>
-                        {/* Vehicle-Linked */}
-                        {binding.authMode === 'vehicle_linked' && (
-                          <div className="border-l-4 border-green-700 bg-white rounded-xl overflow-hidden">
-                            <div className="p-5 h-full flex flex-col justify-between min-h-[160px]">
-
-                              {/* Top row: FO name left, MGL badge right */}
-                              <div className="flex justify-between items-start">
-                                <p className="text-gray-700 text-xs font-medium tracking-wide uppercase">
-                                  {binding.fo}
-                                </p>
-                                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0 ml-2">
-                                  <span className="text-green-700 text-xs font-bold">MGL</span>
-                                </div>
-                              </div>
-
-                              {/* VRN middle */}
-                              <p className="text-gray-900 font-mono font-bold text-xl tracking-widest my-3">
+                  <div className="space-y-4">
+                    {activeBindings.map((binding) => {
+                      const scanDisabled =
+                        binding.scanPayStatus === 'out_window' ||
+                        binding.scanPayStatus === 'locked_unpaired' ||
+                        binding.scanPayStatus === 'locked_repair';
+                      const openDetails = () => {
+                        if (binding.authMode === 'trip_linked') {
+                          setShowTripDetails(true);
+                          setSelectedTripBinding(binding);
+                        } else if (binding.authMode === 'shift_based') {
+                          setShowShiftSchedule(true);
+                          setSelectedShiftBinding(binding);
+                        } else {
+                          setAssignmentDetailBinding(binding);
+                        }
+                      };
+                      return (
+                        <div
+                          key={binding.id}
+                          className="overflow-hidden rounded-xl bg-white shadow-[0_2px_12px_rgba(0,0,0,0.06)]"
+                        >
+                          <div className="h-2 bg-[#43a047]" aria-hidden />
+                          <div className="px-5 pt-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="font-mono text-xl font-bold leading-tight tracking-wide text-gray-900">
                                 {binding.vrn}
                               </p>
-
-                              {/* Bottom row: auth pill left, context right — single line */}
-                              <div className="flex items-center justify-between gap-2">
-                                
-                                {/* Auth mode pill — fixed width, no wrap */}
-                                <span className="px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 bg-green-100 text-green-700">
-                                  Vehicle-linked
-                                </span>
-
-                                {/* Context text right — truncate if too long */}
-                                <p className="text-gray-600 text-xs text-right truncate">
-                                  Active
-                                </p>
-
-                              </div>
+                              <span className="shrink-0 rounded-full border border-[#43a047] bg-green-50 px-3 py-0.5 text-xs font-semibold text-green-700">
+                                Active
+                              </span>
                             </div>
-                            <div className="border-t border-gray-100 pt-3 flex gap-3 px-5 pb-3">
-                              {/* Scan & Pay icon button */}
-                              <button
-                                onClick={() => { setSessionState('scanning'); setActiveTab('scan'); }}
-                                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-green-50 hover:bg-green-100 transition-colors">
-                                <QrCode className="w-5 h-5 text-green-700" />
-                                <span className="text-xs font-medium text-green-700">Scan & Pay</span>
-                              </button>
-
-                              {/* Transactions icon button */}
-                              <button
-                                onClick={() => setActiveTab('transactions')}
-                                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                                <History className="w-5 h-5 text-gray-500" />
-                                <span className="text-xs font-medium text-gray-500">Transactions</span>
-                              </button>
-
-                              {/* Details button */}
-                              <button
-                                type="button"
-                                onClick={() => setAssignmentDetailBinding(binding)}
-                                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round">
-                                  <circle cx="12" cy="12" r="10"/>
-                                  <line x1="12" y1="8" x2="12" y2="12"/>
-                                  <line x1="12" y1="16" x2="12.01" y2="16"/>
-                                </svg>
-                                <span className="text-xs font-medium text-gray-500">Details</span>
-                              </button>
+                            <p className="mt-2 text-sm text-gray-600">{binding.fo?.trim() || '—'}</p>
+                            <div className="mt-5 flex items-baseline justify-between">
+                              <span className="text-sm text-gray-600">Balance</span>
+                              <span className="text-xl font-bold tabular-nums text-gray-900">
+                                {vehicleBalanceDisplay(binding.balance ?? binding.cardBalance)}
+                              </span>
                             </div>
                           </div>
-                        )}
-
-                        {/* Shift-Based */}
-                        {binding.authMode === 'shift_based' && binding.scanPayStatus === 'in_window' && (
-                          <div className="border-l-4 border-green-700 bg-white rounded-xl overflow-hidden">
-                            <div className="p-5 h-full flex flex-col justify-between min-h-[160px]">
-
-                              {/* Top row: FO name left, MGL badge right */}
-                              <div className="flex justify-between items-start">
-                                <p className="text-gray-700 text-xs font-medium tracking-wide uppercase">
-                                  {binding.fo}
-                                </p>
-                                <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0 ml-2">
-                                  <span className="text-green-700 text-xs font-bold">MGL</span>
-                                </div>
-                              </div>
-
-                              {/* VRN middle */}
-                              <p className="text-gray-900 font-mono font-bold text-xl tracking-widest my-3">
-                                {binding.vrn}
-                              </p>
-
-                              {/* Bottom row: auth pill left, context right — single line */}
-                              <div className="flex items-center justify-between gap-2">
-                                
-                                {/* Auth mode pill — fixed width, no wrap */}
-                                <span className="px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 bg-green-100 text-green-700">
-                                  {`Shift · ends ${binding.shiftEnd}`}
-                                </span>
-
-                                {/* Context text right — truncate if too long */}
-                                <p className="text-gray-600 text-xs text-right truncate">
-                                  {binding.shiftEnd ?? '—'}
-                                </p>
-
-                              </div>
-                            </div>
-                            <div className="border-t border-gray-100 pt-3 flex gap-3 px-5 pb-3">
-                              {/* Scan & Pay icon button */}
-                              <button
-                                onClick={() => { setSessionState('scanning'); setActiveTab('scan'); }}
-                                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-green-50 hover:bg-green-100 transition-colors">
-                                <QrCode className="w-5 h-5 text-green-700" />
-                                <span className="text-xs font-medium text-green-700">Scan & Pay</span>
-                              </button>
-
-                              {/* Transactions icon button */}
-                              <button
-                                onClick={() => setActiveTab('transactions')}
-                                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                                <History className="w-5 h-5 text-gray-500" />
-                                <span className="text-xs font-medium text-gray-500">Transactions</span>
-                              </button>
-
-                              {/* Schedule button */}
-                              <button
-                                onClick={() => { setShowShiftSchedule(true); setSelectedShiftBinding(binding); }}
-                                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round">
-                                  <rect x="3" y="4" width="18" height="18" rx="2"/>
-                                  <line x1="16" y1="2" x2="16" y2="6"/>
-                                  <line x1="8" y1="2" x2="8" y2="6"/>
-                                  <line x1="3" y1="10" x2="21" y2="10"/>
-                                  <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
-                                </svg>
-                                <span className="text-xs font-medium text-gray-500">Schedule</span>
-                              </button>
-                            </div>
+                          <div className="mx-5 my-3 border-t border-gray-200" />
+                          <div className="grid grid-cols-3 gap-2 px-4 pb-4">
+                            <button
+                              type="button"
+                              disabled={scanDisabled}
+                              onClick={() => {
+                                setSelectedScanBinding(binding);
+                                setSessionState('scanning');
+                                setActiveTab('scan');
+                              }}
+                              className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-1 py-3 text-xs font-medium text-[#2e7d32] transition hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <QrCode className="h-6 w-6 shrink-0 text-[#43a047]" aria-hidden />
+                              Scan & Pay
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const i = activeCards.findIndex((c) => c.id === binding.id);
+                                if (i >= 0) setActiveCard(i);
+                                setActiveTab('transactions');
+                              }}
+                              className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-1 py-3 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                            >
+                              <FileText className="h-6 w-6 shrink-0 text-gray-500" aria-hidden />
+                              Transactions
+                            </button>
+                            <button
+                              type="button"
+                              onClick={openDetails}
+                              className="flex flex-col items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-white px-1 py-3 text-xs font-medium text-gray-600 transition hover:bg-gray-50"
+                            >
+                              <Info className="h-6 w-6 shrink-0 text-gray-500" aria-hidden />
+                              Details
+                            </button>
                           </div>
-                        )}
-
-                        {/* Trip-Linked */}
-                        {binding.authMode === 'trip_linked' && binding.scanPayStatus === 'in_window' && (
-                          <div className="border-l-4 border-blue-600 bg-white rounded-xl overflow-hidden">
-                            <div className="p-5 h-full flex flex-col justify-between min-h-[160px]">
-
-                              {/* Top row: FO name left, MGL badge right */}
-                              <div className="flex justify-between items-start">
-                                <p className="text-gray-700 text-xs font-medium tracking-wide uppercase">
-                                  {binding.fo}
-                                </p>
-                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 ml-2">
-                                  <span className="text-blue-700 text-xs font-bold">MGL</span>
-                                </div>
-                              </div>
-
-                              {/* VRN middle */}
-                              <p className="text-gray-900 font-mono font-bold text-xl tracking-widest my-3">
-                                {binding.vrn}
-                              </p>
-
-                              {/* Bottom row: auth pill left, context right — single line */}
-                              <div className="flex items-center justify-between gap-2">
-                                
-                                {/* Auth mode pill — fixed width, no wrap */}
-                                <span className="px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap flex-shrink-0 bg-blue-100 text-blue-700">
-                                  {`Trip · ends ${binding.tripEnd}`}
-                                </span>
-
-                                {/* Context text right — truncate if too long */}
-                                <p className="text-gray-600 text-xs text-right truncate">
-                                  {`${binding.origin} → ${binding.destination}`}
-                                </p>
-
-                              </div>
-                            </div>
-                            <div className="border-t border-gray-100 pt-3 flex gap-3 px-5 pb-3">
-                              {/* Scan & Pay icon button */}
-                              <button
-                                onClick={() => { setSessionState('scanning'); setActiveTab('scan'); }}
-                                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-green-50 hover:bg-green-100 transition-colors">
-                                <QrCode className="w-5 h-5 text-green-700" />
-                                <span className="text-xs font-medium text-green-700">Scan & Pay</span>
-                              </button>
-
-                              {/* Transactions icon button */}
-                              <button
-                                onClick={() => setActiveTab('transactions')}
-                                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                                <History className="w-5 h-5 text-gray-500" />
-                                <span className="text-xs font-medium text-gray-500">Transactions</span>
-                              </button>
-
-                              {/* Trip info button */}
-                              <button
-                                onClick={() => { setShowTripDetails(true); setSelectedTripBinding(binding); }}
-                                className="flex-1 flex flex-col items-center gap-1 py-2 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors">
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" strokeWidth="2" strokeLinecap="round">
-                                  <circle cx="12" cy="10" r="3"/>
-                                  <path d="M12 2a8 8 0 0 0-8 8c0 5.4 7 12 8 12s8-6.6 8-12a8 8 0 0 0-8-8z"/>
-                                </svg>
-                                <span className="text-xs font-medium text-gray-500">Trip info</span>
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
 
-                {/* SECTION 2: Needs Attention */}
                 {(pendingBindings.length > 0 || repairBindings.length > 0) && (
                   <div className="space-y-3">
                     <h3 className="text-xs uppercase font-semibold text-amber-600 tracking-wide">Needs attention</h3>
@@ -2689,7 +3080,7 @@ export default function Page() {
                     {pendingBindings.map((binding) => (
                       <div key={binding.id} className="border-2 border-dashed border-amber-300 bg-white rounded-xl p-4 space-y-3">
                         <div className="flex justify-between items-start">
-                          <p className="font-mono font-bold text-lg text-gray-900">{binding.vrn}</p>
+                          <p className="font-mono text-xl font-bold leading-tight tracking-wide text-gray-900">{binding.vrn}</p>
                           <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-semibold rounded-full">Action needed</span>
                         </div>
                         <div className="flex justify-between items-start text-sm">
@@ -2716,7 +3107,7 @@ export default function Page() {
                     {repairBindings.map((binding) => (
                       <div key={binding.id} className="border-2 border-dashed border-red-300 bg-white rounded-xl p-4 space-y-3">
                         <div className="flex justify-between items-start">
-                          <p className="font-mono font-bold text-lg text-gray-900">{binding.vrn}</p>
+                          <p className="font-mono text-xl font-bold leading-tight tracking-wide text-gray-900">{binding.vrn}</p>
                           <span className="px-3 py-1 bg-red-100 text-red-700 text-xs font-semibold rounded-full">Re-pair required</span>
                         </div>
                         <div className="text-sm text-gray-600">{binding.authMode === 'shift_based' ? 'Shift-based' : 'Vehicle-linked'} · {binding.fo}</div>
@@ -2735,12 +3126,11 @@ export default function Page() {
                   </div>
                 )}
 
-                {/* Empty State */}
                 {activeBindings.length === 0 && pendingBindings.length === 0 && repairBindings.length === 0 && (
-                  <div className="text-center py-12">
-                    <Route className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-600 font-medium mb-1">No assignments yet</p>
-                    <p className="text-sm text-gray-500">Your Fleet Operator will assign vehicles and trips here</p>
+                  <div className="rounded-xl bg-white py-14 text-center shadow-[0_2px_12px_rgba(0,0,0,0.05)]">
+                    <Truck className="mx-auto mb-4 h-12 w-12 text-gray-300" aria-hidden />
+                    <p className="mb-1 font-medium text-gray-600">No vehicles yet</p>
+                    <p className="text-sm text-gray-500">Your Fleet Operator will assign vehicles here</p>
                   </div>
                 )}
               </div>
@@ -2854,25 +3244,54 @@ export default function Page() {
                   ))}
                 </div>
                 <div className="p-4 space-y-2">
-                  {apiTxns
-                    .filter((t) => {
-                        if (txnFilter === 'all') return true;
-                        if (txnFilter === 'successful') return t.status === 'SUCCESS';
-                        if (txnFilter === 'failed') return t.status !== 'SUCCESS';
-                        return true;
-                      })
-                  .map((txn) => (
+                  {filteredTxnRows.length === 0 ? (
+                    <div className="rounded-xl border border-gray-100 bg-white px-4 py-14 text-center shadow-[0_2px_12px_rgba(0,0,0,0.05)]">
+                      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-gray-50">
+                        <History className="h-7 w-7 text-gray-400" aria-hidden />
+                      </div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {apiTxns.length === 0
+                          ? 'No transactions yet'
+                          : txnFilter === 'successful'
+                            ? 'No successful transactions'
+                            : txnFilter === 'failed'
+                              ? 'No failed transactions'
+                              : 'No transactions'}
+                      </p>
+                      <p className="mx-auto mt-2 max-w-sm text-xs text-gray-500 leading-relaxed">
+                        {apiTxns.length === 0
+                          ? 'Fuel payments and wallet activity will show here once you use Scan & Pay.'
+                          : 'Nothing matches this filter. Try All or another tab.'}
+                      </p>
+                    </div>
+                  ) : (
+                    filteredTxnRows.map((txn) => (
                       <div key={txn.serverTxnId} className="bg-white border border-gray-200 rounded-xl p-3">
                         <div className="flex justify-between items-start mb-1">
                           <div>
                             <p className="text-sm font-medium text-gray-900">{txn.serverTxnId}</p>
-                            <p className="text-xs text-gray-600">{txn.vehicleRegNo}</p>
+                            <p className="text-xs text-gray-600">
+                              {txn.vehicleRegNo}
+                              {txn.driverName ? ` · ${txn.driverName}` : ''}
+                            </p>
                           </div>
                           <p className="text-sm font-bold text-red-600">₹{txn.amountINR}</p>
                         </div>
-                        <p className="text-xs text-gray-600">{txn.createdOn}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              txn.status === 'SUCCESS'
+                                ? 'bg-green-50 text-green-800'
+                                : 'bg-amber-50 text-amber-800'
+                            }`}
+                          >
+                            {txn.status}
+                          </span>
+                          <p className="text-xs text-gray-600">{txn.createdOn}</p>
+                        </div>
                       </div>
-                    ))}
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -2894,12 +3313,22 @@ export default function Page() {
 
                 <div className="space-y-4">
                   <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                    <h3 className="px-4 py-3 font-semibold text-gray-900 border-b border-gray-200">Account Details</h3>
+                    <h3 className="px-4 py-3 font-semibold text-gray-900 border-b border-gray-200">Account</h3>
                     <div className="divide-y divide-gray-200">
                       <div className="px-4 py-3 flex justify-between text-sm">
                         <span className="text-gray-600">Mobile</span>
                         <span className="font-medium">
                           {apiProfileState?.maskedMobile ?? '—'}
+                        </span>
+                      </div>
+                      <div className="px-4 py-3 flex justify-between text-sm">
+                        <span className="text-gray-600">Registered</span>
+                        <span className="font-medium text-right">{profileRegisteredDisplay}</span>
+                      </div>
+                      <div className="px-4 py-3 flex justify-between text-sm">
+                        <span className="text-gray-600">Fleet Operator</span>
+                        <span className="font-medium text-right min-w-0 max-w-[60%] break-words">
+                          {profileFleetOperatorDisplay}
                         </span>
                       </div>
                       <div className="px-4 py-3 flex justify-between text-sm">
@@ -2909,7 +3338,7 @@ export default function Page() {
                         </span>
                       </div>
                       <div className="px-4 py-3 flex justify-between text-sm">
-                        <span className="text-gray-600">DL</span>
+                        <span className="text-gray-600">Licence Number</span>
                         <span className="font-medium">
                           {apiProfileState?.dlNumber ?? '—'}
                         </span>
@@ -2917,12 +3346,13 @@ export default function Page() {
                     </div>
                   </div>
 
+                  {apiAssignments.length > 0 ? (
                   <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                     <h3 className="px-4 py-3 font-semibold text-gray-900 border-b border-gray-200">My Vehicles</h3>
                     {apiAssignments.map((a) => (
                           <div key={a.vehicleDriverId} className="px-4 py-3 border-b border-gray-200 last:border-0">
                             <p className="font-medium text-gray-900 text-sm">{a.vehicleRegNo}</p>
-                            <p className="text-xs text-gray-600 mt-1">{a.assignmentType}</p>
+                            {/* <p className="text-xs text-gray-600 mt-1">{a.assignmentType}</p> */}
                             <div className="flex gap-2 items-center mt-2">
                               <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">{a.status}</span>
                               <span className="w-2 h-2 bg-green-600 rounded-full" />
@@ -2930,9 +3360,10 @@ export default function Page() {
                           </div>
                         ))}
                   </div>
+                  ) : null}
 
                   <button onClick={handleLogout} className="w-full border-2 border-red-300 text-red-600 font-medium py-3 rounded-2xl hover:bg-red-50 transition">
-                    Logout
+                    Sign out
                   </button>
                 </div>
               </div>
@@ -2943,20 +3374,22 @@ export default function Page() {
           )}
 
           {/* Bottom Navigation */}
-          <div className="border-t border-gray-200 bg-white flex justify-around items-center h-20 px-2">
-            {[{ id: 'card', icon: Home, label: 'Home' }, { id: 'scan', icon: QrCode, label: 'Scan & Pay' }, { id: 'assignments', icon: Route, label: 'My Assignments' }, { id: 'profile', icon: User, label: 'Profile' }].map((tab) => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id as typeof activeTab)} className={`flex flex-col items-center gap-1 py-2 transition ${activeTab === tab.id ? 'text-green-700' : 'text-gray-500'}`}>
-                <tab.icon className="w-6 h-6" />
-                <span className="text-xs font-medium">{tab.label}</span>
+          <div className="pointer-events-auto fixed bottom-0 left-0 right-0 z-[70] border-t border-gray-200 bg-white shadow-[0_-4px_24px_rgba(0,0,0,0.08)]">
+            <div className="mx-auto flex max-w-lg items-end justify-around gap-1 px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] min-h-[4.25rem]">
+            {[{ id: 'card', icon: Home, label: 'Home' }, { id: 'scan', icon: QrCode, label: 'Scan & Pay' }, { id: 'assignments', icon: Truck, label: 'My Vehicles' }, { id: 'profile', icon: User, label: 'Profile' }].map((tab) => (
+              <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id as typeof activeTab)} className={`flex min-h-[3.25rem] flex-1 flex-col items-center justify-end gap-1 py-1 transition ${activeTab === tab.id ? 'text-green-700' : 'text-gray-500'}`}>
+                <tab.icon className="h-6 w-6 shrink-0" />
+                <span className="max-w-[5.5rem] text-center text-xs font-medium leading-tight">{tab.label}</span>
               </button>
             ))}
+            </div>
           </div>
         </div>
 
         {apiBanner && (
           <div
             role="alert"
-            className="pointer-events-auto fixed left-3 right-3 z-[90] flex max-h-[min(40vh,220px)] items-start gap-2 overflow-y-auto rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-950 shadow-lg bottom-[calc(5rem+env(safe-area-inset-bottom,0px)+10px)]"
+            className="pointer-events-auto fixed left-3 right-3 z-[90] flex max-h-[min(40vh,220px)] items-start gap-2 overflow-y-auto rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-950 shadow-lg bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px)+10px)]"
           >
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
             <span className="min-w-0 flex-1 leading-snug">{apiBanner}</span>
@@ -2973,7 +3406,7 @@ export default function Page() {
         {/* Assignment sheet: sibling of main scroll area */}
         {assignmentDetailBinding && (
           <div
-            className="pointer-events-auto absolute inset-x-0 top-0 bottom-20 z-[80] flex min-h-0 w-full flex-col justify-end bg-black/50 overflow-hidden"
+            className="pointer-events-auto absolute inset-x-0 top-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] z-[80] flex min-h-0 w-full flex-col justify-end bg-black/50 overflow-hidden"
             role="presentation"
             onClick={() => setAssignmentDetailBinding(null)}
           >
@@ -3003,11 +3436,9 @@ export default function Page() {
                 <div className="flex min-w-0 items-center justify-between gap-3 py-3.5 text-sm">
                   <span className="shrink-0 text-gray-600">Balance</span>
                   <span className="shrink-0 text-right font-bold tabular-nums text-gray-900">
-                    ₹
-                    {(assignmentDetailBinding.balance ??
-                      assignmentDetailBinding.cardBalance ??
-                      0
-                    ).toLocaleString('en-IN')}
+                    {vehicleBalanceDisplay(
+                      assignmentDetailBinding.balance ?? assignmentDetailBinding.cardBalance
+                    )}
                   </span>
                 </div>
                 <div className="flex min-w-0 items-center justify-between gap-3 py-3.5 text-sm">

@@ -46,6 +46,8 @@ export type QrPayResult = {
   newBalanceINR: number;
   authCode?: string;
   txnTime?: string;
+  status?: 'SUCCESS' | 'FAILED';
+  quantityKg?: number;
 };
 
 async function parseJson(res: Response): Promise<unknown> {
@@ -67,10 +69,14 @@ function extractFleetApiErrorMessage(body: unknown): string | undefined {
     const eo = er as Record<string, unknown>;
     if (typeof eo.errorMessage === 'string' && eo.errorMessage.trim()) return eo.errorMessage.trim();
     if (typeof eo.message === 'string' && eo.message.trim()) return eo.message.trim();
+    if (typeof eo.error === 'string' && eo.error.trim()) return eo.error.trim();
+    if (typeof eo.detail === 'string' && eo.detail.trim()) return eo.detail.trim();
   }
 
   if (typeof o.errorMessage === 'string' && o.errorMessage.trim()) return o.errorMessage.trim();
   if (typeof o.message === 'string' && o.message.trim()) return o.message.trim();
+  if (typeof o.error === 'string' && o.error.trim()) return o.error.trim();
+  if (typeof o.detail === 'string' && o.detail.trim()) return o.detail.trim();
 
   const p = o.payload;
   if (typeof p === 'string' && p.trim() && String(o.response_message ?? '') === 'FAILURE') return p.trim();
@@ -344,5 +350,10 @@ export async function driverQrPay(
     headers: { ...foAuthHeader(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return unwrapDriverBody(body) as QrPayResult;
+  const row = unwrapDriverBody(body) as QrPayResult;
+  const st = String(row.status ?? '').toUpperCase();
+  return {
+    ...row,
+    status: st === 'FAILED' ? 'FAILED' : 'SUCCESS',
+  };
 }

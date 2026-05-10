@@ -42,10 +42,13 @@ export type TokenResponse = {
 
 export type DriverHome = {
   hasActiveVehicle: boolean;
+  foName?: string | null;
   vehicleRegNo?: string | null;
   vehicleId?: string | null;
   assignmentType?: 'WHOLE_TIME' | 'SHIFT' | 'TRIP' | null;
   isCurrentlyEligible?: boolean;
+  /** Some backends send `currentlyEligible` instead of `isCurrentlyEligible`. */
+  currentlyEligible?: boolean;
   totalBalanceINR?: number;
   shiftDaysOfWeek?: string | null;
   shiftStartTime?: string | null;
@@ -95,6 +98,9 @@ export type QrPayResult = {
   newBalanceINR: number;
   authCode?: string;
   txnTime?: string;
+  /** Backend may return FAILED with HTTP success envelope. */
+  status?: 'SUCCESS' | 'FAILED';
+  quantityKg?: number;
 };
 
 export type DriverTxnRow = {
@@ -105,6 +111,48 @@ export type DriverTxnRow = {
   driverName: string;
   createdOn: string;
 };
+
+/** Paginated list inside fleet `payload` for GET …/vehicles/{id}/transactions */
+export type DriverTransactionsPagePayload = {
+  content: DriverTxnRow[];
+  page: number;
+  limit: number;
+  totalElements: number;
+  totalPages: number;
+};
+
+export type DriverTransactionsResult = {
+  rows: DriverTxnRow[];
+  page: number;
+  limit: number;
+  totalElements: number;
+  totalPages: number;
+};
+
+function normalizeDriverTransactionsPayload(data: unknown): DriverTransactionsResult {
+  if (Array.isArray(data)) {
+    const rows = data as DriverTxnRow[];
+    return {
+      rows,
+      page: 0,
+      limit: rows.length,
+      totalElements: rows.length,
+      totalPages: rows.length > 0 ? 1 : 0,
+    };
+  }
+  if (data && typeof data === 'object' && 'content' in data) {
+    const p = data as Partial<DriverTransactionsPagePayload>;
+    const rows = Array.isArray(p.content) ? p.content : [];
+    return {
+      rows,
+      page: typeof p.page === 'number' ? p.page : 0,
+      limit: typeof p.limit === 'number' ? p.limit : rows.length,
+      totalElements: typeof p.totalElements === 'number' ? p.totalElements : rows.length,
+      totalPages: typeof p.totalPages === 'number' ? p.totalPages : 0,
+    };
+  }
+  return { rows: [], page: 0, limit: 0, totalElements: 0, totalPages: 0 };
+}
 
 /** UI assignment row shape used by demo page (subset of MOCK_BINDINGS). */
 export type DriverUiBinding = {
@@ -137,6 +185,8 @@ export type DriverUiBinding = {
   spendLimit?: number;
   assignedAt?: string;
   repairReason?: string;
+  /** Fleet vehicle id (for per-vehicle APIs such as transactions). */
+  vehicleId: string;
 };
 
 async function parseJson(res: Response): Promise<unknown> {
@@ -159,10 +209,14 @@ function extractFleetApiErrorMessage(body: unknown): string | undefined {
     const eo = er as Record<string, unknown>;
     if (typeof eo.errorMessage === 'string' && eo.errorMessage.trim()) return eo.errorMessage.trim();
     if (typeof eo.message === 'string' && eo.message.trim()) return eo.message.trim();
+    if (typeof eo.error === 'string' && eo.error.trim()) return eo.error.trim();
+    if (typeof eo.detail === 'string' && eo.detail.trim()) return eo.detail.trim();
   }
 
   if (typeof o.errorMessage === 'string' && o.errorMessage.trim()) return o.errorMessage.trim();
   if (typeof o.message === 'string' && o.message.trim()) return o.message.trim();
+  if (typeof o.error === 'string' && o.error.trim()) return o.error.trim();
+  if (typeof o.detail === 'string' && o.detail.trim()) return o.detail.trim();
 
   const p = o.payload;
   if (typeof p === 'string' && p.trim() && String(o.response_message ?? '') === 'FAILURE') return p.trim();
@@ -475,20 +529,27 @@ export async function driverQrPay(
     headers: { ...foAuthHeader(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return unwrapDriverBody(body) as QrPayResult;
+  const row = unwrapDriverBody(body) as QrPayResult;
+  const st = String(row.status ?? '').toUpperCase();
+  return {
+    ...row,
+    status: st === 'FAILED' ? 'FAILED' : 'SUCCESS',
+  };
 }
 
 export async function driverGetTransactions(
   baseUrl: string,
   token: string,
+  vehicleId: string,
   page = 0
-): Promise<DriverTxnRow[]> {
+): Promise<DriverTransactionsResult> {
   const q = page > 0 ? `?page=${page}` : '';
-  const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/transactions${q}`, {
+  const vid = encodeURIComponent(vehicleId);
+  const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/vehicles/${vid}/transactions${q}`, {
     headers: foAuthHeader(token),
   });
-  const data = unwrapDriverBody<DriverTxnRow[]>(body);
-  return Array.isArray(data) ? data : [];
+  const data = unwrapDriverBody<DriverTxnRow[] | DriverTransactionsPagePayload>(body);
+  return normalizeDriverTransactionsPayload(data);
 }
 
 function normVrn(v: string): string {
@@ -523,7 +584,10 @@ export function mapAssignmentsToUiBindings(home: DriverHome | null, rows: Driver
     const activeEligible = a.status === 'ACTIVE' && !a.requiresPairing;
     const homeEligible =
       home?.isCurrentlyEligible === true ||
-      (home?.isCurrentlyEligible == null && activeEligible);
+      home?.currentlyEligible === true ||
+      (home?.isCurrentlyEligible == null &&
+        home?.currentlyEligible == null &&
+        activeEligible);
     const eligible = matchesHome ? homeEligible : activeEligible;
 
     let scanPayStatus: DriverUiBinding['scanPayStatus'] = 'always_available';
@@ -540,10 +604,16 @@ export function mapAssignmentsToUiBindings(home: DriverHome | null, rows: Driver
     const balance =
       matchesHome && home?.totalBalanceINR != null ? home.totalBalanceINR : undefined;
 
+    const foFromHome =
+      matchesHome && typeof home?.foName === 'string' && home.foName.trim()
+        ? home.foName.trim()
+        : '';
+
     return {
       id: String(a.vehicleDriverId),
+      vehicleId: a.vehicleId,
       vrn: a.vehicleRegNo,
-      fo: '',
+      fo: foFromHome,
       authMode,
       state: a.status,
       paired: !(a.status === 'PENDING_ACCEPTANCE' && a.requiresPairing),
