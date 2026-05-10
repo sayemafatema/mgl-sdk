@@ -1,0 +1,479 @@
+package com.mgl.fleet.sdk.internal
+
+import com.mgl.fleet.sdk.FleetSdkOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.nio.charset.Charset
+import java.util.concurrent.TimeUnit
+
+internal enum class CheckMobileStatus {
+    NEW_USER,
+    RETURNING_USER,
+}
+
+internal data class FoListEntry(
+    val foCompanyId: Long,
+    val foName: String,
+    val foStatus: String,
+)
+
+internal data class InviteValidateResult(
+    val sessionToken: String,
+    val driverName: String,
+    val foName: String,
+    val foCompanyId: Long,
+)
+
+internal data class DriverHomeJson(
+    val hasActiveVehicle: Boolean,
+    val foName: String?,
+    val vehicleRegNo: String?,
+    val vehicleId: String?,
+    val assignmentType: String?,
+    val isCurrentlyEligible: Boolean?,
+    val currentlyEligible: Boolean?,
+    val totalBalanceINR: Double?,
+    val shiftDaysOfWeek: String?,
+    val shiftStartTime: String?,
+    val shiftEndTime: String?,
+    val tripDate: String?,
+    val tripStartTime: String?,
+    val tripEndTime: String?,
+    val tripStartLocation: String?,
+)
+
+internal data class DriverAssignmentJson(
+    val vehicleDriverId: Long,
+    val vehicleId: String,
+    val vehicleRegNo: String,
+    val assignmentType: String,
+    val status: String,
+    val requiresPairing: Boolean,
+    val shiftDaysOfWeek: String?,
+    val shiftStartTime: String?,
+    val shiftEndTime: String?,
+    val tripDate: String?,
+    val tripStartTime: String?,
+    val tripEndTime: String?,
+    val tripStartLocation: String?,
+    val assignedAt: String?,
+)
+
+internal data class DriverProfileJson(
+    val driverId: String,
+    val name: String,
+    val maskedMobile: String?,
+)
+
+internal data class QrPayResultJson(
+    val serverTxnId: String?,
+    val vehicleRegNo: String?,
+    val amountINR: Double?,
+    val newBalanceINR: Double?,
+    val authCode: String?,
+    val txnTime: String?,
+    val status: String?,
+    val quantityKg: Double?,
+)
+
+internal data class DriverTxnRowJson(
+    val serverTxnId: String,
+    val vehicleRegNo: String,
+    val amountINR: Double,
+    val status: String,
+    val driverName: String,
+    val createdOn: String,
+)
+
+internal data class DriverTransactionsResultJson(
+    val rows: List<DriverTxnRowJson>,
+    val page: Int,
+    val limit: Int,
+    val totalElements: Int,
+    val totalPages: Int,
+)
+
+/**
+ * Mirrors [components/mgl/driver-api.ts] for live `apiBaseUrl + /api/v0/driver-app/*` flows.
+ */
+internal class DriverAppApiClient(
+    private val opts: FleetSdkOptions,
+    private val client: OkHttpClient =
+        OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build(),
+) {
+
+    private val base: String get() = opts.apiBaseUrl.trimEnd('/')
+
+    suspend fun driverCheckMobile(mobile: String): Result<CheckMobileStatus> =
+        runSuspendingPostJson(
+            "${base}/api/v0/driver-app/auth/check-mobile",
+            JSONObject(mapOf("mobile" to mobile)),
+            bearer = null,
+        ).map { bodyRaw ->
+            val peeled = unwrapDriverBodyJson(bodyRaw) as? JSONObject ?: error("unexpected check-mobile")
+            val s = peeled.optString("status", "").uppercase().replace("-", "_")
+            when {
+                s.contains("NEW") && s.contains("USER") -> CheckMobileStatus.NEW_USER
+                s.contains("RETURNING") -> CheckMobileStatus.RETURNING_USER
+                else ->
+                    (
+                        peeled.optString(
+                            "status",
+                            "",
+                        )
+                            .takeIf {
+                                true
+                            }?.let {
+
+                            }
+                        ?: error("Unexpected check-mobile response")
+                    ).let @Suppress("UNUSED_EXPRESSION") {},
+            }
+            parseCheckMobileStatus(peeled)
+        }
+
+    suspend fun driverSendLoginOtp(mobile: String): Result<Unit> {
+        val q = java.net.URLEncoder.encode(mobile, Charset.forName("UTF-8"))
+        return executeGet("${base}/api/v0/otp/login?username=$q", bearer = null).map {
+            peelFleetEnvelope(JSONObject(it))?.let {} ?: Unit
+        }
+    }
+
+    suspend fun driverInviteMobileSendOtp(mobile: String): Result<String> =
+        runSuspendingPostJson(
+            "${base}/api/v0/driver-app/auth/mobile/send-otp",
+            JSONObject(mapOf("mobile" to mobile)),
+            bearer = null,
+        ).map {
+            unwrapDriverBodyString(unwrapFleetEnvelope(parseJsonFlexible(it)))
+        }
+
+    suspend fun driverInviteMobileVerifyOtp(
+        mobile: String,
+        otpRefNumber: String,
+        otp: String,
+    ): Result<String> =
+        runSuspendingPostJson(
+            "${base}/api/v0/driver-app/auth/mobile/verify-otp",
+            JSONObject(
+                mapOf(
+                    "mobile" to mobile,
+                    "otpRefNumber" to otpRefNumber,
+                    "otp" to otp,
+                ),
+            ),
+            bearer = null,
+        ).map {
+            val o = unwrapDriverBodyJson(parseJsonFlexible(it).toString())
+            require(o is JSONObject)
+            val tok = o.optString("mobileVerificationToken", "").ifEmpty { error("unexpected verify-otp response") }
+            tok
+        }
+
+    suspend fun driverInviteValidate(
+        mobile: String,
+        inviteCode: String,
+        mobileVerificationToken: String,
+    ): Result<InviteValidateResult> =
+        runSuspendingPostJson(
+            "${base}/api/v0/driver-app/auth/invite/validate",
+            JSONObject(
+                mapOf(
+                    "mobile" to mobile,
+                    "inviteCode" to inviteCode,
+                    "mobileVerificationToken" to mobileVerificationToken,
+                ),
+            ),
+            bearer = null,
+        ).map { body ->
+            val o = unwrapDriverBodyJson(parseJsonFlexible(body)) as JSONObject
+            InviteValidateResult(
+                sessionToken = o.getString("sessionToken"),
+                driverName = o.optString("driverName", ""),
+                foName = o.optString("foName", ""),
+                foCompanyId = o.optLong("foCompanyId"),
+            )
+        }
+
+    suspend fun driverInviteSetPin(sessionToken: String, pin: String): Result<Pair<String?, String>> =
+        runSuspendingPostJson(
+            "${base}/api/v0/driver-app/auth/invite/set-pin",
+            JSONObject(mapOf("sessionToken" to sessionToken, "pin" to pin)),
+            bearer = null,
+        ).map { raw ->
+            val o = unwrapDriverBodyJson(parseJsonFlexible(raw))
+            oauthAccessTokenFromAny(o)?.let { Pair(o, it) } ?: Pair(o as? JSONObject, error("missing access token")).let {
+
+                val token = oauthAccessTokenFromAny(it.first)
+                Pair(token ?: error("missing access token"), token ?: "")
+            }
+        }
+
+    /** Returns fo-scoped access token string. */
+    suspend fun driverOauthOtpGrant(mobile: String, otp: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val form =
+                FormBody.Builder(Charsets.UTF_8)
+                    .add("grant_type", "otp")
+                    .add("username", mobile.trim())
+                    .add("otp", otp.trim())
+                    .add("client_id", "mgl-driver-app-client")
+                    .add("client_secret", "driver-app-secret")
+                    .build()
+            val req =
+                Request.Builder()
+                    .url("${base}/oauth/token")
+                    .post(form)
+                    .header("Accept", "application/json")
+                    .header("User-Agent", "mgl-fleet-android-sdk/1.0")
+                    .build()
+            client.newCall(req).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    return@withContext Result.failure(ApiException(peelOAuthError(parseJsonFlexible(text))))
+                }
+                val jo = JSONObject(text)
+                val token = oauthAccessTokenFromJo(jo) ?: return@withContext Result.failure(ApiException("OAuth: no token"))
+                Result.success(token)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun driverFoList(bearerPartial: String): Result<List<FoListEntry>> =
+        executeGet("${base}/api/v0/driver-app/auth/fo-list", bearerPartial).map { txt ->
+            val data = unwrapDriverBodyJson(parseJsonFlexible(txt))
+            parseFoList(data)
+        }
+
+    suspend fun driverFoSelect(
+        bearerPartial: String,
+        foCompanyId: Long,
+        pin: String,
+    ): Result<String> =
+        runSuspendingPostJson(
+            "${base}/api/v0/driver-app/auth/fo-select",
+            JSONObject(mapOf("foCompanyId" to foCompanyId, "pin" to pin)),
+            bearer = bearerPartial,
+        ).map {
+            val o = unwrapDriverBodyJson(parseJsonFlexible(it))
+            oauthAccessTokenFromAny(o)?.let {} ?: ""
+            oauthAccessTokenFromJo(o as? JSONObject ?: JSONObject()) ?: error("Missing fleet token")
+        }
+
+    suspend fun driverGetHome(token: String): Result<DriverHomeJson> =
+        executeGet("${base}/api/v0/driver-app/home", token).map { parseHome(unwrapDriverBodyJson(parseJsonFlexible(it))) }
+
+    suspend fun driverGetProfile(token: String): Result<DriverProfileJson> =
+        executeGet("${base}/api/v0/driver-app/profile", token).map { parseProfile(unwrapDriverBodyJson(parseJsonFlexible(it))) }
+
+    suspend fun driverGetAssignments(token: String): Result<List<DriverAssignmentJson>> =
+        executeGet("${base}/api/v0/driver-app/assignments", token).map {
+            val data = unwrapDriverBodyJson(parseJsonFlexible(it))
+            parseAssignments(data)
+        }
+
+    suspend fun driverAcceptPairing(
+        token: String,
+        pairingCode: String,
+    ): Result<Pair<String, String>> =
+        runSuspendingPostJson(
+            "${base}/api/v0/driver-app/vehicle/accept-pairing",
+            JSONObject(mapOf("pairingCode" to pairingCode)),
+            bearer = token,
+        ).map { raw ->
+            val o = unwrapDriverBodyJson(parseJsonFlexible(raw)) as JSONObject
+            o.optString("vehicleRegNo", "") to o.optString("status", "")
+        }
+
+    suspend fun driverQrPay(
+        token: String,
+        txnId: String,
+        vehicleRegNo: String,
+        pin: String,
+        mid: String,
+        terminalId: String,
+        amountPaise: Long,
+        expiryEpoch: Long,
+        sign: String,
+    ): Result<QrPayResultJson> =
+        runSuspendingPostJson(
+            "${base}/api/v0/driver-app/qr/pay",
+            JSONObject(
+                mapOf(
+                    "txnId" to txnId,
+                    "vehicleRegNo" to vehicleRegNo,
+                    "pin" to pin,
+                    "mid" to mid,
+                    "terminalId" to terminalId,
+                    "amountPaise" to amountPaise,
+                    "expiryEpoch" to expiryEpoch,
+                    "sign" to sign,
+                ),
+            ),
+            bearer = token,
+        ).map { txt ->
+            val o = unwrapDriverBodyJson(parseJsonFlexible(txt)) as JSONObject
+            QrPayResultJson(
+                serverTxnId = o.optString("serverTxnId"),
+                vehicleRegNo = o.optString("vehicleRegNo").ifEmpty { null },
+                amountINR = o.optNullableDouble("amountINR"),
+                newBalanceINR = o.optNullableDouble("newBalanceINR"),
+                authCode = o.optString("authCode").ifEmpty { null },
+                txnTime = o.optString("txnTime").ifEmpty { null },
+                status = if (o.has("status")) o.optString("status").uppercase() else null,
+                quantityKg = o.optNullableDouble("quantityKg"),
+            )
+        }
+
+    suspend fun driverGetTransactions(
+        token: String,
+        vehicleId: String,
+        page: Int = 0,
+    ): Result<DriverTransactionsResultJson> {
+        val q = if (page > 0) "?page=$page" else ""
+        val vid = java.net.URLEncoder.encode(vehicleId, Charsets.UTF_8)
+        return executeGet("${base}/api/v0/driver-app/vehicles/$vid/transactions$q", token).map { raw ->
+            val data = unwrapDriverBodyJson(parseJsonFlexible(raw))
+            normalizeDriverTransactionsPayload(data)
+        }
+    }
+
+    private fun parseFoList(data: Any?): List<FoListEntry> =
+        when (data) {
+            null -> emptyList()
+            is JSONArray ->
+                List(data.length()) { i ->
+                    data.getJSONObject(i).let { fo ->
+                        FoListEntry(
+                            foCompanyId = fo.optLong("foCompanyId"),
+                            foName = fo.optString("foName"),
+                            foStatus = fo.optString("foStatus"),
+                        )
+                    }
+                }
+            else -> emptyList()
+        }
+
+    private fun parseHome(any: Any?): DriverHomeJson {
+        require(any is JSONObject)
+        return DriverHomeJson(
+            hasActiveVehicle = any.optBoolean("hasActiveVehicle"),
+            foName = any.optNullableString("foName"),
+            vehicleRegNo = any.optNullableString("vehicleRegNo"),
+            vehicleId = any.optNullableString("vehicleId"),
+            assignmentType = any.optNullableString("assignmentType"),
+            isCurrentlyEligible = if (any.has("isCurrentlyEligible")) any.optBoolean("isCurrentlyEligible") else null,
+            currentlyEligible = if (any.has("currentlyEligible")) any.optBoolean("currentlyEligible") else null,
+            totalBalanceINR = any.optNullableDouble("totalBalanceINR"),
+            shiftDaysOfWeek = any.optNullableString("shiftDaysOfWeek"),
+            shiftStartTime = any.optNullableString("shiftStartTime"),
+            shiftEndTime = any.optNullableString("shiftEndTime"),
+            tripDate = any.optNullableString("tripDate"),
+            tripStartTime = any.optNullableString("tripStartTime"),
+            tripEndTime = any.optNullableString("tripEndTime"),
+            tripStartLocation = any.optNullableString("tripStartLocation"),
+        )
+    }
+
+    private fun parseProfile(any: Any?): DriverProfileJson {
+        require(any is JSONObject)
+        return DriverProfileJson(
+            driverId = any.optString("driverId", ""),
+            name = any.optString("name", ""),
+            maskedMobile = any.optNullableString("maskedMobile"),
+        )
+    }
+
+    private fun parseAssignments(any: Any?): List<DriverAssignmentJson> =
+        when (any) {
+            null -> emptyList()
+            is JSONArray ->
+                List(any.length()) { i ->
+                    any.getJSONObject(i).let { a ->
+                        DriverAssignmentJson(
+                            vehicleDriverId = a.optLong("vehicleDriverId"),
+                            vehicleId = a.optString("vehicleId"),
+                            vehicleRegNo = a.optString("vehicleRegNo"),
+                            assignmentType = a.optString("assignmentType"),
+                            status = a.optString("status"),
+                            requiresPairing = a.optBoolean("requiresPairing"),
+                            shiftDaysOfWeek = a.optNullableString("shiftDaysOfWeek"),
+                            shiftStartTime = a.optNullableString("shiftStartTime"),
+                            shiftEndTime = a.optNullableString("shiftEndTime"),
+                            tripDate = a.optNullableString("tripDate"),
+                            tripStartTime = a.optNullableString("tripStartTime"),
+                            tripEndTime = a.optNullableString("tripEndTime"),
+                            tripStartLocation = a.optNullableString("tripStartLocation"),
+                            assignedAt = a.optNullableString("assignedAt"),
+                        )
+                    }
+                }
+            else -> emptyList()
+        }
+
+    private suspend fun executeGet(url: String, bearer: String?): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val rb = Request.Builder().url(url).get().header("Accept", "application/json").header("User-Agent", USER_AGENT)
+            bearer?.takeIf { it.isNotBlank() }?.let { rb.header("Authorization", "Bearer $it") }
+            client.newCall(rb.build()).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) Result.failure(ApiException(peelFleetErrorMessage(parseJsonFlexible(text)) ?: text))
+                else Result.success(text)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun runSuspendingPostJson(
+        url: String,
+        json: JSONObject,
+        bearer: String?,
+    ): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val body = json.toString().toRequestBody(JSON_MEDIA)
+            val rb =
+                Request.Builder()
+                    .url(url)
+                    .post(body)
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("User-Agent", USER_AGENT)
+            bearer?.takeIf { it.isNotBlank() }?.let { rb.header("Authorization", "Bearer $it") }
+            client.newCall(rb.build()).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    return@withContext Result.failure(ApiException(peelFleetErrorMessage(parseJsonFlexible(text)) ?: "HTTP ${resp.code}"))
+                }
+                Result.success(text)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private class ApiException(message: String) : Exception(message)
+
+    companion object {
+        private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
+        private const val USER_AGENT = "mgl-fleet-android-sdk/1.0"
+    }
+
+    private fun JSONObject.optNullableString(key: String): String? =
+        if (!has(key) || JSONObject.NULL == get(key)) null else optString(key).ifBlank { null }
+
+    private fun JSONObject.optNullableDouble(key: String): Double? =
+        if (!has(key) || JSONObject.NULL == get(key)) null else optDouble(key)
+}
