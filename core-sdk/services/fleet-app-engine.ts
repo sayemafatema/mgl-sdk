@@ -319,8 +319,8 @@ export class FleetAppEngine {
   authBack(): void {
     const step = this.state.authStep;
     if (step === 'login_otp') this.patch({ authStep: 'login' });
-    else if (step === 'invite_code') this.patch({ authStep: 'login' });
-    else if (step === 'invite_mobile') this.patch({ authStep: 'invite_code' });
+    else if (step === 'invite_code') this.patch({ authStep: 'invite_otp' });
+    else if (step === 'invite_mobile') this.patch({ authStep: 'login' });
     else if (step === 'invite_otp') this.patch({ authStep: 'invite_mobile' });
     else if (step === 'forgot_otp') this.patch({ authStep: 'forgot_pin' });
     else if (step === 'forgot_pin') {
@@ -332,7 +332,12 @@ export class FleetAppEngine {
   }
 
   goInviteSignup(): void {
-    this.patch({ authStep: 'invite_code', inviteCode: '' });
+    this.patch({
+      authStep: 'invite_mobile',
+      mobileNumber: '',
+      inviteOtp: '',
+      inviteCode: '',
+    });
   }
 
   setInviteCode(raw: string): void {
@@ -344,7 +349,12 @@ export class FleetAppEngine {
   inviteContinue(): void {
     const code = this.state.inviteCode;
     if (code.length !== 6 || !MOCK_INVITE_CODES[code]) return;
-    this.patch({ authStep: 'invite_mobile', mobileNumber: '' });
+    this.patch({
+      authStep: 'invite_pin',
+      invitePin: '',
+      invitePinConfirm: '',
+      pinError: '',
+    });
   }
 
   inviteSendOtp(): void {
@@ -365,10 +375,8 @@ export class FleetAppEngine {
   verifyInviteOtp(): void {
     if (this.state.inviteOtp !== DEMO_OTP) return;
     this.patch({
-      authStep: 'invite_pin',
-      invitePin: '',
-      invitePinConfirm: '',
-      pinError: '',
+      authStep: 'invite_code',
+      inviteCode: '',
     });
   }
 
