@@ -19,6 +19,7 @@ This repository contains:
 **[README.NATIVE-SDK.md](./README.NATIVE-SDK.md)** — Maven Central **`fleet-android`**, SPM **`MGLFleetSDK`**, npm/pub bridges (**`initialize` / `presentFleetFlow`**).
 
 - Maintainer publishing: **[PUBLISH_FOR_EXTERNAL_CONSUMERS.md](./PUBLISH_FOR_EXTERNAL_CONSUMERS.md)** · pinned versions **[VERSIONS.md](./VERSIONS.md)**
+- Build smoke script: **`scripts/smoke-native-matrix.sh`** · matrix **[native/HOST_E2E.md](./native/HOST_E2E.md)** · wrapper surface **[native/SMOKE_WRAPPERS.md](./native/SMOKE_WRAPPERS.md)**
 - Migration from legacy shells: **[README.MIGRATION-NATIVE-FLEET.md](./README.MIGRATION-NATIVE-FLEET.md)**
 - Release playbook: **[RELEASE_NATIVE_SDK.md](./RELEASE_NATIVE_SDK.md)**
 
@@ -54,5 +55,6 @@ The core SDK uses **fetch** only — safe inside Capacitor’s Angular bundle.
 
 ## Further reading
 
-- [SDK_INTEGRATION.md](./SDK_INTEGRATION.md)
-- [UI_SCREEN_MAPPING.md](./UI_SCREEN_MAPPING.md)
+- [native/HOST_E2E.md](./native/HOST_E2E.md) — host/device smoke matrix · `scripts/smoke-native-matrix.sh`
+- [native/SMOKE_WRAPPERS.md](./native/SMOKE_WRAPPERS.md) — unchanged `initialize` / `presentFleetFlow` surface
+- [openapi/DRIVER_APP_OPENAPI_GAP.md](./openapi/DRIVER_APP_OPENAPI_GAP.md) — driver-app vs fleet OpenAPI scope

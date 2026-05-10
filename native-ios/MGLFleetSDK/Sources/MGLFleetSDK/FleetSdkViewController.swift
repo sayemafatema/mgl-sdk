@@ -11,9 +11,13 @@ final class FleetSdkViewController: UIViewController {
             payload: FleetPresentationBridge.pendingSession?.correlationId.map { ["correlationId": $0] },
         )
 
-        let root = FleetDriverNativeView { [weak self] result in
+        let options =
+            FleetSdk.shared.snapshotOptions()
+            ?? FleetSdkOptions(apiBaseUrl: "http://localhost", useMock: true)
+
+        let root = FleetDriverNativeView(onFinish: { [weak self] result in
             self?.finish(with: result)
-        }
+        }, options: options)
 
         let host = UIHostingController(rootView: root)
         embed(host)

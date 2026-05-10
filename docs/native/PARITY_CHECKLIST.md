@@ -30,8 +30,17 @@ Mark **Done** per platform when UX matches acceptance criteria (copy may vary sl
 
 | Mode | Behaviour |
 |------|-----------|
-| `useMock: true` | No network; bundled fixtures mirror TS [`core-sdk/services/mock-data.ts`](../../core-sdk/services/mock-data.ts) semantics |
-| `useMock: false` | Bearer token + [`fleet-api.yaml`](../openapi/fleet-api.yaml) endpoints |
+| `useMock: true` | No driver-app network; fixtures from [`FleetReactMock`](../../native-android/fleet-sdk/src/main/java/com/mgl/fleet/sdk/demo/FleetDemoModels.kt) (same demo OTP/PIN/invite behaviour as before). |
+| `useMock: false` | **`apiBaseUrl`** must point at the driver fleet host (same base as `NEXT_PUBLIC_DRIVER_API_BASE` / [`components/mgl/driver-api.ts`](../../components/mgl/driver-api.ts)). Android native client: [`DriverAppApiClient.kt`](../../native-android/fleet-sdk/src/main/java/com/mgl/fleet/sdk/internal/DriverAppApiClient.kt) — auth (`/api/v0/driver-app/auth/*`, `/oauth/token`), home, assignments, profile, transactions, QR pay, accept-pairing. Optional `authToken` on init skips login when non-blank. |
+
+| Platform | Live E2E (`useMock: false`) |
+|----------|----------------------------|
+| **Android** (`fleet-android`) | Implemented in [`FleetDriverComposeApp.kt`](../../native-android/fleet-sdk/src/main/java/com/mgl/fleet/sdk/demo/ui/FleetDriverComposeApp.kt) (FO select, invite flow, scan pay, pairing). |
+| **iOS** (`MGLFleetSDK`) | Implemented in [`FleetDriverNativeView.swift`](../../native-ios/MGLFleetSDK/Sources/MGLFleetSDK/FleetDriverNativeView.swift) + [`DriverAppApiClient.swift`](../../native-ios/MGLFleetSDK/Sources/MGLFleetSDK/DriverAppApiClient.swift) (FO select, invite flow, scan pay, pairing; mirror Android). |
+
+## Maintainer smoke
+
+Automated subset: `./scripts/smoke-native-matrix.sh`. Full checklist: **[`native/HOST_E2E.md`](native/HOST_E2E.md)** · wrapper contract **[`native/SMOKE_WRAPPERS.md`](native/SMOKE_WRAPPERS.md)**.
 
 ## Versioning note
 

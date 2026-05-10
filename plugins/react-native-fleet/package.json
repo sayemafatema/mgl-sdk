@@ -1,6 +1,6 @@
 {
   "name": "@mgl/react-native-fleet-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "React Native bridge for MGL Fleet native SDK (Android Kotlin / iOS Swift)",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

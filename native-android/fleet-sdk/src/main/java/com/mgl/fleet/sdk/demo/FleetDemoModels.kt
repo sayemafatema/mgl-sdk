@@ -15,6 +15,8 @@ internal data class DemoBinding(
     val id: String,
     val vrn: String,
     val fo: String,
+    /** Fleet vehicle id for `/vehicles/{id}/transactions` (live API). */
+    val vehicleId: String = "",
     val authMode: DemoAuthMode,
     val state: DemoBindingState,
     val paired: Boolean,

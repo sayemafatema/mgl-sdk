@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'mgl_fleet_native_sdk'
-  s.version          = '0.1.0'
+  s.version          = '0.2.0'
   s.summary          = 'Flutter bridge for MGL Fleet native SDK'
   s.license          = { :type => 'UNLICENSED' }
   s.homepage         = 'https://example.com'

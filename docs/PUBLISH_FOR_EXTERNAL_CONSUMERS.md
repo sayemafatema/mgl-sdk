@@ -73,7 +73,7 @@ Edit **`fleetAndroid.version`** in **`native-android/gradle.properties`** and **
 Consumers depend on **your Git URL + semver tag**:
 
 ```swift
-.package(url: "https://github.com/YOUR_ORG/mgl-sdk.git", from: "0.1.0")
+.package(url: "https://github.com/YOUR_ORG/mgl-sdk.git", from: "0.2.0")
 ```
 
 Monorepo layout options:
@@ -81,7 +81,7 @@ Monorepo layout options:
 - **This repository:** root **[`Package.swift`](../Package.swift)** wraps **`native-ios/MGLFleetSDK`** so hosts can use **`.package(url: …, from:)`** against the **whole repo** tag **`X.Y.Z`**.
 - **Alternative:** publish **`native-ios/MGLFleetSDK`** as its **own Git mirror** if you want a tiny SPM-only repo.
 
-Align Git tags with **`fleetAndroid.version`**, **`MGLFleetSDK.podspec`** **`s.version`**, and npm/pub semver (**e.g.** **`0.1.0`**). CocoaPods **`:tag`** must point at the commit you intend to ship.
+Align Git tags with **`fleetAndroid.version`**, **`MGLFleetSDK.podspec`** **`s.version`**, and npm/pub semver (**e.g.** **`0.2.0`**). CocoaPods **`:tag`** must point at the commit you intend to ship.
 
 ### CocoaPods
 

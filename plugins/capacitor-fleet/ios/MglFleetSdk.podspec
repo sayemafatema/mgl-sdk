@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name = 'MglFleetSdk'
-  s.version = '0.1.0'
+  s.version = '0.2.0'
   s.summary = 'Capacitor bridge for MGL Fleet native SDK'
   s.license = { :type => 'Apache License, Version 2.0' }
   s.homepage = 'https://github.com/YOUR_ORG/mgl-sdk/tree/main/plugins/capacitor-fleet'

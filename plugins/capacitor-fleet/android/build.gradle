@@ -27,7 +27,7 @@ android {
 }
 
 dependencies {
-    implementation 'com.mgl.sdk:fleet-android:0.1.0'
+    implementation 'com.mgl.sdk:fleet-android:0.2.0'
     // Resolved from host app’s capacitor-android Node module (never from Maven Central).
     implementation project(':capacitor-android')
     implementation 'androidx.appcompat:appcompat:1.7.0'

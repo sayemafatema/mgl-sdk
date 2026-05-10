@@ -66,7 +66,7 @@ npm install && npm run build
 
 ## 2. Android — `fleet-android` on Maven
 
-The plugin depends on **`com.mgl.sdk:fleet-android`** (version in the plugin’s **`android/build.gradle`**, typically **`0.1.0`**).
+The plugin depends on **`com.mgl.sdk:fleet-android`** (version in the plugin’s **`android/build.gradle`**, typically **`0.2.0`**).
 
 **After the library is on Maven Central:** root **`settings.gradle` / `dependencyResolutionManagement`** needs **`google()`** and **`mavenCentral()`** (usual Capacitor setup).
 

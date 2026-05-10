@@ -16,6 +16,8 @@ struct DemoDriver: Equatable {
     let name: String
     let initials: String
     let mobile: String
+    /// Shown on forgot-PIN intro; live flow may override via profile.
+    var maskedMobile: String
     let pin: String
 }
 
@@ -23,6 +25,8 @@ struct DemoBinding: Identifiable, Equatable {
     let id: String
     var vrn: String
     var fo: String
+    /** Vehicle id for live `/vehicles/{id}/transactions`. */
+    var vehicleId: String
     let authMode: DemoAuthMode
     let state: DemoBindingState
     var paired: Bool
@@ -36,10 +40,12 @@ struct DemoBinding: Identifiable, Equatable {
     var shiftEnd: String
     var tripStart: String
     var tripEnd: String
+    var tripDate: String
     var origin: String
     var destination: String
     var assignedBy: String?
     var validPairingCode: String?
+    var repairReason: String?
 }
 
 struct DemoTxn: Identifiable, Equatable {
@@ -58,6 +64,7 @@ enum FleetReactMockIOS {
         name: "Ravi Sharma",
         initials: "RS",
         mobile: "9876501234",
+        maskedMobile: "+91 ••••••1234",
         pin: "123456",
     )
 
@@ -66,6 +73,7 @@ enum FleetReactMockIOS {
             id: "BND001",
             vrn: "MH 02 AB 1234",
             fo: "ABC Logistics Pvt. Ltd.",
+            vehicleId: "",
             authMode: .vehicleLinked,
             state: .active,
             paired: true,
@@ -79,15 +87,18 @@ enum FleetReactMockIOS {
             shiftEnd: "",
             tripStart: "",
             tripEnd: "",
+            tripDate: "",
             origin: "",
             destination: "",
             assignedBy: nil,
             validPairingCode: nil,
+            repairReason: nil,
         ),
         DemoBinding(
             id: "BND002",
             vrn: "MH 02 CD 5678",
             fo: "ABC Logistics Pvt. Ltd.",
+            vehicleId: "",
             authMode: .shiftBased,
             state: .active,
             paired: true,
@@ -101,15 +112,18 @@ enum FleetReactMockIOS {
             shiftEnd: "14:00",
             tripStart: "",
             tripEnd: "",
+            tripDate: "",
             origin: "",
             destination: "",
             assignedBy: nil,
             validPairingCode: nil,
+            repairReason: nil,
         ),
         DemoBinding(
             id: "BND004",
             vrn: "MH 06 EF 3456",
             fo: "ABC Logistics Pvt. Ltd.",
+            vehicleId: "",
             authMode: .vehicleLinked,
             state: .pendingAcceptance,
             paired: false,
@@ -123,10 +137,12 @@ enum FleetReactMockIOS {
             shiftEnd: "",
             tripStart: "",
             tripEnd: "",
+            tripDate: "",
             origin: "",
             destination: "",
             assignedBy: "Ramesh Shah",
             validPairingCode: "234567",
+            repairReason: nil,
         ),
     ]
 

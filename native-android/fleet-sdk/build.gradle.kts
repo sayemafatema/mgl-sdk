@@ -5,7 +5,7 @@ plugins {
     `maven-publish`
 }
 
-val fleetAndroidVersion = providers.gradleProperty("fleetAndroid.version").getOrElse("0.1.0")
+val fleetAndroidVersion = providers.gradleProperty("fleetAndroid.version").getOrElse("0.2.0")
 
 /** Below 1.17: androidx.core 1.17+ AAR metadata requires host AGP 8.9.1+ (many Capacitor apps stay on 8.7.x). */
 val androidxCorePin = "1.15.0"
