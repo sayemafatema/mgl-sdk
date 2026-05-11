@@ -3,6 +3,10 @@
 import { useEffect, useRef } from 'react';
 import jsQR from 'jsqr';
 
+type BarcodeDetectorLike = {
+  detect(image: ImageBitmapSource): Promise<Array<{ rawValue?: string }>>;
+};
+
 type QrCameraScannerProps = {
   active: boolean;
   onScan: (text: string) => void;
@@ -22,7 +26,8 @@ export function QrCameraScanner({ active, onScan, onCameraError, className }: Qr
   useEffect(() => {
     if (!active || typeof window === 'undefined') return;
     doneRef.current = false;
-    let detector: BarcodeDetector | null = null;
+    let cancelled = false;
+    let detector: BarcodeDetectorLike | null = null;
     let frameCount = 0;
 
     const stopTracks = () => {
@@ -32,19 +37,35 @@ export function QrCameraScanner({ active, onScan, onCameraError, className }: Qr
       if (v) v.srcObject = null;
     };
 
+    /** Chrome rejects play() when srcObject is cleared or replaced mid-play — not a user-facing failure. */
+    const isBenignPlayInterruption = (e: unknown): boolean => {
+      if (e instanceof DOMException && e.name === 'AbortError') return true;
+      const m = e instanceof Error ? e.message : String(e);
+      return (
+        /interrupted by a new load request/i.test(m) ||
+        /interrupted because/i.test(m) ||
+        /user aborted/i.test(m)
+      );
+    };
+
     const start = async () => {
       if (!navigator.mediaDevices?.getUserMedia) {
         onCameraError?.('Camera not supported in this browser.');
         return;
       }
       try {
-        if ('BarcodeDetector' in window) {
-          detector = new BarcodeDetector({ formats: ['qr_code'] });
+        const BD = (window as unknown as { BarcodeDetector?: new (opts?: { formats?: string[] }) => BarcodeDetectorLike }).BarcodeDetector;
+        if (typeof BD === 'function') {
+          detector = new BD({ formats: ['qr_code'] });
         }
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: 'environment' } },
           audio: false,
         });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         streamRef.current = stream;
         const v = videoRef.current;
         if (!v) {
@@ -54,7 +75,19 @@ export function QrCameraScanner({ active, onScan, onCameraError, className }: Qr
         v.srcObject = stream;
         v.playsInline = true;
         v.muted = true;
-        await v.play();
+        try {
+          await v.play();
+        } catch (playErr) {
+          if (cancelled || isBenignPlayInterruption(playErr)) {
+            stopTracks();
+            return;
+          }
+          throw playErr;
+        }
+        if (cancelled) {
+          stopTracks();
+          return;
+        }
 
         const tick = async () => {
           if (!active || doneRef.current) return;
@@ -115,6 +148,7 @@ export function QrCameraScanner({ active, onScan, onCameraError, className }: Qr
 
         rafRef.current = requestAnimationFrame(() => void tick());
       } catch (e) {
+        if (cancelled || isBenignPlayInterruption(e)) return;
         const msg = e instanceof Error ? e.message : String(e);
         onCameraError?.(msg.includes('Permission') ? 'Camera permission denied.' : `Camera error: ${msg}`);
       }
@@ -123,6 +157,7 @@ export function QrCameraScanner({ active, onScan, onCameraError, className }: Qr
     void start();
 
     return () => {
+      cancelled = true;
       doneRef.current = true;
       cancelAnimationFrame(rafRef.current);
       stopTracks();

@@ -47,6 +47,8 @@ export type QrPayResult = {
   newBalanceINR: number;
   authCode?: string;
   txnTime?: string;
+  status?: 'SUCCESS' | 'FAILED';
+  quantityKg?: number;
 };
 
 async function parseJson(res: Response): Promise<unknown> {
@@ -59,29 +61,51 @@ async function parseJson(res: Response): Promise<unknown> {
   }
 }
 
+function extractFleetApiErrorMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const o = body as Record<string, unknown>;
+
+  const er = o.errorResponse;
+  if (er != null && typeof er === 'object') {
+    const eo = er as Record<string, unknown>;
+    if (typeof eo.errorMessage === 'string' && eo.errorMessage.trim()) return eo.errorMessage.trim();
+    if (typeof eo.message === 'string' && eo.message.trim()) return eo.message.trim();
+    if (typeof eo.error === 'string' && eo.error.trim()) return eo.error.trim();
+    if (typeof eo.detail === 'string' && eo.detail.trim()) return eo.detail.trim();
+  }
+
+  if (typeof o.errorMessage === 'string' && o.errorMessage.trim()) return o.errorMessage.trim();
+  if (typeof o.message === 'string' && o.message.trim()) return o.message.trim();
+  if (typeof o.error === 'string' && o.error.trim()) return o.error.trim();
+  if (typeof o.detail === 'string' && o.detail.trim()) return o.detail.trim();
+
+  const p = o.payload;
+  if (typeof p === 'string' && p.trim() && String(o.response_message ?? '') === 'FAILURE') return p.trim();
+
+  return undefined;
+}
+
 function peelFleetEnvelope(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
   const o = raw as Record<string, unknown>;
   if (!('payload' in o) || !('response_message' in o)) return raw;
 
-  if (o.errorResponse != null) {
-    const e = o.errorResponse;
-    const em =
-      typeof e === 'object' && e !== null && 'message' in e
-        ? String((e as { message: unknown }).message)
-        : typeof e === 'string'
-          ? e
-          : JSON.stringify(e);
-    throw new Error(em || 'Request failed');
-  }
-
   const msg = String(o.response_message ?? '');
   const code = o.response_code;
-  if (msg === 'FAILURE') {
-    throw new Error('Request failed');
-  }
-  if (typeof code === 'number' && code >= 400) {
-    throw new Error(msg || `Error ${code}`);
+  const errDetail = extractFleetApiErrorMessage(o);
+
+  const isError =
+    o.errorResponse != null ||
+    msg === 'FAILURE' ||
+    (typeof code === 'number' && code >= 400);
+
+  if (isError) {
+    throw new Error(
+      errDetail ||
+        (typeof msg === 'string' && msg !== 'FAILURE' && msg.trim() ? msg.trim() : '') ||
+        (typeof code === 'number' ? `Error ${code}` : '') ||
+        'Request failed'
+    );
   }
 
   return o.payload;
@@ -90,8 +114,16 @@ function peelFleetEnvelope(raw: unknown): unknown {
 function unwrapIfWrapped<T>(raw: unknown): T {
   const peeled = peelFleetEnvelope(raw);
   if (peeled && typeof peeled === 'object' && 'status' in peeled && 'data' in peeled) {
-    const w = peeled as { status: string; data?: unknown; message?: string };
-    if (w.status === 'FAILURE') throw new Error(w.message || 'Request failed');
+    const w = peeled as { status: string; data?: unknown; message?: string; errorMessage?: string };
+    if (w.status === 'FAILURE') {
+      const detail =
+        typeof w.errorMessage === 'string' && w.errorMessage.trim()
+          ? w.errorMessage.trim()
+          : typeof w.message === 'string' && w.message.trim()
+            ? w.message.trim()
+            : undefined;
+      throw new Error(detail ?? 'Request failed');
+    }
     return (w.data ?? null) as T;
   }
   return peeled as T;
@@ -112,13 +144,14 @@ function unwrapDriverBody<T>(raw: unknown): T {
 }
 
 function httpErrorMessage(body: unknown, status: number): string {
-  if (body && typeof body === 'object') {
-    const o = body as Record<string, unknown>;
-    if (typeof o.message === 'string') return o.message;
-    if (typeof o.error_description === 'string') return o.error_description;
-    if (typeof o.error === 'string') return o.error;
-  }
-  return `HTTP ${status}`;
+  return (
+    extractFleetApiErrorMessage(body) ??
+    (body && typeof body === 'object' && typeof (body as Record<string, unknown>).error_description === 'string'
+      ? String((body as { error_description: string }).error_description)
+      : body && typeof body === 'object' && typeof (body as Record<string, unknown>).error === 'string'
+        ? String((body as { error: string }).error)
+        : `HTTP ${status}`)
+  );
 }
 
 async function fetchJsonOk(
@@ -257,15 +290,17 @@ export async function driverOauthOtpGrant(
   });
   const parsed = await parseJson(res);
   if (!res.ok) {
+    const fleetMsg = extractFleetApiErrorMessage(parsed);
     const msg =
-      parsed &&
+      fleetMsg ??
+      (parsed &&
       typeof parsed === 'object' &&
       'error_description' in parsed &&
       typeof (parsed as { error_description: string }).error_description === 'string'
         ? (parsed as { error_description: string }).error_description
         : parsed && typeof parsed === 'object' && 'error' in parsed
           ? String((parsed as { error: unknown }).error)
-          : `oauth ${res.status}`;
+          : `oauth ${res.status}`);
     throw new Error(msg);
   }
   return parsed as TokenResponse;
@@ -335,5 +370,10 @@ export async function driverQrPay(
     headers: { ...foAuthHeader(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return unwrapDriverBody(body) as QrPayResult;
+  const row = unwrapDriverBody(body) as QrPayResult;
+  const st = String(row.status ?? '').toUpperCase();
+  return {
+    ...row,
+    status: st === 'FAILED' ? 'FAILED' : 'SUCCESS',
+  };
 }

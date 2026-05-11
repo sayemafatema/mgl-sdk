@@ -8,26 +8,19 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 const _poppins = Poppins({ weight: ['400', '600', '700'], subsets: ["latin"], variable: '--font-poppins' });
 
 export const metadata: Metadata = {
-  title: 'v0 App',
+  title: 'MGL Fleet Connect Driver App',
   description: 'Created with v0',
   generator: 'v0.app',
   icons: {
-    icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
-    ],
-    apple: '/apple-icon.png',
+    icon: [{ url: '/mgl.png', type: 'image/png' }],
+    apple: '/mgl.png',
   },
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover' as const,
 }
 
 export default function RootLayout({

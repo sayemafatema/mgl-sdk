@@ -3,14 +3,12 @@ import type { FleetpayQrApiFields } from './fleetpay-qr';
 /** Driver App API (Phase 2 auth + Phase 3 features).
  *  Per environment: set `NEXT_PUBLIC_DRIVER_API_BASE` (e.g. local `http://localhost:8080`, other UAT/prod hosts).
  *  When unset, defaults to fleet UAT: `https://api-fleet-uat.enkash.in`
- *  Force UI-only/mock: `NEXT_PUBLIC_DRIVER_API_MOCK=true`.
  */
 
 export const DEFAULT_DRIVER_API_BASE = 'https://api-fleet-uat.enkash.in';
 
 export const getDriverApiBase = (): string => {
   if (typeof process === 'undefined') return '';
-  if (process.env.NEXT_PUBLIC_DRIVER_API_MOCK === 'true') return '';
   const fromEnv = process.env.NEXT_PUBLIC_DRIVER_API_BASE?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, '');
   return DEFAULT_DRIVER_API_BASE;
@@ -44,10 +42,13 @@ export type TokenResponse = {
 
 export type DriverHome = {
   hasActiveVehicle: boolean;
+  foName?: string | null;
   vehicleRegNo?: string | null;
   vehicleId?: string | null;
   assignmentType?: 'WHOLE_TIME' | 'SHIFT' | 'TRIP' | null;
   isCurrentlyEligible?: boolean;
+  /** Some backends send `currentlyEligible` instead of `isCurrentlyEligible`. */
+  currentlyEligible?: boolean;
   totalBalanceINR?: number;
   shiftDaysOfWeek?: string | null;
   shiftStartTime?: string | null;
@@ -97,6 +98,9 @@ export type QrPayResult = {
   newBalanceINR: number;
   authCode?: string;
   txnTime?: string;
+  /** Backend may return FAILED with HTTP success envelope. */
+  status?: 'SUCCESS' | 'FAILED';
+  quantityKg?: number;
 };
 
 export type DriverTxnRow = {
@@ -107,6 +111,48 @@ export type DriverTxnRow = {
   driverName: string;
   createdOn: string;
 };
+
+/** Paginated list inside fleet `payload` for GET …/vehicles/{id}/transactions */
+export type DriverTransactionsPagePayload = {
+  content: DriverTxnRow[];
+  page: number;
+  limit: number;
+  totalElements: number;
+  totalPages: number;
+};
+
+export type DriverTransactionsResult = {
+  rows: DriverTxnRow[];
+  page: number;
+  limit: number;
+  totalElements: number;
+  totalPages: number;
+};
+
+function normalizeDriverTransactionsPayload(data: unknown): DriverTransactionsResult {
+  if (Array.isArray(data)) {
+    const rows = data as DriverTxnRow[];
+    return {
+      rows,
+      page: 0,
+      limit: rows.length,
+      totalElements: rows.length,
+      totalPages: rows.length > 0 ? 1 : 0,
+    };
+  }
+  if (data && typeof data === 'object' && 'content' in data) {
+    const p = data as Partial<DriverTransactionsPagePayload>;
+    const rows = Array.isArray(p.content) ? p.content : [];
+    return {
+      rows,
+      page: typeof p.page === 'number' ? p.page : 0,
+      limit: typeof p.limit === 'number' ? p.limit : rows.length,
+      totalElements: typeof p.totalElements === 'number' ? p.totalElements : rows.length,
+      totalPages: typeof p.totalPages === 'number' ? p.totalPages : 0,
+    };
+  }
+  return { rows: [], page: 0, limit: 0, totalElements: 0, totalPages: 0 };
+}
 
 /** UI assignment row shape used by demo page (subset of MOCK_BINDINGS). */
 export type DriverUiBinding = {
@@ -139,6 +185,8 @@ export type DriverUiBinding = {
   spendLimit?: number;
   assignedAt?: string;
   repairReason?: string;
+  /** Fleet vehicle id (for per-vehicle APIs such as transactions). */
+  vehicleId: string;
 };
 
 async function parseJson(res: Response): Promise<unknown> {
@@ -151,30 +199,53 @@ async function parseJson(res: Response): Promise<unknown> {
   }
 }
 
+/** Resolves `errorResponse.errorMessage`, flat keys, or string `payload` on FAILURE envelopes. */
+function extractFleetApiErrorMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const o = body as Record<string, unknown>;
+
+  const er = o.errorResponse;
+  if (er != null && typeof er === 'object') {
+    const eo = er as Record<string, unknown>;
+    if (typeof eo.errorMessage === 'string' && eo.errorMessage.trim()) return eo.errorMessage.trim();
+    if (typeof eo.message === 'string' && eo.message.trim()) return eo.message.trim();
+    if (typeof eo.error === 'string' && eo.error.trim()) return eo.error.trim();
+    if (typeof eo.detail === 'string' && eo.detail.trim()) return eo.detail.trim();
+  }
+
+  if (typeof o.errorMessage === 'string' && o.errorMessage.trim()) return o.errorMessage.trim();
+  if (typeof o.message === 'string' && o.message.trim()) return o.message.trim();
+  if (typeof o.error === 'string' && o.error.trim()) return o.error.trim();
+  if (typeof o.detail === 'string' && o.detail.trim()) return o.detail.trim();
+
+  const p = o.payload;
+  if (typeof p === 'string' && p.trim() && String(o.response_message ?? '') === 'FAILURE') return p.trim();
+
+  return undefined;
+}
+
 /** Backend envelope (UAT): `{ "payload": ..., "errorResponse": null, "response_code": 200, "response_message": "SUCCESS" }` */
 function peelFleetEnvelope(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw;
   const o = raw as Record<string, unknown>;
   if (!('payload' in o) || !('response_message' in o)) return raw;
 
-  if (o.errorResponse != null) {
-    const e = o.errorResponse;
-    const em =
-      typeof e === 'object' && e !== null && 'message' in e
-        ? String((e as { message: unknown }).message)
-        : typeof e === 'string'
-          ? e
-          : JSON.stringify(e);
-    throw new Error(em || 'Request failed');
-  }
-
   const msg = String(o.response_message ?? '');
   const code = o.response_code;
-  if (msg === 'FAILURE') {
-    throw new Error('Request failed');
-  }
-  if (typeof code === 'number' && code >= 400) {
-    throw new Error(msg || `Error ${code}`);
+  const errDetail = extractFleetApiErrorMessage(o);
+
+  const isError =
+    o.errorResponse != null ||
+    msg === 'FAILURE' ||
+    (typeof code === 'number' && code >= 400);
+
+  if (isError) {
+    throw new Error(
+      errDetail ||
+        (typeof msg === 'string' && msg !== 'FAILURE' && msg.trim() ? msg.trim() : '') ||
+        (typeof code === 'number' ? `Error ${code}` : '') ||
+        'Request failed'
+    );
   }
 
   return o.payload;
@@ -183,9 +254,16 @@ function peelFleetEnvelope(raw: unknown): unknown {
 function unwrapIfWrapped<T>(raw: unknown): T {
   const peeled = peelFleetEnvelope(raw);
   if (peeled && typeof peeled === 'object' && 'status' in peeled && 'data' in peeled) {
-    const w = peeled as { status: string; data?: unknown; message?: string };
-    if (w.status === 'FAILURE')
-      throw new Error(w.message || 'Request failed');
+    const w = peeled as { status: string; data?: unknown; message?: string; errorMessage?: string };
+    if (w.status === 'FAILURE') {
+      const detail =
+        typeof w.errorMessage === 'string' && w.errorMessage.trim()
+          ? w.errorMessage.trim()
+          : typeof w.message === 'string' && w.message.trim()
+            ? w.message.trim()
+            : undefined;
+      throw new Error(detail ?? 'Request failed');
+    }
     return (w.data ?? null) as T;
   }
   return peeled as T;
@@ -219,11 +297,7 @@ async function fetchJsonOk<T>(
   });
   const body = await parseJson(res);
   if (!res.ok) {
-    const msg =
-      body && typeof body === 'object' && 'message' in body && typeof (body as { message: string }).message === 'string'
-        ? (body as { message: string }).message
-        : `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new Error(extractFleetApiErrorMessage(body) ?? `HTTP ${res.status}`);
   }
   return { res, body };
 }
@@ -342,15 +416,17 @@ export async function driverOauthOtpGrant(
   });
   const parsed = await parseJson(res);
   if (!res.ok) {
+    const fleetMsg = extractFleetApiErrorMessage(parsed);
     const msg =
-      parsed &&
+      fleetMsg ??
+      (parsed &&
       typeof parsed === 'object' &&
       'error_description' in parsed &&
       typeof (parsed as { error_description: string }).error_description === 'string'
         ? (parsed as { error_description: string }).error_description
         : parsed && typeof parsed === 'object' && 'error' in parsed
           ? String((parsed as { error: unknown }).error)
-          : `oauth ${res.status}`;
+          : `oauth ${res.status}`);
     throw new Error(msg);
   }
   return parsed as TokenResponse;
@@ -473,20 +549,27 @@ export async function driverQrPay(
     headers: { ...foAuthHeader(token), 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  return unwrapDriverBody(body) as QrPayResult;
+  const row = unwrapDriverBody(body) as QrPayResult;
+  const st = String(row.status ?? '').toUpperCase();
+  return {
+    ...row,
+    status: st === 'FAILED' ? 'FAILED' : 'SUCCESS',
+  };
 }
 
 export async function driverGetTransactions(
   baseUrl: string,
   token: string,
+  vehicleId: string,
   page = 0
-): Promise<DriverTxnRow[]> {
+): Promise<DriverTransactionsResult> {
   const q = page > 0 ? `?page=${page}` : '';
-  const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/transactions${q}`, {
+  const vid = encodeURIComponent(vehicleId);
+  const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/vehicles/${vid}/transactions${q}`, {
     headers: foAuthHeader(token),
   });
-  const data = unwrapDriverBody<DriverTxnRow[]>(body);
-  return Array.isArray(data) ? data : [];
+  const data = unwrapDriverBody<DriverTxnRow[] | DriverTransactionsPagePayload>(body);
+  return normalizeDriverTransactionsPayload(data);
 }
 
 function normVrn(v: string): string {
@@ -521,7 +604,10 @@ export function mapAssignmentsToUiBindings(home: DriverHome | null, rows: Driver
     const activeEligible = a.status === 'ACTIVE' && !a.requiresPairing;
     const homeEligible =
       home?.isCurrentlyEligible === true ||
-      (home?.isCurrentlyEligible == null && activeEligible);
+      home?.currentlyEligible === true ||
+      (home?.isCurrentlyEligible == null &&
+        home?.currentlyEligible == null &&
+        activeEligible);
     const eligible = matchesHome ? homeEligible : activeEligible;
 
     let scanPayStatus: DriverUiBinding['scanPayStatus'] = 'always_available';
@@ -538,10 +624,16 @@ export function mapAssignmentsToUiBindings(home: DriverHome | null, rows: Driver
     const balance =
       matchesHome && home?.totalBalanceINR != null ? home.totalBalanceINR : undefined;
 
+    const foFromHome =
+      matchesHome && typeof home?.foName === 'string' && home.foName.trim()
+        ? home.foName.trim()
+        : '';
+
     return {
       id: String(a.vehicleDriverId),
+      vehicleId: a.vehicleId,
       vrn: a.vehicleRegNo,
-      fo: '',
+      fo: foFromHome,
       authMode,
       state: a.status,
       paired: !(a.status === 'PENDING_ACCEPTANCE' && a.requiresPairing),
