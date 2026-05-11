@@ -5,6 +5,7 @@ import { getApiBase } from '../storage/session';
  * Driver App auth (aligned with backend):
  * Flow 1 — invite: check-mobile → mobile/send-otp → mobile/verify-otp → invite/validate → invite/set-pin → FO Bearer.
  * Flow 2 — returning: check-mobile → GET /api/v0/otp/login → POST /oauth/token (grant_type=otp) → fo-list → fo-select → FO Bearer.
+ * Forgot / reset PIN (same OTP token-1): POST /auth/pin/reset → POST /auth/fo-select with new PIN.
  */
 
 export const DEFAULT_DRIVER_API_BASE = 'https://api-fleet-uat.enkash.in';
@@ -293,6 +294,25 @@ export async function driverFoSelect(
     body: JSON.stringify({ foCompanyId, pin }),
   });
   return unwrapDriverBody(body) as TokenResponse;
+}
+
+export async function driverPinReset(
+  baseUrl: string,
+  bearerPartial: string,
+  foCompanyId: number,
+  newPin: string
+): Promise<string> {
+  const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/auth/pin/reset`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${bearerPartial}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ foCompanyId, newPin }),
+  });
+  const data = unwrapDriverBody<string>(body);
+  if (typeof data !== 'string') throw new Error('Unexpected pin-reset response');
+  return data;
 }
 
 function foAuthHeader(bearerFoScoped: string) {

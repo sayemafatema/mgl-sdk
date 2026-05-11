@@ -19,6 +19,7 @@ import {
   driverInviteSetPin,
   driverInviteValidate,
   driverOauthOtpGrant,
+  driverPinReset,
   driverSendLoginOtp,
   oauthAccessToken,
   resolveDriverApiBase,
@@ -47,6 +48,8 @@ export default function LoginScreen({ navigation }: Props) {
   const [foList, setFoList] = useState<FoListEntry[]>([]);
   const [selectedFoId, setSelectedFoId] = useState<number | null>(null);
   const [retPin, setRetPin] = useState('');
+  const [resetNewPin, setResetNewPin] = useState('');
+  const [retPinSubStep, setRetPinSubStep] = useState<'login' | 'forgot'>('login');
 
   const [loading, setLoading] = useState(false);
 
@@ -68,6 +71,8 @@ export default function LoginScreen({ navigation }: Props) {
     setFoList([]);
     setSelectedFoId(null);
     setRetPin('');
+    setResetNewPin('');
+    setRetPinSubStep('login');
   }
 
   async function onCheckMobile() {
@@ -201,6 +206,7 @@ export default function LoginScreen({ navigation }: Props) {
         return;
       }
       setSelectedFoId(active.length === 1 ? active[0].foCompanyId : null);
+      setRetPinSubStep('login');
     } catch (e) {
       Alert.alert('Login OTP failed', e instanceof Error ? e.message : String(e));
     } finally {
@@ -214,8 +220,8 @@ export default function LoginScreen({ navigation }: Props) {
       return;
     }
     const pin = retPin.trim();
-    if (pin.length < 4) {
-      Alert.alert('Invalid', 'Enter PIN.');
+    if (pin.length < 4 || pin.length > 6) {
+      Alert.alert('Invalid', 'PIN must be 4–6 digits.');
       return;
     }
     setLoading(true);
@@ -228,6 +234,39 @@ export default function LoginScreen({ navigation }: Props) {
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
     } catch (e) {
       Alert.alert('PIN login failed', e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onReturningPinResetAndLogin() {
+    if (!retToken1 || selectedFoId == null) {
+      Alert.alert('Invalid', 'Complete OTP exchange and select fleet if needed.');
+      return;
+    }
+    const pin = resetNewPin.trim();
+    if (pin.length < 4 || pin.length > 6) {
+      Alert.alert('Invalid', 'New PIN must be 4–6 digits.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const base = await resolvedBase();
+      await driverPinReset(base, retToken1, selectedFoId, pin);
+      await setAccessToken(null);
+      setRetToken1(null);
+      setFoList([]);
+      setSelectedFoId(null);
+      setRetOtp('');
+      setRetPin('');
+      setResetNewPin('');
+      setRetPinSubStep('login');
+      Alert.alert(
+        'PIN reset',
+        'Your session was cleared. Send login OTP again, then sign in with your new PIN.'
+      );
+    } catch (e) {
+      Alert.alert('PIN reset failed', e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -327,7 +366,11 @@ export default function LoginScreen({ navigation }: Props) {
                 <TouchableOpacity
                   key={f.foCompanyId}
                   style={[styles.foRow, selectedFoId === f.foCompanyId && styles.foRowSelected]}
-                  onPress={() => setSelectedFoId(f.foCompanyId)}
+                  onPress={() => {
+                    setSelectedFoId(f.foCompanyId);
+                    setRetPinSubStep('login');
+                    setResetNewPin('');
+                  }}
                 >
                   <Text style={styles.foName}>{f.foName}</Text>
                   <Text style={styles.foMeta}>#{f.foCompanyId}</Text>
@@ -336,13 +379,49 @@ export default function LoginScreen({ navigation }: Props) {
             </>
           ) : null}
           {retToken1 && foList.length > 0 ? (
-            <>
-              <Text style={styles.label}>PIN</Text>
-              <TextInput value={retPin} onChangeText={setRetPin} keyboardType="number-pad" secureTextEntry style={styles.input} />
-              <View style={styles.actions}>
-                <Button title="Login" disabled={loading} onPress={() => void onReturningFoLogin()} />
-              </View>
-            </>
+            retPinSubStep === 'login' ? (
+              <>
+                <Text style={styles.label}>PIN</Text>
+                <TextInput value={retPin} onChangeText={setRetPin} keyboardType="number-pad" secureTextEntry style={styles.input} />
+                <View style={styles.actions}>
+                  <Button title="Login" disabled={loading} onPress={() => void onReturningFoLogin()} />
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    setResetNewPin('');
+                    setRetPinSubStep('forgot');
+                  }}
+                  style={styles.forgotPinTouchable}
+                >
+                  <Text style={styles.forgotPinLink}>Forgot PIN?</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  onPress={() => {
+                    setResetNewPin('');
+                    setRetPinSubStep('login');
+                  }}
+                  style={styles.backToLoginRow}
+                >
+                  <Text style={styles.backToLoginText}>← Back to PIN login</Text>
+                </TouchableOpacity>
+                <Text style={styles.section}>Forgot or locked PIN</Text>
+                <Text style={styles.label}>New PIN — you will verify OTP again after reset</Text>
+                <TextInput
+                  value={resetNewPin}
+                  onChangeText={setResetNewPin}
+                  keyboardType="number-pad"
+                  secureTextEntry
+                  placeholder="4–6 digits"
+                  style={styles.input}
+                />
+                <View style={styles.actions}>
+                  <Button title="Reset PIN" disabled={loading} onPress={() => void onReturningPinResetAndLogin()} />
+                </View>
+              </>
+            )
           ) : null}
         </>
       )}
@@ -372,4 +451,13 @@ const styles = StyleSheet.create({
   foRowSelected: { borderColor: '#2e7d32', backgroundColor: '#e8f5e9' },
   foName: { fontSize: 16, fontWeight: '600' },
   foMeta: { fontSize: 12, color: '#666' },
+  forgotPinTouchable: { marginTop: 8, paddingVertical: 8 },
+  forgotPinLink: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2e7d32',
+    textAlign: 'center',
+  },
+  backToLoginRow: { marginBottom: 8, paddingVertical: 6 },
+  backToLoginText: { fontSize: 15, fontWeight: '600', color: '#666' },
 });

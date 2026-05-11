@@ -9,6 +9,7 @@ import {
   driverInviteMobileSendOtp,
   driverInviteMobileVerifyOtp,
   driverOauthOtpGrant,
+  driverPinReset,
   driverSendLoginOtp,
   driverQrPay,
   driverCheckMobile,
@@ -286,7 +287,12 @@ export default function Page() {
   const [apiAssignments, setApiAssignments] = useState<DriverAssignment[]>([]);
   const [apiTxns, setApiTxns] = useState<DriverTxnRow[]>([]);
   const [apiBanner, setApiBanner] = useState<string | null>(null);
+  /** Shown on `login` after successful remote PIN reset (token revoked — user must OTP again). */
+  const [loginScreenNotice, setLoginScreenNotice] = useState<string | null>(null);
   const [foPinEntry, setFoPinEntry] = useState('');
+  const [foResetNewPin, setFoResetNewPin] = useState('');
+  /** `fo_pin_login` only: unlock vs forgot-PIN (one panel at a time). */
+  const [foPinSubStep, setFoPinSubStep] = useState<'enter' | 'forgot'>('enter');
   const [qrTxnId, setQrTxnId] = useState('QR-DEMO-LOCAL');
   const [qrPayFields, setQrPayFields] = useState<FleetpayQrPayload | null>(null);
 
@@ -437,6 +443,8 @@ export default function Page() {
       if (active.length === 1) {
         setSelectedFoCompanyId(active[0].foCompanyId);
         setFoPinEntry('');
+        setFoResetNewPin('');
+        setFoPinSubStep('enter');
         setOnboardingStep('fo_pin_login');
       } else {
         setSelectedFoCompanyId(null);
@@ -481,7 +489,10 @@ export default function Page() {
     setApiAssignments([]);
     setApiTxns([]);
     setApiBanner(null);
+    setLoginScreenNotice(null);
     setFoPinEntry('');
+    setFoResetNewPin('');
+    setFoPinSubStep('enter');
     setInviteOtpRefNumber(null);
     setInviteMobileVerificationToken(null);
     setOtpDigits(Array(6).fill(''));
@@ -643,6 +654,11 @@ export default function Page() {
 
                   {/* Bottom Section */}
                   <div className="space-y-4">
+                    {loginScreenNotice && (
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-3 text-sm text-green-900">
+                        {loginScreenNotice}
+                      </div>
+                    )}
                     <div>
                       <label className="text-xs text-gray-600 font-medium">Mobile number</label>
                       <div className="flex gap-2 mt-2">
@@ -663,6 +679,7 @@ export default function Page() {
                       onClick={() => {
                         void (async () => {
                           setApiBanner(null);
+                          setLoginScreenNotice(null);
                           setOtpDigits(Array(6).fill(''));
                           setOtpError('');
                           try {
@@ -672,6 +689,7 @@ export default function Page() {
                                 setApiBanner('New user — continue with invite code.');
                                 setInviteOtpRefNumber(null);
                                 setInviteMobileVerificationToken(null);
+                                setLoginScreenNotice(null);
                                 setOnboardingStep('1c');
                                 return;
                               }
@@ -704,6 +722,7 @@ export default function Page() {
                         setInviteOtpRefNumber(null);
                         setInviteMobileVerificationToken(null);
                         setMobileNumber('');
+                        setLoginScreenNotice(null);
                         setOnboardingStep('1c');
                       }}
                       className="w-full border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium py-3 rounded-xl transition"
@@ -811,6 +830,8 @@ export default function Page() {
                         onClick={() => {
                           setSelectedFoCompanyId(f.foCompanyId);
                           setFoPinEntry('');
+                          setFoResetNewPin('');
+                          setFoPinSubStep('enter');
                           setOnboardingStep('fo_pin_login');
                         }}
                         className="w-full text-left border rounded-2xl p-4 hover:border-green-700 border-gray-200"
@@ -826,50 +847,121 @@ export default function Page() {
             {onboardingStep === 'fo_pin_login' && otpPhaseToken && (
               <>
                 <button
-                  onClick={() =>
+                  onClick={() => {
+                    if (foPinSubStep === 'forgot') {
+                      setFoPinSubStep('enter');
+                      setFoResetNewPin('');
+                      setApiBanner(null);
+                      return;
+                    }
+                    setFoResetNewPin('');
+                    setFoPinSubStep('enter');
                     setOnboardingStep(
                       foOrganizationList.filter((x) => x.foStatus === 'ACTIVE').length > 1 ? 'select_fo' : 'login_otp'
-                    )
-                  }
+                    );
+                  }}
                   className="flex items-center gap-2 text-gray-600 mb-6"
                 >
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
-                <h2 className="text-xl font-bold mb-2">Fleet PIN</h2>
-                <p className="text-sm text-gray-600 mb-6">Enter your PIN for this fleet (4–6 digits)</p>
-                <PinDisplay value={foPinEntry} />
-                <Numpad
-                  onPress={(digit) => foPinEntry.length < 6 && setFoPinEntry(foPinEntry + digit)}
-                  onBackspace={() => setFoPinEntry(foPinEntry.slice(0, -1))}
-                />
-                <button
-                  disabled={foPinEntry.length < 4 || foPinEntry.length > 6 || selectedFoCompanyId === null}
-                  onClick={() => {
-                    void (async () => {
-                      if (selectedFoCompanyId === null || !otpPhaseToken) return;
-                      try {
-                        const tr = await driverFoSelect(
-                          DRIVER_API_BASE,
-                          otpPhaseToken,
-                          selectedFoCompanyId,
-                          foPinEntry
-                        );
-                        const scoped = oauthAccessToken(tr);
-                        if (!scoped) throw new Error('Missing fleet token');
-                        setFoScopedToken(scoped);
-                        setOtpPhaseToken(null);
-                        setFoPinEntry('');
-                        setApiBanner(null);
-                        setOnboardingStep('complete');
-                      } catch (e) {
-                        setApiBanner(e instanceof Error ? e.message : String(e));
+                {foPinSubStep === 'enter' ? (
+                  <>
+                    <h2 className="text-xl font-bold mb-2">Fleet PIN</h2>
+                    <p className="text-sm text-gray-600 mb-6">Enter your PIN for this fleet (4–6 digits)</p>
+                    <PinDisplay value={foPinEntry} />
+                    <Numpad
+                      onPress={(digit) => foPinEntry.length < 6 && setFoPinEntry(foPinEntry + digit)}
+                      onBackspace={() => setFoPinEntry(foPinEntry.slice(0, -1))}
+                    />
+                    <button
+                      disabled={foPinEntry.length < 4 || foPinEntry.length > 6 || selectedFoCompanyId === null}
+                      onClick={() => {
+                        void (async () => {
+                          if (selectedFoCompanyId === null || !otpPhaseToken) return;
+                          try {
+                            const tr = await driverFoSelect(
+                              DRIVER_API_BASE,
+                              otpPhaseToken,
+                              selectedFoCompanyId,
+                              foPinEntry
+                            );
+                            const scoped = oauthAccessToken(tr);
+                            if (!scoped) throw new Error('Missing fleet token');
+                            setFoScopedToken(scoped);
+                            setOtpPhaseToken(null);
+                            setFoPinEntry('');
+                            setFoResetNewPin('');
+                            setFoPinSubStep('enter');
+                            setApiBanner(null);
+                            setOnboardingStep('complete');
+                          } catch (e) {
+                            setApiBanner(e instanceof Error ? e.message : String(e));
+                          }
+                        })();
+                      }}
+                      className="w-full mt-8 bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                    >
+                      Unlock app
+                    </button>
+                    {USE_DRIVER_API && (
+                      <button
+                        type="button"
+                        className="w-full mt-3 py-2 text-sm font-medium text-green-700 hover:text-green-800 hover:underline"
+                        onClick={() => {
+                          setApiBanner(null);
+                          setFoPinSubStep('forgot');
+                        }}
+                      >
+                        Forgot PIN?
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-xl font-bold mb-2">Forgot or locked PIN</h2>
+                    <p className="text-sm text-gray-600 mb-6">
+                      Enter a new fleet PIN (4–6 digits). After reset you will return here to verify OTP again and sign in with the new PIN.
+                    </p>
+                    <PinDisplay value={foResetNewPin} />
+                    <Numpad
+                      onPress={(digit) => foResetNewPin.length < 6 && setFoResetNewPin(foResetNewPin + digit)}
+                      onBackspace={() => setFoResetNewPin(foResetNewPin.slice(0, -1))}
+                    />
+                    <button
+                      disabled={
+                        foResetNewPin.length < 4 ||
+                        foResetNewPin.length > 6 ||
+                        selectedFoCompanyId === null
                       }
-                    })();
-                  }}
-                  className="w-full mt-8 bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
-                >
-                  Unlock app
-                </button>
+                      onClick={() => {
+                        void (async () => {
+                          if (selectedFoCompanyId === null || !otpPhaseToken) return;
+                          const pin = foResetNewPin;
+                          if (pin.length < 4 || pin.length > 6) return;
+                          try {
+                            setApiBanner(null);
+                            await driverPinReset(DRIVER_API_BASE, otpPhaseToken, selectedFoCompanyId, pin);
+                            setOtpPhaseToken(null);
+                            setFoPinEntry('');
+                            setFoResetNewPin('');
+                            setFoPinSubStep('enter');
+                            setFoOrganizationList([]);
+                            setSelectedFoCompanyId(null);
+                            setLoginScreenNotice(
+                              'PIN was reset. Tap Send OTP and sign in with your new PIN.'
+                            );
+                            setOnboardingStep('login');
+                          } catch (e) {
+                            setApiBanner(e instanceof Error ? e.message : String(e));
+                          }
+                        })();
+                      }}
+                      className="w-full mt-8 border border-green-700 text-green-800 hover:bg-green-50 disabled:border-gray-300 disabled:text-gray-400 font-medium py-3 rounded-2xl transition"
+                    >
+                      Reset PIN
+                    </button>
+                  </>
+                )}
                 {apiBanner && <p className="text-red-600 text-xs text-center mt-3">{apiBanner}</p>}
               </>
             )}
