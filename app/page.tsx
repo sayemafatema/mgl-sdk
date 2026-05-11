@@ -1062,8 +1062,14 @@ export default function Page() {
                     <p className="text-sm text-gray-600 mb-6">Enter your PIN for this fleet (4–6 digits)</p>
                     <PinDisplay value={foPinEntry} />
                     <Numpad
-                      onPress={(digit) => foPinEntry.length < 6 && setFoPinEntry(foPinEntry + digit)}
-                      onBackspace={() => setFoPinEntry(foPinEntry.slice(0, -1))}
+                      onPress={(digit) => {
+                        setApiBanner(null);
+                        if (foPinEntry.length < 6) setFoPinEntry(foPinEntry + digit);
+                      }}
+                      onBackspace={() => {
+                        setApiBanner(null);
+                        setFoPinEntry(foPinEntry.slice(0, -1));
+                      }}
                     />
                     <button
                       type="button"
@@ -1117,8 +1123,14 @@ export default function Page() {
                     </p>
                     <PinDisplay value={foResetNewPin} />
                     <Numpad
-                      onPress={(digit) => foResetNewPin.length < 6 && setFoResetNewPin(foResetNewPin + digit)}
-                      onBackspace={() => setFoResetNewPin(foResetNewPin.slice(0, -1))}
+                      onPress={(digit) => {
+                        setApiBanner(null);
+                        if (foResetNewPin.length < 6) setFoResetNewPin(foResetNewPin + digit);
+                      }}
+                      onBackspace={() => {
+                        setApiBanner(null);
+                        setFoResetNewPin(foResetNewPin.slice(0, -1));
+                      }}
                     />
                     <button
                       type="button"
