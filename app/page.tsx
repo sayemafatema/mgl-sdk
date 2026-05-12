@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ChevronLeft, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Shield, LogOut, Eye, EyeOff, Home, CheckCircle, ArrowDown, ArrowUp, Share, Loader2, Truck, FileText, Info, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Lock, MapPin, AlertCircle, User, Clock, Check, CreditCard, Zap, QrCode, History, Shield, LogOut, Eye, EyeOff, Home, CheckCircle, ArrowDown, ArrowUp, Share, Loader2, Truck, FileText, Info, XCircle } from 'lucide-react';
 import {
   driverAcceptPairing,
   driverFoList,
   driverFoSelect,
+  driverPinReset,
   driverInviteMobileSendOtp,
   driverInviteMobileVerifyOtp,
   driverOauthOtpGrant,
@@ -29,6 +30,7 @@ import {
   type FoListEntry,
   type QrPayResult,
 } from '../components/mgl/driver-api';
+import { useDualPinEntry, validateCompleteSixDigit } from '../components/mgl/driver-pin-flow';
 import { QrCameraScanner } from '../components/mgl/qr-camera-scanner';
 import {
   parseFleetpayPayUri,
@@ -64,6 +66,18 @@ function clearFleetOperatorLocalStorage() {
     localStorage.removeItem(DRIVER_APP_FO_COMPANY_ID_KEY);
   } catch {
     /* ignore */
+  }
+}
+
+function readStoredFoCompanyId(): number | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(DRIVER_APP_FO_COMPANY_ID_KEY)?.trim();
+    if (!raw) return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
   }
 }
 
@@ -218,8 +232,14 @@ export default function Page() {
   const [otp, setOtp] = useState('');
   const [otpCountdown, setOtpCountdown] = useState(0);
   const [scanSessionOtpCountdown, setScanSessionOtpCountdown] = useState(0);
-  const [pin, setPin] = useState('');
-  const [pinConfirm, setPinConfirm] = useState('');
+  const onboardingRecoveryPin = useDualPinEntry();
+  const inviteSignupPin = useDualPinEntry();
+  const fleetUnlockPin = useDualPinEntry();
+  const forgotFleetPin = useDualPinEntry();
+  const profileChangePin = useDualPinEntry();
+  const [profilePinModalOpen, setProfilePinModalOpen] = useState(false);
+  const [profilePinChanging, setProfilePinChanging] = useState(false);
+  const profilePinPanelRef = useRef<HTMLDivElement | null>(null);
   const [sessionState, setSessionState] = useState<
     'idle' | 'scanning' | 'confirmation' | 'pin_confirm' | 'otp_entry' | 'authorized' | 'complete'
   >('idle');
@@ -245,7 +265,6 @@ export default function Page() {
   const [pairingSuccess, setPairingSuccess] = useState(false);
   const [showDeclineConfirm, setShowDeclineConfirm] = useState(false);
   const [showPairingHelp, setShowPairingHelp] = useState(false);
-  const [newPin, setNewPin] = useState("");
   const [isNewUser, setIsNewUser] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
   const [otpDigits, setOtpDigits] = useState(Array(6).fill(''));
@@ -275,7 +294,10 @@ export default function Page() {
   const [qrPayVerifyLoading, setQrPayVerifyLoading] = useState(false);
   const [shareReceiptLoading, setShareReceiptLoading] = useState(false);
   const [sessionFoDisplayName, setSessionFoDisplayName] = useState<string | null>(null);
-  const [foPinEntry, setFoPinEntry] = useState('');
+  /** Shown on `login` after successful remote PIN reset (token revoked — user must OTP again). */
+  const [loginScreenNotice, setLoginScreenNotice] = useState<string | null>(null);
+  /** `fo_pin_login` only: unlock vs forgot-PIN (one panel at a time). */
+  const [foPinSubStep, setFoPinSubStep] = useState<'enter' | 'forgot'>('enter');
   const [qrTxnId, setQrTxnId] = useState('');
   const [qrPayFields, setQrPayFields] = useState<FleetpayQrPayload | null>(null);
   const [scanReceiptFromHistory, setScanReceiptFromHistory] = useState(false);
@@ -382,24 +404,6 @@ export default function Page() {
     setOtp(val);
   };
 
-  const handlePinInput = (digit: string, isConfirm: boolean = false) => {
-    setApiBanner(null);
-    if (isConfirm) {
-      if (pinConfirm.length < 6) setPinConfirm(pinConfirm + digit);
-    } else {
-      if (pin.length < 6) setPin(pin + digit);
-    }
-  };
-
-  const handlePinBackspace = (isConfirm: boolean = false) => {
-    setApiBanner(null);
-    if (isConfirm) {
-      setPinConfirm(pinConfirm.slice(0, -1));
-    } else {
-      setPin(pin.slice(0, -1));
-    }
-  };
-
   const handleSessionPinInput = (digit: string) => {
     setApiBanner(null);
     if (sessionPin.length < 6) setSessionPin(sessionPin + digit);
@@ -467,10 +471,13 @@ export default function Page() {
       }
       if (active.length === 1) {
         setSelectedFoCompanyId(active[0].foCompanyId);
-        setFoPinEntry('');
+        fleetUnlockPin.resetFlow();
+        setFoPinSubStep('enter');
         setOnboardingStep('fo_pin_login');
       } else {
         setSelectedFoCompanyId(null);
+        fleetUnlockPin.resetFlow();
+        setFoPinSubStep('enter');
         setOnboardingStep('select_fo');
       }
       setOtpDigits(Array(6).fill(''));
@@ -501,8 +508,13 @@ export default function Page() {
     setInviteCode('');
     setMobileNumber('');
     setOtp('');
-    setPin('');
-    setPinConfirm('');
+    onboardingRecoveryPin.resetFlow();
+    inviteSignupPin.resetFlow();
+    fleetUnlockPin.resetFlow();
+    forgotFleetPin.resetFlow();
+    profileChangePin.resetFlow();
+    setProfilePinModalOpen(false);
+    setProfilePinChanging(false);
     setFoScopedToken(null);
     setOtpPhaseToken(null);
     setInviteSessionToken(null);
@@ -515,7 +527,8 @@ export default function Page() {
     setApiAssignments([]);
     setApiTxns([]);
     setApiBanner(null);
-    setFoPinEntry('');
+    setLoginScreenNotice(null);
+    setFoPinSubStep('enter');
     setInviteOtpRefNumber(null);
     setInviteMobileVerificationToken(null);
     setOtpDigits(Array(6).fill(''));
@@ -527,18 +540,44 @@ export default function Page() {
   };
 
   // Numpad component
-  const Numpad = ({ onPress, onBackspace, isConfirm = false }: { onPress: (digit: string) => void; onBackspace: () => void; isConfirm?: boolean }) => {
+  const Numpad = ({
+    onPress,
+    onBackspace,
+    isConfirm = false,
+    disabled = false,
+  }: {
+    onPress: (digit: string) => void;
+    onBackspace: () => void;
+    isConfirm?: boolean;
+    disabled?: boolean;
+  }) => {
     return (
       <div className="grid grid-cols-3 gap-2 mt-4">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
-          <button key={num} onClick={() => onPress(num.toString())} className="bg-gray-100 hover:bg-gray-200 rounded-lg py-3 font-semibold text-gray-900 transition">
+          <button
+            key={num}
+            disabled={disabled}
+            type="button"
+            onClick={() => onPress(num.toString())}
+            className="bg-gray-100 hover:bg-gray-200 disabled:opacity-40 rounded-lg py-3 font-semibold text-gray-900 transition"
+          >
             {num}
           </button>
         ))}
-        <button onClick={onBackspace} className="bg-red-100 hover:bg-red-200 rounded-lg py-3 text-red-700 transition col-span-2">
+        <button
+          disabled={disabled}
+          type="button"
+          onClick={onBackspace}
+          className="bg-red-100 hover:bg-red-200 disabled:opacity-40 rounded-lg py-3 text-red-700 transition col-span-2"
+        >
           ← Backspace
         </button>
-        <button onClick={() => onPress('0')} className="bg-gray-100 hover:bg-gray-200 rounded-lg py-3 font-semibold text-gray-900 transition">
+        <button
+          disabled={disabled}
+          type="button"
+          onClick={() => onPress('0')}
+          className="bg-gray-100 hover:bg-gray-200 disabled:opacity-40 rounded-lg py-3 font-semibold text-gray-900 transition"
+        >
           0
         </button>
       </div>
@@ -615,6 +654,22 @@ export default function Page() {
   }, [otpDigits, onboardingStep]);
 
   useEffect(() => {
+    if (onboardingStep === 'set_pin') onboardingRecoveryPin.goBackToFirst();
+  }, [onboardingStep]);
+
+  useEffect(() => {
+    if (profilePinModalOpen) {
+      profileChangePin.resetFlow();
+      setProfilePinChanging(false);
+    }
+  }, [profilePinModalOpen]);
+
+  useEffect(() => {
+    if (!profilePinModalOpen) return;
+    requestAnimationFrame(() => profilePinPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  }, [profilePinModalOpen, profileChangePin.phase]);
+
+  useEffect(() => {
     if (!foScopedToken || onboardingStep !== 'complete') return;
     let cancelled = false;
     (async () => {
@@ -652,6 +707,9 @@ export default function Page() {
           if (foNm) {
             persistFleetOperatorLocalStorage(foNm, chosen?.foCompanyId ?? storedId);
             setSessionFoDisplayName(foNm);
+          }
+          if (chosen?.foCompanyId != null && Number.isFinite(chosen.foCompanyId)) {
+            setSelectedFoCompanyId(chosen.foCompanyId);
           }
         }
 
@@ -1003,7 +1061,8 @@ export default function Page() {
                         type="button"
                         onClick={() => {
                           setSelectedFoCompanyId(f.foCompanyId);
-                          setFoPinEntry('');
+                          fleetUnlockPin.resetFlow();
+                          setFoPinSubStep('enter');
                           setOnboardingStep('fo_pin_login');
                         }}
                         className="w-full text-left border rounded-2xl p-4 hover:border-green-700 border-gray-200"
@@ -1019,94 +1078,197 @@ export default function Page() {
             {onboardingStep === 'fo_pin_login' && otpPhaseToken && (
               <>
                 <button
-                  onClick={() =>
+                  type="button"
+                  onClick={() => {
+                    if (foPinSubStep === 'forgot') {
+                      setFoPinSubStep('enter');
+                      forgotFleetPin.resetFlow();
+                      fleetUnlockPin.resetFlow();
+                      setApiBanner(null);
+                      return;
+                    }
+                    fleetUnlockPin.resetFlow();
+                    forgotFleetPin.resetFlow();
+                    setFoPinSubStep('enter');
                     setOnboardingStep(
                       foOrganizationList.filter((x) => x.foStatus === 'ACTIVE').length > 1 ? 'select_fo' : 'login_otp'
-                    )
-                  }
+                    );
+                  }}
                   className="flex items-center gap-2 text-gray-600 mb-6"
                 >
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
-                <h2 className="text-xl font-bold mb-2">Fleet PIN</h2>
-                <p className="text-sm text-gray-600 mb-1">Enter your PIN for this Fleet Operator</p>
-                <p className="mb-6 text-lg font-semibold text-gray-900">{fleetPinFoName || '—'}</p>
-                <PinDisplay value={foPinEntry} />
-                <Numpad
-                  onPress={(digit) => {
-                    setApiBanner(null);
-                    if (foPinEntry.length < 6) setFoPinEntry(foPinEntry + digit);
-                  }}
-                  onBackspace={() => {
-                    setApiBanner(null);
-                    setFoPinEntry(foPinEntry.slice(0, -1));
-                  }}
-                />
-                <button
-                  disabled={
-                    foPinEntry.length !== 6 ||
-                    selectedFoCompanyId === null ||
-                    onboardingActionLoading === 'fo_unlock'
-                  }
-                  onClick={() => {
-                    void (async () => {
-                      const selId = selectedFoCompanyId;
-                      const fos = foOrganizationList;
-                      if (selId === null || !otpPhaseToken) return;
-                      setOnboardingActionLoading('fo_unlock');
-                      try {
+                {foPinSubStep === 'enter' ? (
+                  <>
+                    <h2 className="text-xl font-bold mb-2">Enter Fleet PIN</h2>
+                    <p className="text-sm text-gray-600 mb-6">
+                      Enter your 6-digit PIN for this fleet.
+                    </p>
+                    <PinDisplay value={fleetUnlockPin.pinFirst} />
+                    <Numpad
+                      onPress={(digit) => {
                         setApiBanner(null);
-                        const tr = await driverFoSelect(
-                          DRIVER_API_BASE,
-                          otpPhaseToken,
-                          selId,
-                          foPinEntry
-                        );
-                        const scoped = oauthAccessToken(tr);
-                        if (!scoped) throw new Error('Missing fleet token');
-                        setApiLoading(true);
-                        setFoScopedToken(scoped);
-                        const picked = fos.find((f) => f.foCompanyId === selId && f.foStatus === 'ACTIVE');
-                        const foNm = picked?.foName?.trim();
-                        if (foNm) {
-                          persistFleetOperatorLocalStorage(foNm, selId);
-                          setSessionFoDisplayName(foNm);
-                        }
-                        setOtpPhaseToken(null);
-                        setFoPinEntry('');
+                        fleetUnlockPin.appendDigit(digit);
+                      }}
+                      onBackspace={() => {
                         setApiBanner(null);
-                        setOnboardingStep('complete');
-                        setActiveTab('card');
-                      } catch (e) {
-                        setApiBanner(bannerForPinFailure(e));
-                      } finally {
-                        setOnboardingActionLoading(null);
+                        fleetUnlockPin.backspace();
+                      }}
+                      isConfirm={false}
+                    />
+                    {fleetUnlockPin.error && (
+                      <p className="mt-3 text-center text-xs text-red-600">{fleetUnlockPin.error}</p>
+                    )}
+                    <button
+                      type="button"
+                      disabled={
+                        fleetUnlockPin.pinFirst.length !== 6 || selectedFoCompanyId === null
                       }
-                    })();
-                  }}
-                  className="w-full mt-8 bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition inline-flex items-center justify-center gap-2"
-                >
-                  {onboardingActionLoading === 'fo_unlock' ? (
-                    <>
-                      <Loader2 className="h-5 w-5 animate-spin shrink-0" aria-hidden />
-                      Unlocking…
-                    </>
-                  ) : (
-                    'Unlock app'
-                  )}
-                </button>
+                      onClick={() => {
+                        void (async () => {
+                          const pinErr = validateCompleteSixDigit(fleetUnlockPin.pinFirst);
+                          if (pinErr != null) return;
+                          if (selectedFoCompanyId === null || !otpPhaseToken) return;
+                          try {
+                            setApiBanner(null);
+                            const tr = await driverFoSelect(
+                              DRIVER_API_BASE,
+                              otpPhaseToken,
+                              selectedFoCompanyId,
+                              fleetUnlockPin.pinFirst
+                            );
+                            const scoped = oauthAccessToken(tr);
+                            if (!scoped) throw new Error('Missing fleet token');
+                            setFoScopedToken(scoped);
+                            setOtpPhaseToken(null);
+                            fleetUnlockPin.resetFlow();
+                            setFoPinSubStep('enter');
+                            setApiBanner(null);
+                            setOnboardingStep('complete');
+                          } catch (e) {
+                            fleetUnlockPin.resetFlow();
+                            setFoPinSubStep('enter');
+                            setApiBanner(bannerForPinFailure(e));
+                          }
+                        })();
+                      }}
+                      className="w-full mt-8 bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition"
+                    >
+                      Unlock app
+                    </button>
+                    <button
+                      type="button"
+                      className="mt-3 w-full py-2 text-sm font-medium text-green-700 hover:text-green-800 hover:underline"
+                      onClick={() => {
+                        setApiBanner(null);
+                        forgotFleetPin.resetFlow();
+                        setFoPinSubStep('forgot');
+                      }}
+                    >
+                      Forgot PIN?
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="text-xl font-bold mb-2">
+                      {forgotFleetPin.phase === 'first' ? 'Enter New PIN' : 'Confirm New PIN'}
+                    </h2>
+                    <p className="text-sm text-gray-600 mb-6">
+                      {forgotFleetPin.phase === 'first'
+                        ? 'Choose a new 6-digit fleet PIN.'
+                        : 'Re-enter your new PIN. After reset you will verify OTP again with this PIN.'}
+                    </p>
+                    <PinDisplay value={forgotFleetPin.activeValue} />
+                    <Numpad
+                      onPress={(digit) => {
+                        setApiBanner(null);
+                        forgotFleetPin.appendDigit(digit);
+                      }}
+                      onBackspace={() => {
+                        setApiBanner(null);
+                        forgotFleetPin.backspace();
+                      }}
+                      isConfirm={forgotFleetPin.phase === 'second'}
+                    />
+                    {forgotFleetPin.error && (
+                      <p className="mt-3 text-center text-xs text-red-600">{forgotFleetPin.error}</p>
+                    )}
+                    <button
+                      type="button"
+                      disabled={
+                        forgotFleetPin.phase === 'first'
+                          ? forgotFleetPin.pinFirst.length !== 6 || selectedFoCompanyId === null
+                          : forgotFleetPin.pinSecond.length !== 6 || selectedFoCompanyId === null
+                      }
+                      onClick={() => {
+                        if (forgotFleetPin.phase === 'first') {
+                          forgotFleetPin.goToConfirmStep();
+                          return;
+                        }
+                        void (async () => {
+                          const p = forgotFleetPin.tryFinish();
+                          if (!p || selectedFoCompanyId === null || !otpPhaseToken) return;
+                          try {
+                            setApiBanner(null);
+                            await driverPinReset(DRIVER_API_BASE, otpPhaseToken, selectedFoCompanyId, p);
+                            setOtpPhaseToken(null);
+                            forgotFleetPin.resetFlow();
+                            fleetUnlockPin.resetFlow();
+                            setFoPinSubStep('enter');
+                            setFoOrganizationList([]);
+                            setSelectedFoCompanyId(null);
+                            setLoginScreenNotice('PIN was reset. Tap Send OTP and sign in with your new PIN.');
+                            setOnboardingStep('login');
+                          } catch (e) {
+                            setApiBanner(bannerForPinFailure(e));
+                          }
+                        })();
+                      }}
+                      className={
+                        forgotFleetPin.phase === 'second'
+                          ? 'mt-8 w-full rounded-2xl bg-green-700 py-3 font-medium text-white transition hover:bg-green-800 disabled:bg-gray-300 inline-flex items-center justify-center gap-2'
+                          : 'mt-8 w-full rounded-2xl border border-green-700 py-3 font-medium text-green-800 transition hover:bg-green-50 disabled:border-gray-300 disabled:text-gray-400'
+                      }
+                    >
+                      {forgotFleetPin.phase === 'first' ? 'Confirm PIN' : 'Reset PIN'}
+                    </button>
+                  </>
+                )}
+                {apiBanner && <p className="mt-3 text-center text-xs text-red-600">{apiBanner}</p>}
               </>
             )}
 
             {/* Screen: PIN Login — removed; use mobile OTP from Login */}
             {onboardingStep === 'set_pin' && (
               <>
-                <h2 className="text-xl font-bold mb-2">{isNewUser ? 'Create your PIN' : 'Set new PIN'}</h2>
-                <p className="text-sm text-gray-600 mb-6">{isNewUser ? "You'll use this every time you sign in" : 'Choose a new 6-digit PIN'}</p>
-                <PinDisplay value={newPin} />
-                <Numpad onPress={(digit) => { setApiBanner(null); if (newPin.length < 6) setNewPin(newPin + digit); }} onBackspace={() => { setApiBanner(null); setNewPin(newPin.slice(0, -1)); }} />
-                <button onClick={() => { setPinConfirm(''); setApiBanner(null); setOnboardingStep('confirm_pin'); }} disabled={newPin.length !== 6} className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6">
-                  Next
+                <h2 className="text-xl font-bold mb-2">{isNewUser ? 'Create your PIN' : 'Enter New PIN'}</h2>
+                <p className="text-sm text-gray-600 mb-6">
+                  {isNewUser ? "You'll use this every time you sign in" : 'Choose a new 6-digit PIN'}
+                </p>
+                <PinDisplay value={onboardingRecoveryPin.pinFirst} />
+                <Numpad
+                  onPress={(digit) => {
+                    setApiBanner(null);
+                    onboardingRecoveryPin.appendDigit(digit);
+                  }}
+                  onBackspace={() => {
+                    setApiBanner(null);
+                    onboardingRecoveryPin.backspace();
+                  }}
+                />
+                {onboardingRecoveryPin.error && (
+                  <p className="mt-3 text-center text-xs text-red-600">{onboardingRecoveryPin.error}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setApiBanner(null);
+                    if (onboardingRecoveryPin.goToConfirmStep()) setOnboardingStep('confirm_pin');
+                  }}
+                  disabled={onboardingRecoveryPin.pinFirst.length !== 6}
+                  className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6"
+                >
+                  Confirm PIN
                 </button>
               </>
             )}
@@ -1117,42 +1279,51 @@ export default function Page() {
                 <button
                   type="button"
                   onClick={() => {
-                    setPinConfirm('');
                     setApiBanner(null);
+                    onboardingRecoveryPin.goBackToFirst();
                     setOnboardingStep('set_pin');
                   }}
                   className="flex items-center gap-2 text-gray-600 mb-6"
                 >
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
-                <h2 className="text-xl font-bold mb-2">Confirm your PIN</h2>
+                <h2 className="text-xl font-bold mb-2">{isNewUser ? 'Confirm your PIN' : 'Confirm New PIN'}</h2>
                 <p className="text-sm text-gray-600 mb-6">Enter the same PIN again</p>
-                <PinDisplay value={pinConfirm} />
-                <Numpad onPress={(digit) => { setApiBanner(null); if (pinConfirm.length < 6) setPinConfirm(pinConfirm + digit); }} onBackspace={() => { setApiBanner(null); setPinConfirm(pinConfirm.slice(0, -1)); }} isConfirm />
+                <PinDisplay value={onboardingRecoveryPin.activeValue} />
+                <Numpad
+                  onPress={(digit) => {
+                    setApiBanner(null);
+                    onboardingRecoveryPin.appendDigit(digit);
+                  }}
+                  onBackspace={() => {
+                    setApiBanner(null);
+                    onboardingRecoveryPin.backspace();
+                  }}
+                  isConfirm
+                />
+                {onboardingRecoveryPin.error && (
+                  <p className="mt-3 text-center text-xs text-red-600">{onboardingRecoveryPin.error}</p>
+                )}
                 <button
+                  type="button"
                   onClick={() => {
-                    if (newPin === pinConfirm) {
-                      setApiBanner(null);
-                      if (isNewUser) {
-                        setOnboardingStep('registered');
-                      } else {
-                        setSuccessToast('PIN updated successfully');
-                        setTimeout(() => setSuccessToast(null), 2000);
-                        setNewPin('');
-                        setPinConfirm('');
-                        setIsNewUser(false);
-                        setOnboardingStep('login');
-                      }
+                    const p = onboardingRecoveryPin.tryFinish();
+                    setApiBanner(null);
+                    if (!p) return;
+                    if (isNewUser) {
+                      setOnboardingStep('registered');
                     } else {
-                      setApiBanner("PINs didn't match. Try again.");
-                      setPinConfirm('');
-                      setOnboardingStep('set_pin');
+                      setSuccessToast('PIN updated successfully');
+                      window.setTimeout(() => setSuccessToast(null), 2000);
+                      onboardingRecoveryPin.resetFlow();
+                      setIsNewUser(false);
+                      setOnboardingStep('login');
                     }
                   }}
-                  disabled={pinConfirm.length !== 6}
+                  disabled={onboardingRecoveryPin.pinSecond.length !== 6}
                   className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6"
                 >
-                  Confirm PIN
+                  Change PIN
                 </button>
               </>
             )}
@@ -1165,8 +1336,7 @@ export default function Page() {
                 <p className="text-center text-gray-600">You can now use Scan & Pay at any MGL CNG station</p>
                 <button
                   onClick={() => {
-                    setNewPin('');
-                    setPinConfirm('');
+                    onboardingRecoveryPin.resetFlow();
                     setIsNewUser(false);
                     setOnboardingStep('complete');
                     setActiveTab('card');
@@ -1243,6 +1413,7 @@ export default function Page() {
                           });
                           setApiBanner(null);
                           setOnboardingStep('1e');
+                          inviteSignupPin.resetFlow();
                         } finally {
                           setOnboardingActionLoading(null);
                         }
@@ -1459,14 +1630,30 @@ export default function Page() {
               <>
                 <h2 className="text-xl font-bold mb-2">Create your app PIN</h2>
                 <p className="text-sm text-gray-600 mb-6">6 digits for fleet login and fuel authorization</p>
-                <PinDisplay value={pin} />
-                <Numpad onPress={(digit) => { if (pin.length < 6) handlePinInput(digit, false); }} onBackspace={() => handlePinBackspace(false)} />
+                <PinDisplay value={inviteSignupPin.pinFirst} />
+                <Numpad
+                  onPress={(digit) => {
+                    setApiBanner(null);
+                    inviteSignupPin.appendDigit(digit);
+                  }}
+                  onBackspace={() => {
+                    setApiBanner(null);
+                    inviteSignupPin.backspace();
+                  }}
+                />
+                {inviteSignupPin.error && (
+                  <p className="mt-3 text-center text-xs text-red-600">{inviteSignupPin.error}</p>
+                )}
                 <button
-                  onClick={() => setOnboardingStep('1f')}
-                  disabled={pin.length !== 6}
+                  type="button"
+                  onClick={() => {
+                    setApiBanner(null);
+                    if (inviteSignupPin.goToConfirmStep()) setOnboardingStep('1f');
+                  }}
+                  disabled={inviteSignupPin.pinFirst.length !== 6}
                   className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6"
                 >
-                  Next
+                  Confirm PIN
                 </button>
               </>
             )}
@@ -1477,27 +1664,38 @@ export default function Page() {
                 <button
                   type="button"
                   onClick={() => {
-                    setPinConfirm('');
                     setApiBanner(null);
+                    inviteSignupPin.goBackToFirst();
                     setOnboardingStep('1e');
                   }}
                   className="flex items-center gap-2 text-gray-600 mb-4"
                 >
                   <ChevronLeft className="w-5 h-5" /> Back
                 </button>
-                <h2 className="text-xl font-bold mb-2">Confirm your PIN</h2>
+                <h2 className="text-xl font-bold mb-2">Confirm New PIN</h2>
                 <p className="text-sm text-gray-600 mb-6">Enter the same PIN again</p>
-                <PinDisplay value={pinConfirm} />
-                <Numpad onPress={(digit) => { if (pinConfirm.length < 6) handlePinInput(digit, true); }} onBackspace={() => handlePinBackspace(true)} isConfirm />
+                <PinDisplay value={inviteSignupPin.activeValue} />
+                <Numpad
+                  onPress={(digit) => {
+                    setApiBanner(null);
+                    inviteSignupPin.appendDigit(digit);
+                  }}
+                  onBackspace={() => {
+                    setApiBanner(null);
+                    inviteSignupPin.backspace();
+                  }}
+                  isConfirm
+                />
+                {inviteSignupPin.error && (
+                  <p className="mt-3 text-center text-xs text-red-600">{inviteSignupPin.error}</p>
+                )}
                 <button
+                  type="button"
                   onClick={() => {
                     void (async () => {
                       const preview = validatedInvitePreview;
-                      if (pin !== pinConfirm) {
-                        setApiBanner("PINs don't match. Try again.");
-                        setPinConfirm('');
-                        return;
-                      }
+                      const matched = inviteSignupPin.tryFinish();
+                      if (!matched) return;
                       setApiBanner(null);
                       if (!inviteSessionToken) {
                         setApiBanner('Session missing — go back to invite step.');
@@ -1505,7 +1703,7 @@ export default function Page() {
                       }
                       setOnboardingActionLoading('invite_set_pin');
                       try {
-                        const tr = await driverInviteSetPin(DRIVER_API_BASE, inviteSessionToken, pin);
+                        const tr = await driverInviteSetPin(DRIVER_API_BASE, inviteSessionToken, matched);
                         const scoped = oauthAccessToken(tr);
                         if (!scoped) throw new Error('Missing access token');
                         setApiLoading(true);
@@ -1516,8 +1714,7 @@ export default function Page() {
                           setSessionFoDisplayName(inviteFo);
                         }
                         setInviteSessionToken(null);
-                        setPin('');
-                        setPinConfirm('');
+                        inviteSignupPin.resetFlow();
                         setApiBanner(null);
                         setOnboardingStep('complete');
                         setActiveTab('card');
@@ -1528,7 +1725,7 @@ export default function Page() {
                       }
                     })();
                   }}
-                  disabled={pinConfirm.length !== 6 || onboardingActionLoading === 'invite_set_pin'}
+                  disabled={inviteSignupPin.pinSecond.length !== 6 || onboardingActionLoading === 'invite_set_pin'}
                   className="w-full bg-green-700 hover:bg-green-800 disabled:bg-gray-300 text-white font-medium py-3 rounded-2xl transition mt-6 inline-flex items-center justify-center gap-2"
                 >
                   {onboardingActionLoading === 'invite_set_pin' ? (
@@ -1537,7 +1734,7 @@ export default function Page() {
                       Saving…
                     </>
                   ) : (
-                    'Confirm PIN'
+                    'Change PIN'
                   )}
                 </button>
               </>
@@ -3335,19 +3532,52 @@ export default function Page() {
                     </div>
                   </div>
 
+                  <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+                    <h3 className="px-4 py-3 font-semibold text-gray-900 border-b border-gray-200">Security</h3>
+                    <div className="divide-y divide-gray-200">
+                      <button
+                        type="button"
+                        disabled={!foScopedToken}
+                        onClick={() => {
+                          setApiBanner(null);
+                          setProfilePinModalOpen(true);
+                        }}
+                        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-gray-900 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        <span>Change PIN</span>
+                        <ChevronRight className="h-5 w-5 shrink-0 text-gray-300" aria-hidden />
+                      </button>
+                      {/* Registered device — placeholder for future device binding
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSuccessToast('This device is registered for your session.');
+                          window.setTimeout(() => setSuccessToast(null), 2500);
+                        }}
+                        className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-gray-900 hover:bg-gray-50"
+                      >
+                        <span>Registered device</span>
+                        <ChevronRight className="h-5 w-5 shrink-0 text-gray-300" aria-hidden />
+                      </button>
+                      */}
+                    </div>
+                  </div>
+
                   {apiAssignments.length > 0 ? (
                   <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
                     <h3 className="px-4 py-3 font-semibold text-gray-900 border-b border-gray-200">My Vehicles</h3>
-                    {apiAssignments.map((a) => (
-                          <div key={a.vehicleDriverId} className="px-4 py-3 border-b border-gray-200 last:border-0">
-                            <p className="font-medium text-gray-900 text-sm">{a.vehicleRegNo}</p>
-                            {/* <p className="text-xs text-gray-600 mt-1">{a.assignmentType}</p> */}
-                            <div className="flex gap-2 items-center mt-2">
-                              <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">{a.status}</span>
-                              <span className="w-2 h-2 bg-green-600 rounded-full" />
-                            </div>
+                    <div className="divide-y divide-gray-200">
+                      {apiAssignments.map((a) => (
+                        <div key={a.vehicleDriverId} className="px-4 py-3">
+                          <p className="font-medium text-gray-900 text-sm">{a.vehicleRegNo}</p>
+                          {/* <p className="text-xs text-gray-600 mt-1">{a.assignmentType}</p> */}
+                          <div className="flex gap-2 items-center mt-2">
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">{a.status}</span>
+                            <span className="w-2 h-2 bg-green-600 rounded-full" />
                           </div>
-                        ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   ) : null}
 
@@ -3374,6 +3604,110 @@ export default function Page() {
             </div>
           </div>
         </div>
+
+        {foScopedToken && onboardingStep === 'complete' && profilePinModalOpen && (
+          <div
+            className="pointer-events-auto fixed inset-0 z-[200] flex flex-col bg-white"
+            role="dialog"
+            aria-labelledby="profile-change-pin-title"
+            aria-modal
+          >
+            <div
+              ref={profilePinPanelRef}
+              className="mx-auto w-full max-w-lg flex-1 overflow-y-auto px-4 pb-10 pt-[max(1rem,env(safe-area-inset-top,0px))]"
+            >
+              <button
+                type="button"
+                disabled={profilePinChanging}
+                onClick={() => {
+                  setProfilePinModalOpen(false);
+                  profileChangePin.resetFlow();
+                  setApiBanner(null);
+                }}
+                className="mb-6 flex items-center gap-2 text-gray-600 disabled:opacity-40"
+              >
+                <ChevronLeft className="h-5 w-5" aria-hidden /> Back
+              </button>
+              <h2 id="profile-change-pin-title" className="mb-2 text-xl font-bold text-gray-900">
+                {profileChangePin.phase === 'first' ? 'Enter New PIN' : 'Confirm New PIN'}
+              </h2>
+              <p className="mb-6 text-sm text-gray-600">
+                {profileChangePin.phase === 'first'
+                  ? 'Use a 6-digit PIN for payments and sign-in.'
+                  : 'Re-enter the same PIN.'}
+              </p>
+              <PinDisplay value={profileChangePin.activeValue} />
+              <Numpad
+                disabled={profilePinChanging}
+                onPress={(digit) => {
+                  setApiBanner(null);
+                  profileChangePin.appendDigit(digit);
+                }}
+                onBackspace={() => {
+                  setApiBanner(null);
+                  profileChangePin.backspace();
+                }}
+                isConfirm={profileChangePin.phase === 'second'}
+              />
+              {profileChangePin.error && (
+                <p className="mt-3 text-center text-xs text-red-600">{profileChangePin.error}</p>
+              )}
+              <button
+                type="button"
+                disabled={
+                  profilePinChanging ||
+                  (profileChangePin.phase === 'first'
+                    ? profileChangePin.pinFirst.length !== 6
+                    : profileChangePin.pinSecond.length !== 6)
+                }
+                onClick={() => {
+                  if (!foScopedToken || !DRIVER_API_BASE) return;
+                  if (profileChangePin.phase === 'first') {
+                    profileChangePin.goToConfirmStep();
+                    return;
+                  }
+                  const p = profileChangePin.tryFinish();
+                  if (!p) return;
+                  const foCompanyId = selectedFoCompanyId ?? readStoredFoCompanyId();
+                  if (foCompanyId == null) {
+                    setApiBanner(
+                      'Fleet operator could not be determined. Reload the page or sign in again.'
+                    );
+                    return;
+                  }
+                  void (async () => {
+                    setProfilePinChanging(true);
+                    setApiBanner(null);
+                    try {
+                      await driverPinReset(DRIVER_API_BASE, foScopedToken, foCompanyId, p);
+                      setProfilePinModalOpen(false);
+                      profileChangePin.resetFlow();
+                      setSuccessToast('PIN changed successfully');
+                      window.setTimeout(() => setSuccessToast(null), 2500);
+                      setActiveTab('profile');
+                    } catch (e) {
+                      setApiBanner(bannerForPinFailure(e));
+                    } finally {
+                      setProfilePinChanging(false);
+                    }
+                  })();
+                }}
+                className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-green-700 py-3 font-medium text-white transition hover:bg-green-800 disabled:bg-gray-300"
+              >
+                {profilePinChanging ? (
+                  <>
+                    <Loader2 className="h-5 w-5 shrink-0 animate-spin" aria-hidden />
+                    Updating…
+                  </>
+                ) : profileChangePin.phase === 'first' ? (
+                  'Confirm PIN'
+                ) : (
+                  'Change PIN'
+                )}
+              </button>
+            </div>
+          </div>
+        )}
 
         {apiBanner && (
           <div

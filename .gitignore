@@ -3,6 +3,8 @@
 # Learn more about https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
 # Node
+# Node / JS
+*.tsbuildinfo
 node_modules/
 
 # Build / web output (plugin + apps)

@@ -461,6 +461,26 @@ export async function driverFoSelect(
   return unwrapDriverBody(body) as TokenResponse;
 }
 
+/** Set new fleet PIN (`POST …/auth/pin/reset`). Bearer is often OTP-phase token during forgot-PIN; FO-scoped bearer + `foCompanyId` is used for signed-in “change PIN”. */
+export async function driverPinReset(
+  baseUrl: string,
+  bearerPartial: string,
+  foCompanyId: number,
+  newPin: string
+): Promise<string> {
+  const { body } = await fetchJsonOk(`${baseUrl}/api/v0/driver-app/auth/pin/reset`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${bearerPartial}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ foCompanyId, newPin }),
+  });
+  const data = unwrapDriverBody<string>(body);
+  if (typeof data !== 'string') throw new Error('Unexpected pin-reset response');
+  return data;
+}
+
 function foAuthHeader(bearerFoScoped: string) {
   return { Authorization: `Bearer ${bearerFoScoped}` };
 }

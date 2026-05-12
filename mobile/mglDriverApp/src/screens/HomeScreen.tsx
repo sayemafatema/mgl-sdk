@@ -2,7 +2,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useEffect, useState } from 'react';
 import { Alert, Button, StyleSheet, Text, View } from 'react-native';
 import type { RootStackParamList } from '../navigation/RootNavigator';
-import { getAccessToken, setAccessToken } from '../storage/session';
+import { getAccessToken, setAccessToken, setFoCompanyId } from '../storage/session';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Home'>;
 
@@ -25,6 +25,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   async function onLogout() {
     await setAccessToken(null);
+    await setFoCompanyId(null);
     setHasToken(false);
     Alert.alert('Logged out');
   }
@@ -35,6 +36,9 @@ export default function HomeScreen({ navigation }: Props) {
       <Text style={styles.title}>Driver App</Text>
       <Text style={styles.meta}>{hasToken ? 'Session: ready' : 'Session: not logged in'}</Text>
 
+      <View style={styles.actions}>
+        <Button title="Profile & security" onPress={() => navigation.navigate('Profile')} />
+      </View>
       <View style={styles.actions}>
         <Button title="Scan & Pay" onPress={() => navigation.navigate('Scan')} />
       </View>
