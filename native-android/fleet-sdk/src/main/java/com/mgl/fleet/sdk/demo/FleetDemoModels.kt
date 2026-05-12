@@ -38,6 +38,7 @@ internal data class DemoBinding(
     val assignedBy: String? = null,
     val validPairingCode: String? = null,
     val repairReason: String? = null,
+    val assignedAt: String? = null,
 )
 
 internal data class DemoDriver(

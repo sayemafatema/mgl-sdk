@@ -26,6 +26,6 @@ android {
 }
 
 dependencies {
-    implementation 'com.mgl.sdk:fleet-android:0.2.0'
+    implementation 'com.mgl.sdk:fleet-android:0.3.0'
     compileOnly 'com.facebook.react:react-android:+'
 }

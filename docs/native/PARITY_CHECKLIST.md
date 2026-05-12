@@ -12,6 +12,8 @@ Contract for HTTP payloads:
 |----------|------|
 | OpenAPI 3.1 | [`docs/openapi/fleet-api.yaml`](../openapi/fleet-api.yaml) |
 
+**React parity state machine (full detail):** [`docs/native/REACT_PARITY_STATE_MAP.md`](REACT_PARITY_STATE_MAP.md) — `onboardingStep` ids, shell tabs (`activeTab`), scan `sessionState`, and `driver-api.ts` endpoint matrix.
+
 ## Screen / state parity (implement on Kotlin + Swift)
 
 Mark **Done** per platform when UX matches acceptance criteria (copy may vary slightly).
@@ -22,9 +24,11 @@ Mark **Done** per platform when UX matches acceptance criteria (copy may vary sl
 | OTP verify | `auth_otp` | Demo OTP `123456` in mock mode |
 | PIN entry | `auth_pin` | Demo PIN `123456`; lockout messaging if applicable |
 | Invite signup | `auth_invite` | Optional branch; demo codes `ABC123` / `XYZ789` |
-| Driver shell tabs | `shell_tabs` | Primary tabs visible (Card / Scan / Assign / Txns / Profile — mirror reference) |
+| Driver shell tabs | `shell_tabs` | Primary tabs visible; **five** tabs like [`app/page.tsx`](../../app/page.tsx): Card, Scan & Pay, Assignments, **Transactions**, Profile (native bottom nav must expose Transactions, not only “View all” from Card) |
 | Scan flow | `shell_scan` | Vehicle selection → authorize simulation |
 | Profile / logout | `shell_profile` | Log out returns to login |
+| QR camera (live) | `shell_scan_camera` | Android: [`FleetBarcodeScannerOverlay`](../../native-android/fleet-sdk/src/main/java/com/mgl/fleet/sdk/demo/ui/FleetBarcodeScannerOverlay.kt); iOS: [`FleetPayQrCameraSheet`](../../native-ios/MGLFleetSDK/Sources/MGLFleetSDK/FleetPayQrCameraSheet.swift) + **`NSCameraUsageDescription`** on host |
+| Android CAMERA merge | `perm_camera_android` | Fleet AAR declares `CAMERA`; Play policy / rationale is host’s responsibility |
 
 ## Mock vs live API
 
@@ -35,7 +39,7 @@ Mark **Done** per platform when UX matches acceptance criteria (copy may vary sl
 
 | Platform | Live E2E (`useMock: false`) |
 |----------|----------------------------|
-| **Android** (`fleet-android`) | Implemented in [`FleetDriverComposeApp.kt`](../../native-android/fleet-sdk/src/main/java/com/mgl/fleet/sdk/demo/ui/FleetDriverComposeApp.kt) (FO select, invite flow, scan pay, pairing). |
+| **Android** (`fleet-android`) | Shell in [`FleetDriverComposeApp.kt`](../../native-android/fleet-sdk/src/main/java/com/mgl/fleet/sdk/demo/ui/FleetDriverComposeApp.kt) + reusable screens [`FleetDriverScreens.kt`](../../native-android/fleet-sdk/src/main/java/com/mgl/fleet/sdk/demo/ui/FleetDriverScreens.kt). |
 | **iOS** (`MGLFleetSDK`) | Implemented in [`FleetDriverNativeView.swift`](../../native-ios/MGLFleetSDK/Sources/MGLFleetSDK/FleetDriverNativeView.swift) + [`DriverAppApiClient.swift`](../../native-ios/MGLFleetSDK/Sources/MGLFleetSDK/DriverAppApiClient.swift) (FO select, invite flow, scan pay, pairing; mirror Android). |
 
 ## Maintainer smoke

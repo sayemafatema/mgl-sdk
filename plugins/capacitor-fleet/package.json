@@ -1,10 +1,10 @@
 {
   "name": "@mgl/capacitor-fleet-sdk",
-  "version": "0.2.0",
+  "version": "0.5.0",
   "description": "Capacitor bridge for MGL Fleet native SDK (Kotlin/Swift cores)",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

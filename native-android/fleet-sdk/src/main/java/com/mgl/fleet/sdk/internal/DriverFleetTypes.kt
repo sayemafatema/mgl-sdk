@@ -57,6 +57,8 @@ internal data class DriverProfileJson(
     val driverId: String,
     val name: String,
     val maskedMobile: String?,
+    val dlNumber: String? = null,
+    val foStatus: String? = null,
 )
 
 internal data class QrPayResultJson(

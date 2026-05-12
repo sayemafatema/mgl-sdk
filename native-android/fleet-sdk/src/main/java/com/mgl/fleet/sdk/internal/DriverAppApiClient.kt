@@ -155,6 +155,26 @@ internal class DriverAppApiClient(
     suspend fun driverGetHome(token: String): Result<DriverHomeJson> =
         runCatchingSuspend { parseHome(requireJsonObject(unwrapDriverBodyJson(getRaw("/api/v0/driver-app/home", token)))) }
 
+    /** Mirrors `driverGetBalance` in `driver-api.ts`. */
+    suspend fun driverGetBalance(token: String): Result<Double> =
+        runCatchingSuspend {
+            val text = getRaw("/api/v0/driver-app/balance", token).trim()
+            val peeled =
+                try {
+                    unwrapDriverBodyJson(text)
+                } catch (_: Exception) {
+                    null
+                }
+            val num =
+                when (peeled) {
+                    is Number -> peeled.toDouble()
+                    is String -> peeled.trim().toDoubleOrNull()
+                    null -> text.removeSurrounding("\"").toDoubleOrNull()
+                    else -> peeled.toString().trim().removeSurrounding("\"").toDoubleOrNull()
+                }
+            num ?: throw DriverApiException("Unexpected balance response")
+        }
+
     suspend fun driverGetProfile(token: String): Result<DriverProfileJson> =
         runCatchingSuspend { parseProfile(requireJsonObject(unwrapDriverBodyJson(getRaw("/api/v0/driver-app/profile", token)))) }
 
@@ -328,6 +348,12 @@ internal class DriverAppApiClient(
             driverId = o.optString("driverId", ""),
             name = o.optString("name", ""),
             maskedMobile = o.optNullableString("maskedMobile"),
+            dlNumber =
+                o.optNullableString("dlNumber")
+                    ?: o.optNullableString("licenceNumber")
+                    ?: o.optNullableString("licenseNumber")
+                    ?: o.optNullableString("dlNo"),
+            foStatus = o.optNullableString("foStatus"),
         )
 
     private fun parseAssignments(data: Any?): List<DriverAssignmentJson> =

@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'MGLFleetSDK'
-  s.version          = '0.2.0'
+  s.version          = '0.3.0'
   s.summary          = 'Native iOS Fleet SDK (Swift)'
   s.description      = 'MGL Fleet fullscreen native flow + API client. Used by Capacitor / Flutter / RN bridges.'
   s.homepage         = 'https://github.com/YOUR_ORG/mgl-sdk'

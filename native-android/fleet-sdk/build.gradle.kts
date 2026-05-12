@@ -5,7 +5,7 @@ plugins {
     `maven-publish`
 }
 
-val fleetAndroidVersion = providers.gradleProperty("fleetAndroid.version").getOrElse("0.2.0")
+val fleetAndroidVersion = providers.gradleProperty("fleetAndroid.version").getOrElse("0.3.0")
 
 /** Below 1.17: androidx.core 1.17+ AAR metadata requires host AGP 8.9.1+ (many Capacitor apps stay on 8.7.x). */
 val androidxCorePin = "1.15.0"
@@ -57,6 +57,13 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.material.icons.extended)
     debugImplementation(libs.compose.ui.tooling)
+
+    val cameraxVer = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraxVer")
+    implementation("androidx.camera:camera-camera2:$cameraxVer")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVer")
+    implementation("androidx.camera:camera-view:$cameraxVer")
+    implementation("com.google.mlkit:barcode-scanning:17.2.0")
 }
 
 afterEvaluate {

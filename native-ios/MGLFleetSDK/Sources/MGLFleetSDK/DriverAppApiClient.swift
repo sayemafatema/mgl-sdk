@@ -229,6 +229,26 @@ final class DriverAppApiClient {
         }
     }
 
+    /// Mirrors `driverGetBalance` in `driver-api.ts`.
+    func driverGetBalance(_ token: String) async -> Result<Double, Error> {
+        await runCatching {
+            let txt = try await getRaw(path: "/api/v0/driver-app/balance", bearer: token)
+            let t = txt.trimmingCharacters(in: .whitespacesAndNewlines)
+            let peeled: Any? = try? DriverFleetJSON.unwrapDriverBodyString(t)
+            if let n = peeled as? NSNumber {
+                return n.doubleValue
+            }
+            if let s = peeled as? String, let d = Double(s.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return d
+            }
+            let stripped = t.replacingOccurrences(of: "\"", with: "")
+            guard let fallback = Double(stripped) else {
+                throw DriverApiError.message("Unexpected balance response")
+            }
+            return fallback
+        }
+    }
+
     func driverGetProfile(_ token: String) async -> Result<DriverProfileParsed, Error> {
         await runCatching {
             let txt = try await getRaw(path: "/api/v0/driver-app/profile", bearer: token)

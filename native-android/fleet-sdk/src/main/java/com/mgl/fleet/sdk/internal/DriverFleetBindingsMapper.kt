@@ -96,6 +96,7 @@ internal fun mapAssignmentsToDemoBindings(
             balance = balance,
             cardBalance = balance,
             incentiveBalance = 0,
+            assignedAt = a.assignedAt,
         )
     }
 }

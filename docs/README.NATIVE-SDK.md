@@ -26,7 +26,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.mgl.sdk:fleet-android:0.2.0'
+    implementation 'com.mgl.sdk:fleet-android:0.3.0'
 }
 ```
 
@@ -43,7 +43,7 @@ Sources live under [`native-ios/MGLFleetSDK/`](../native-ios/MGLFleetSDK/).
 **Swift Package Manager:** This repo includes a root **[`Package.swift`](../Package.swift)** so consumers can depend on **your Git URL** (replace **`YOUR_ORG`** after publishing):
 
 ```swift
-.package(url: "https://github.com/YOUR_ORG/mgl-sdk.git", from: "0.2.0")
+.package(url: "https://github.com/YOUR_ORG/mgl-sdk.git", from: "0.3.0")
 ```
 
 Link library product **`MGLFleetSDK`** to the host **App** target.  

@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import 'fleet_app_engine.dart';
 import 'fleet_demo_data.dart';
+import 'fleet_react_theme.dart';
+import 'react_parity_strings.dart';
 
 /// Full-screen flow matching Angular `FleetFlowHostComponent` / TS `FleetAppEngine`.
 class FleetFlowScreen extends StatefulWidget {
@@ -58,15 +60,16 @@ class _FleetFlowScreenState extends State<FleetFlowScreen> {
   Widget build(BuildContext context) {
     final s = widget.engine.getSnapshot();
     return Scaffold(
-      backgroundColor: const Color(0xfff3f4f6),
-      body: Stack(
+      backgroundColor: FleetReactTheme.gray100,
+      body: SafeArea(
+        child: Stack(
         children: [
           Positioned.fill(
             child: ColoredBox(
-              color: const Color(0xfff3f4f6),
+              color: FleetReactTheme.gray100,
               child: s.authStep != 'complete'
                   ? SingleChildScrollView(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(FleetReactTheme.spacePage),
                       child: _AuthPane(
                         engine: widget.engine,
                         s: s,
@@ -91,6 +94,7 @@ class _FleetFlowScreenState extends State<FleetFlowScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -115,7 +119,36 @@ class _AuthPane extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(20),
-      child: _authBody(context),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (s.onboardingBusy)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: LinearProgressIndicator(minHeight: 2, color: FleetReactTheme.green700),
+            ),
+          if (s.apiBanner != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                color: const Color(0xfffef2f2),
+                borderRadius: BorderRadius.circular(FleetReactTheme.radiusMd),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    s.apiBanner!,
+                    style: const TextStyle(
+                      color: Color(0xff991b1b),
+                      fontSize: FleetReactTheme.caption,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          _authBody(context),
+        ],
+      ),
     );
   }
 
@@ -125,8 +158,10 @@ class _AuthPane extends StatelessWidget {
         return _login(context);
       case 'login_otp':
         return _loginOtp(context);
-      case 'pin_login':
+      case 'fo_pin_login':
         return _pinLogin(context);
+      case 'select_fo':
+        return _selectFo(context);
       case 'forgot_pin':
         return _forgotPin(context);
       case 'forgot_otp':
@@ -137,15 +172,15 @@ class _AuthPane extends StatelessWidget {
         return _confirmPin(context);
       case 'registered':
         return _registered(context);
-      case 'invite_mobile':
+      case '1c':
         return _inviteMobile(context);
-      case 'invite_otp':
+      case '1d':
         return _inviteOtp(context);
-      case 'invite_code':
+      case '1b':
         return _inviteCode(context);
-      case 'invite_pin':
+      case '1e':
         return _invitePin(context);
-      case 'invite_confirm_pin':
+      case '1f':
         return _inviteConfirmPin(context);
       default:
         return const SizedBox.shrink();
@@ -185,8 +220,17 @@ class _AuthPane extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         FilledButton(
-          onPressed: s.mobileNumber.length == 10 ? engine.loginSendOtp : null,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+          onPressed: s.mobileNumber.length == 10
+              ? () {
+                  engine.loginSendOtp();
+                }
+              : null,
+          style: FilledButton.styleFrom(
+            backgroundColor: FleetReactTheme.primaryCta,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(FleetReactTheme.radiusLg),
+            ),
+          ),
           child: const Text('Send OTP'),
         ),
         const SizedBox(height: 16),
@@ -197,11 +241,12 @@ class _AuthPane extends StatelessWidget {
           child: const Text('New user? I have an invite code'),
         ),
         const SizedBox(height: 16),
-        Text(
-          'Demo OTP after login: 123456 · PIN: 123456',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-        ),
+        if (!s.useLiveDriverApp)
+          Text(
+            'Demo OTP after login: 123456 · PIN: 123456',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+          ),
       ],
     );
   }
@@ -211,21 +256,44 @@ class _AuthPane extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         TextButton(onPressed: engine.authBack, child: const Text('← Back')),
-        const Text('Verify mobile', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+        const Text(
+          'Verify mobile',
+          style: TextStyle(fontSize: FleetReactTheme.title, fontWeight: FontWeight.w600),
+        ),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xffeff6ff),
-            border: Border.all(color: const Color(0xffbfdbfe)),
-            borderRadius: BorderRadius.circular(12),
+            color: FleetReactTheme.blue50,
+            border: Border.all(color: FleetReactTheme.blue200),
+            borderRadius: BorderRadius.circular(FleetReactTheme.radiusMd),
           ),
-          child: const Text('OTP sent (demo — enter 123456)'),
+          child: Text(
+            s.useLiveDriverApp
+                ? 'OTP sent to your mobile. Enter the code from SMS.'
+                : 'OTP sent (demo — enter 123456)',
+            style: const TextStyle(
+              fontSize: FleetReactTheme.body,
+              color: FleetReactTheme.blue900,
+            ),
+          ),
         ),
         const SizedBox(height: 12),
         _OtpRow(key: ValueKey(s.authStep), onDigit: engine.setLoginOtpDigit),
         if (s.otpErrorLogin.isNotEmpty)
           Text(s.otpErrorLogin, style: const TextStyle(color: Color(0xffb91c1c))),
+        const SizedBox(height: 8),
+        if (s.otpCountdown > 0)
+          Text(
+            'Resend OTP in ${s.otpCountdown}s',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: FleetReactTheme.caption, color: FleetReactTheme.gray500),
+          )
+        else
+          TextButton(
+            onPressed: engine.resendLoginOtp,
+            child: const Text('Resend OTP'),
+          ),
       ],
     );
   }
@@ -237,7 +305,10 @@ class _AuthPane extends StatelessWidget {
         _logoBlock(big: false),
         Text(s.profile.name, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         const SizedBox(height: 12),
-        const Text('Enter PIN (demo 123456)', style: TextStyle(fontWeight: FontWeight.w600)),
+        Text(
+          s.useLiveDriverApp ? 'Fleet PIN' : 'Enter PIN (demo 123456)',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
         const SizedBox(height: 8),
         _pinDots(s.loginPin.length, bad: s.loginPinError.isNotEmpty),
         if (s.loginPinError.isNotEmpty)
@@ -248,6 +319,54 @@ class _AuthPane extends StatelessWidget {
           onBackspace: engine.loginPinBackspace,
         ),
         TextButton(onPressed: engine.goToForgotPin, child: const Text('Forgot PIN?')),
+      ],
+    );
+  }
+
+  Widget _selectFo(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextButton(onPressed: engine.authBack, child: const Text('← Back')),
+        const Text(
+          'Choose fleet operator',
+          style: TextStyle(fontSize: FleetReactTheme.title, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 16),
+        ...s.foOrganizations.where((f) => f.foStatus.toUpperCase() == 'ACTIVE').map((f) {
+          final sel = s.selectedFoCompanyId == f.foCompanyId;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(FleetReactTheme.radiusMd),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(FleetReactTheme.radiusMd),
+                onTap: () => engine.selectFoOrganization(f.foCompanyId),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(FleetReactTheme.radiusMd),
+                    border: Border.all(
+                      color: sel ? FleetReactTheme.green700 : const Color(0xffe5e7eb),
+                      width: sel ? 2 : 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(f.foName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Text(
+                        'Fleet ID #${f.foCompanyId}',
+                        style: const TextStyle(fontSize: 11, color: FleetReactTheme.gray500),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
       ],
     );
   }
@@ -345,7 +464,12 @@ class _AuthPane extends StatelessWidget {
   }
 
   Widget _inviteCode(BuildContext context) {
-    final ok = s.inviteCode.length == 6 && mockInviteCompanies[s.inviteCode] != null;
+    final okMock =
+        s.inviteCode.length == 6 && mockInviteCompanies[s.inviteCode] != null;
+    final okLive = s.useLiveDriverApp &&
+        s.inviteCode.length >= 6 &&
+        (s.inviteMobileVerificationToken?.isNotEmpty ?? false);
+    final ok = s.useLiveDriverApp ? okLive : okMock;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -353,12 +477,12 @@ class _AuthPane extends StatelessWidget {
         const Text('Invite code'),
         TextField(
           textCapitalization: TextCapitalization.characters,
-          maxLength: 6,
-          decoration: _inpDec('ABC123'),
+          maxLength: 24,
+          decoration: _inpDec('A3K9M2…'),
           controller: inviteCodeCtrl,
           onChanged: engine.setInviteCode,
         ),
-        if (ok)
+        if (!s.useLiveDriverApp && okMock)
           Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.all(10),
@@ -370,8 +494,8 @@ class _AuthPane extends StatelessWidget {
             child: Text('✓ ${mockInviteCompanies[s.inviteCode]}'),
           ),
         FilledButton(
-          onPressed: ok ? engine.inviteContinue : null,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+          onPressed: ok ? () => engine.inviteContinue() : null,
+          style: FilledButton.styleFrom(backgroundColor: FleetReactTheme.green700),
           child: const Text('Continue'),
         ),
       ],
@@ -409,8 +533,10 @@ class _AuthPane extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         FilledButton(
-          onPressed: s.mobileNumber.length == 10 ? engine.inviteSendOtp : null,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+          onPressed: s.mobileNumber.length == 10
+              ? () => engine.inviteSendOtpFromMobileScreen()
+              : null,
+          style: FilledButton.styleFrom(backgroundColor: FleetReactTheme.green700),
           child: const Text('Send OTP'),
         ),
       ],
@@ -422,10 +548,36 @@ class _AuthPane extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         TextButton(onPressed: engine.authBack, child: const Text('← Back')),
-        const Text('Verify OTP'),
+        const Text('Verify OTP', style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: FleetReactTheme.blue50,
+            border: Border.all(color: FleetReactTheme.blue200),
+            borderRadius: BorderRadius.circular(FleetReactTheme.radiusMd),
+          ),
+          child: Text(
+            'OTP sent to +91 …${s.mobileNumber.length >= 4 ? s.mobileNumber.substring(s.mobileNumber.length - 4).padLeft(10, '•') : s.mobileNumber}',
+            style: const TextStyle(fontSize: FleetReactTheme.body, color: FleetReactTheme.blue900),
+          ),
+        ),
         const SizedBox(height: 12),
         _OtpRow(key: ValueKey(s.authStep), onDigit: engine.setInviteOtpDigit),
-        const Text('Auto-advances on 123456', style: TextStyle(fontSize: 11)),
+        const SizedBox(height: 8),
+        if (!s.useLiveDriverApp)
+          const Text('Auto-advances on 123456', style: TextStyle(fontSize: 11)),
+        if (s.otpCountdown > 0)
+          Text(
+            'Resend OTP in ${s.otpCountdown}s',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: FleetReactTheme.caption, color: FleetReactTheme.gray500),
+          )
+        else
+          TextButton(
+            onPressed: engine.resendInviteOtp,
+            child: const Text('Resend OTP'),
+          ),
       ],
     );
   }
@@ -434,6 +586,24 @@ class _AuthPane extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if ((s.invitePreviewDriver ?? '').isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  s.invitePreviewDriver!,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                ),
+                if ((s.invitePreviewFo ?? '').isNotEmpty)
+                  Text(
+                    s.invitePreviewFo!,
+                    style: const TextStyle(fontSize: 13, color: FleetReactTheme.gray600),
+                  ),
+              ],
+            ),
+          ),
         const Text('Create app PIN'),
         _pinDots(s.invitePin.length, bad: false),
         _NumPad(
@@ -627,20 +797,32 @@ class _OtpRowState extends State<_OtpRow> {
   }
 }
 
-class _MainPane extends StatelessWidget {
+class _MainPane extends StatefulWidget {
   const _MainPane({required this.engine, required this.s});
 
   final FleetAppEngine engine;
   final FleetAppSnapshot s;
 
   @override
+  State<_MainPane> createState() => _MainPaneState();
+}
+
+class _MainPaneState extends State<_MainPane> {
+  String _txnFilter = 'all';
+
+  FleetAppEngine get engine => widget.engine;
+  FleetAppSnapshot get s => widget.s;
+
+  @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Expanded(
-          child: s.mainOverlay != 'home' ? _overlay(context) : _home(context),
-        ),
-      ],
+    return SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            child: s.mainOverlay != 'home' ? _overlay(context) : _home(context),
+          ),
+        ],
+      ),
     );
   }
 
@@ -715,25 +897,38 @@ class _MainPane extends StatelessWidget {
   }
 
   Widget _home(BuildContext context) {
-    final tabs = ['card', 'scan', 'assignments', 'transactions', 'profile'];
-    final idx = tabs.indexOf(s.activeTab).clamp(0, tabs.length - 1);
+    const navTabs = ['card', 'scan', 'assignments', 'profile'];
+    final onTransactions = s.activeTab == 'transactions';
+    final selIdx = onTransactions ? -1 : navTabs.indexOf(s.activeTab);
 
     return Column(
       children: [
         Container(
-          padding: const EdgeInsets.all(16),
-          color: const Color(0xff059669),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          color: const Color(0xff1a3020),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Good morning', style: TextStyle(color: Colors.white.withOpacity(0.85))),
+                  Text(_indiaGreeting(),
+                      style: const TextStyle(color: Color(0xffc8e6c9), fontSize: 14)),
+                  const SizedBox(height: 4),
                   Text(s.profile.name, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
                 ],
               ),
-              CircleAvatar(child: Text(s.profile.initials)),
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xff2d4a36),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white24),
+                ),
+                alignment: Alignment.center,
+                child: Text(s.profile.initials, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
             ],
           ),
         ),
@@ -741,8 +936,8 @@ class _MainPane extends StatelessWidget {
           Container(
             width: double.infinity,
             color: const Color(0xff059669),
-            padding: const EdgeInsets.all(10),
-            child: Text(s.successToast!, style: const TextStyle(color: Colors.white)),
+            padding: const EdgeInsets.all(12),
+            child: Text(s.successToast!, style: const TextStyle(color: Colors.white, fontSize: 13)),
           ),
         Padding(
           padding: const EdgeInsets.all(8),
@@ -754,20 +949,63 @@ class _MainPane extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(child: _tabBody(context)),
-        NavigationBar(
-          selectedIndex: idx,
-          onDestinationSelected: (i) => engine.setTab(tabs[i]),
-          destinations: const [
-            NavigationDestination(icon: Icon(Icons.credit_card), label: 'Card'),
-            NavigationDestination(icon: Icon(Icons.qr_code_scanner), label: 'Scan'),
-            NavigationDestination(icon: Icon(Icons.assignment), label: 'Assign'),
-            NavigationDestination(icon: Icon(Icons.receipt_long), label: 'Txns'),
-            NavigationDestination(icon: Icon(Icons.person), label: 'Profile'),
-          ],
+        Expanded(
+          child: ColoredBox(
+            color: (s.activeTab == 'card' || s.activeTab == 'assignments') ? const Color(0xffeceff1) : Colors.white,
+            child: _tabBody(context),
+          ),
+        ),
+        Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(top: BorderSide(color: Color(0xffe5e7eb))),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              _navItem(0, selIdx, Icons.home_outlined, 'Home', 'card'),
+              _navItem(1, selIdx, Icons.qr_code_2, 'Scan & Pay', 'scan'),
+              _navItem(2, selIdx, Icons.local_shipping_outlined, 'My Vehicles', 'assignments'),
+              _navItem(3, selIdx, Icons.person_outline, 'Profile', 'profile'),
+            ],
+          ),
         ),
       ],
     );
+  }
+
+  Widget _navItem(int index, int selIdx, IconData icon, String label, String tab) {
+    final on = selIdx == index;
+    final c = on ? const Color(0xff047857) : const Color(0xff6b7280);
+    return Expanded(
+      child: InkWell(
+        onTap: () => engine.setTab(tab),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: c, size: 24),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 10, fontWeight: on ? FontWeight.w600 : FontWeight.normal, color: c, height: 1.1),
+                maxLines: 2,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _indiaGreeting() {
+    final ist = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
+    final h = ist.hour;
+    if (h >= 5 && h < 12) return 'Good Morning';
+    if (h >= 12 && h < 17) return 'Good Afternoon';
+    return 'Good Evening';
   }
 
   Widget _tabBody(BuildContext context) {
@@ -823,19 +1061,37 @@ class _MainPane extends StatelessWidget {
     final c = engine.currentCard();
     final pending = engine.pendingAssignmentCount();
     final cards = engine.activeCards();
+    final noV = cards.isEmpty;
+    final noTx = s.transactions.isEmpty;
+    final scanGreen = const Color(0xff43a047);
+
     return ListView(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       children: [
         if (s.bindings.isNotEmpty && pending > 0)
           Material(
             color: const Color(0xfffffbeb),
-            borderRadius: BorderRadius.circular(12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: Color(0xfffde68a)),
+            ),
             child: ListTile(
-              title: Text('$pending assignment(s) need attention'),
-              trailing: TextButton(onPressed: () => engine.setTab('assignments'), child: const Text('View')),
+              title: Text(
+                '$pending assignment${pending > 1 ? 's' : ''} need your attention',
+                style: const TextStyle(color: Color(0xff78350f), fontSize: 14),
+              ),
+              trailing: TextButton(
+                onPressed: () => engine.setTab('assignments'),
+                child: const Text('View', style: TextStyle(color: Color(0xff2e7d32), fontWeight: FontWeight.w600)),
+              ),
             ),
           ),
-        if (c != null) ...[
+        if (noV && noTx) ...[
+          _emptyBigCard(context, pending, scanGreen),
+        ] else if (noV) ...[
+          _emptyNoVehicleCard(context, pending, scanGreen),
+          _recentSection(context, scanGreen),
+        ] else if (c != null) ...[
           Stack(
             clipBehavior: Clip.none,
             alignment: Alignment.center,
@@ -860,7 +1116,7 @@ class _MainPane extends StatelessWidget {
                         Expanded(
                           child: Text(
                             c.fo,
-                            style: TextStyle(fontSize: 12, height: 1.35, color: Colors.grey[600]),
+                            style: TextStyle(fontSize: 14, height: 1.35, color: Colors.grey[600]),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -925,7 +1181,7 @@ class _MainPane extends StatelessWidget {
                   left: 0,
                   child: IconButton(
                     onPressed: () => engine.setActiveCardIndex(s.activeCardIndex - 1),
-                    icon: const Icon(Icons.chevron_left),
+                    icon: const Icon(Icons.chevron_left, color: Color(0xff718096)),
                   ),
                 ),
               if (s.activeCardIndex < cards.length - 1)
@@ -933,7 +1189,7 @@ class _MainPane extends StatelessWidget {
                   right: 0,
                   child: IconButton(
                     onPressed: () => engine.setActiveCardIndex(s.activeCardIndex + 1),
-                    icon: const Icon(Icons.chevron_right),
+                    icon: const Icon(Icons.chevron_right, color: Color(0xff718096)),
                   ),
                 ),
             ],
@@ -949,22 +1205,160 @@ class _MainPane extends StatelessWidget {
                   height: 8,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
-                    color: i == s.activeCardIndex ? const Color(0xff43a047) : const Color(0xffd1d5db),
+                    color: i == s.activeCardIndex ? scanGreen : const Color(0xffd1d5db),
                   ),
                 ),
               );
             }),
           ),
           const SizedBox(height: 8),
-          FilledButton(onPressed: () => engine.setTab('scan'), child: const Text('Scan & Pay')),
-          const SizedBox(height: 16),
-          const Text('Recent', style: TextStyle(fontWeight: FontWeight.bold)),
-          ...s.transactions.take(3).map((t) => ListTile(
-                title: Text(t.station),
-                subtitle: Text(t.date),
-                trailing: Text('-₹${t.amount}', style: const TextStyle(color: Color(0xffdc2626))),
-              )),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: scanGreen,
+              minimumSize: const Size.fromHeight(52),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            onPressed: c.scanPayStatus == 'out_window' ? null : () => engine.setTab('scan'),
+            child: const Text('Scan & Pay', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          ),
+          _recentSection(context, scanGreen),
         ],
+      ],
+    );
+  }
+
+  Widget _emptyBigCard(BuildContext context, int pending, Color scanGreen) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xffe5e7eb))),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 56),
+        child: Column(
+          children: [
+            Icon(Icons.local_shipping_outlined, size: 36, color: const Color(0xff7d9188)),
+            const SizedBox(height: 20),
+            const Text('No vehicles or transactions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            const Text(
+              "There's nothing to show yet. When your fleet operator assigns you a vehicle and you use Scan & Pay, your balance and activity will appear here.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xff718096), fontSize: 14),
+            ),
+            const SizedBox(height: 24),
+            if (pending > 0)
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: scanGreen),
+                onPressed: () => engine.setTab('assignments'),
+                child: const Text('Go to vehicles'),
+              )
+            else
+              TextButton(
+                onPressed: () => engine.setTab('assignments'),
+                child: const Text('Browse vehicles', style: TextStyle(color: Color(0xff2e7d32), fontWeight: FontWeight.w600)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _emptyNoVehicleCard(BuildContext context, int pending, Color scanGreen) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: Color(0xffe5e7eb))),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Icon(Icons.local_shipping_outlined, color: const Color(0xff7d9188)),
+            const SizedBox(height: 12),
+            const Text('No active vehicle', style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            const Text(
+              "You don't have a paired vehicle right now. Accept an assignment to unlock Scan & Pay.",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xff718096)),
+            ),
+            if (pending > 0) ...[
+              const SizedBox(height: 16),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: scanGreen),
+                onPressed: () => engine.setTab('assignments'),
+                child: const Text('View vehicles'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _txnCredit(FleetTransaction t) {
+    if (t.type.toLowerCase() == 'credit') return true;
+    return RegExp(r'credit|top-up|wallet|neft', caseSensitive: false).hasMatch(t.status);
+  }
+
+  Widget _recentSection(BuildContext context, Color scanGreen) {
+    final rows = s.transactions.take(3).toList();
+    final empty = s.transactions.isEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Recent', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+              if (!empty)
+                TextButton(
+                  onPressed: () => engine.setTab('transactions'),
+                  child: const Text('View all', style: TextStyle(color: Color(0xff2e7d32), fontWeight: FontWeight.w600)),
+                ),
+            ],
+          ),
+        ),
+        if (empty)
+          Card(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xfff3f4f6))),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 14),
+              child: Column(
+                children: [
+                  const Icon(Icons.history, color: Color(0xff9ca3af), size: 28),
+                  const SizedBox(height: 16),
+                  const Text('No transactions yet', style: TextStyle(fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Fuel payments and wallet activity will show here once you use Scan & Pay.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          ...rows.map((t) {
+            final credit = _txnCredit(t);
+            return Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: Color(0xfff3f4f6))),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: credit ? const Color(0xfff0fdf4) : const Color(0xfffef2f2),
+                  child: Text(credit ? '↑' : '↓', style: TextStyle(color: credit ? const Color(0xff15803d) : const Color(0xffdc2626), fontWeight: FontWeight.bold)),
+                ),
+                title: Text(t.station, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                subtitle: Text('${t.vrn} · ${t.date}', style: const TextStyle(fontSize: 12)),
+                trailing: Text(
+                  '${credit ? '+' : '-'}₹${t.amount}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: credit ? const Color(0xff16a34a) : const Color(0xff111827),
+                  ),
+                ),
+              ),
+            );
+          }),
       ],
     );
   }
@@ -976,33 +1370,187 @@ class _MainPane extends StatelessWidget {
       return ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          const Text('Scan unavailable — check assignments.'),
+          const Text('Scan & Pay unavailable', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          const Text('No vehicles available right now.', style: TextStyle(color: Color(0xff718096))),
+          const SizedBox(height: 16),
           OutlinedButton(onPressed: () => engine.setTab('assignments'), child: const Text('Go to Assignments')),
         ],
       );
     }
     if (s.sessionState == 'confirmation' && sel != null) {
       return ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(FleetReactTheme.spacePage),
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Confirm fueling', style: TextStyle(fontWeight: FontWeight.bold)),
+              const Text('Confirm fueling',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: FleetReactTheme.title)),
               IconButton(onPressed: engine.scanCancelConfirmation, icon: const Icon(Icons.close)),
             ],
           ),
-          const Text('Station · MGL Hind CNG'),
-          Text('${sel.vrn} · ₹${sel.balance}'),
+          const Text('MGL Hind CNG Filling Station',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: FleetReactTheme.body)),
+          const SizedBox(height: 8),
+          Text('Vehicle ${sel.vrn}', style: const TextStyle(color: FleetReactTheme.textMuted)),
+          Text('Balance ₹${sel.balance}', style: const TextStyle(color: FleetReactTheme.textMuted)),
+          const SizedBox(height: 16),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: FleetReactTheme.primaryCta,
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(FleetReactTheme.radiusLg)),
+            ),
+            onPressed: engine.scanContinueToPin,
+            child:
+                const Text('Continue', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      );
+    }
+    if (s.sessionState == 'pin_confirm' && sel != null) {
+      return ListView(
+        padding: const EdgeInsets.all(FleetReactTheme.spacePage),
+        children: [
+          Row(
+            children: [
+              IconButton(onPressed: engine.scanBackFromPin, icon: const Icon(Icons.arrow_back)),
+              const Expanded(
+                child: Text('Verify PIN',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              IconButton(onPressed: engine.scanCancelConfirmation, icon: const Icon(Icons.close)),
+            ],
+          ),
+          const Text('Enter your PIN to confirm',
+              style: TextStyle(color: FleetReactTheme.textMuted)),
+          const SizedBox(height: 8),
           TextField(
             obscureText: true,
             maxLength: 6,
-            decoration: const InputDecoration(labelText: 'Authorize PIN', counterText: ''),
+            decoration: const InputDecoration(labelText: 'PIN', counterText: ''),
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             onChanged: engine.setSessionPin,
           ),
-          FilledButton(onPressed: engine.scanConfirmAuthorize, child: const Text('Authorize')),
+          const SizedBox(height: 12),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: FleetReactTheme.green700,
+              shape: RoundedRectangleBorder(
+                borderRadius:
+                    BorderRadius.circular(FleetReactTheme.radiusLg),
+              ),
+            ),
+            onPressed: s.sessionPin.length == 6 ? engine.scanVerifyPin : null,
+            child: const Text('Verify PIN'),
+          ),
+        ],
+      );
+    }
+    if (s.sessionState == 'otp_entry' && sel != null) {
+      final tail = s.mobileNumber.length >= 10
+          ? s.mobileNumber.substring(s.mobileNumber.length - 4)
+          : '••••';
+      return ListView(
+        padding: const EdgeInsets.all(FleetReactTheme.spacePage),
+        children: [
+          Row(
+            children: [
+              IconButton(onPressed: engine.scanBackFromOtpEntry, icon: const Icon(Icons.arrow_back)),
+              const Expanded(
+                child: Text('One-time password',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              ),
+              const SizedBox(width: 48),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: FleetReactTheme.blue50,
+              border: Border.all(color: FleetReactTheme.blue200),
+              borderRadius: BorderRadius.circular(FleetReactTheme.radiusLg),
+            ),
+            child: Text(
+              'OTP sent to +91 ${tail.padLeft(10, '•')}',
+              style: const TextStyle(fontSize: FleetReactTheme.body, color: FleetReactTheme.blue900),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            maxLength: 6,
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: const InputDecoration(
+              labelText: 'Enter OTP',
+              counterText: '',
+            ),
+            onChanged: engine.setScanSessionOtp,
+          ),
+          if (s.scanOtpCountdown > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 8),
+              child: Text(
+                'Resend OTP in ${s.scanOtpCountdown}s',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: FleetReactTheme.caption,
+                  color: FleetReactTheme.textCaption,
+                ),
+              ),
+            )
+          else
+            TextButton(
+              onPressed: engine.resendScanSessionOtp,
+              child:
+                  const Text('Resend OTP', style: TextStyle(color: FleetReactTheme.green700)),
+            ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: FleetReactTheme.green700,
+              shape: RoundedRectangleBorder(
+                borderRadius:
+                    BorderRadius.circular(FleetReactTheme.radiusLg),
+              ),
+            ),
+            onPressed: s.sessionOtp.length == 6 ? engine.verifyScanSessionOtp : null,
+            child: const Text('Verify & Authorize'),
+          ),
+        ],
+      );
+    }
+    if (s.sessionState == 'authorized' && sel != null) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Text('Fueling authorized', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          const SizedBox(height: 8),
+          Text('Vehicle ${sel.vrn}', style: const TextStyle(color: Color(0xff718096))),
+          const SizedBox(height: 24),
+          const Center(child: CircularProgressIndicator()),
+        ],
+      );
+    }
+    if (s.sessionState == 'complete') {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const Icon(Icons.check_circle, color: Color(0xff16a34a), size: 48),
+          const SizedBox(height: 12),
+          const Text('Payment complete', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          const SizedBox(height: 8),
+          Text(sel != null ? 'Vehicle ${sel.vrn}' : '', style: const TextStyle(color: Color(0xff718096))),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: engine.scanDismissSessionComplete,
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+            child: const Text('Done'),
+          ),
         ],
       );
     }
@@ -1020,13 +1568,28 @@ class _MainPane extends StatelessWidget {
             );
           }).toList(),
         ),
+        const SizedBox(height: 8),
+        Text('Fueling: ${(sel ?? avail.first).vrn}', style: const TextStyle(fontWeight: FontWeight.w600)),
         Container(
-          margin: const EdgeInsets.all(16),
+          margin: const EdgeInsets.symmetric(vertical: 12),
           height: 220,
           decoration: BoxDecoration(color: const Color(0xff111827), borderRadius: BorderRadius.circular(16)),
           child: const Center(child: Icon(Icons.qr_code_2, size: 72, color: Colors.white54)),
         ),
-        FilledButton(onPressed: engine.scanBeginConfirmation, child: const Text('Simulate scan')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+          onPressed: engine.scanBeginConfirmation,
+          child: const Text('Simulate Scan'),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton(
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('QR camera not wired in Flutter demo — use Simulate Scan')),
+            );
+          },
+          child: const Text('Scan QR with camera'),
+        ),
       ],
     );
   }
@@ -1053,26 +1616,142 @@ class _MainPane extends StatelessWidget {
   }
 
   Widget _tabTxns(BuildContext context) {
+    final rows = s.transactions.where((t) {
+      switch (_txnFilter) {
+        case 'successful':
+          return _txnStatusOk(t.status);
+        case 'failed':
+          return !_txnStatusOk(t.status);
+        default:
+          return true;
+      }
+    }).toList();
     return ListView(
-      children: s.transactions.map((t) {
-        return ListTile(
-          title: Text(t.station),
-          subtitle: Text('${t.date} · ${t.type}'),
-          trailing: Text('₹${t.amount}', style: const TextStyle(color: Color(0xffdc2626))),
-        );
-      }).toList(),
+      padding: const EdgeInsets.all(12),
+      children: [
+        Wrap(
+          spacing: 8,
+          children: ['all', 'successful', 'failed'].map((f) {
+            final sel = _txnFilter == f;
+            return ChoiceChip(
+              label: Text(_txnFilterLabel(f)),
+              selected: sel,
+              onSelected: (_) => setState(() => _txnFilter = f),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 8),
+        if (rows.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(_emptyTxnMsg(), style: const TextStyle(color: Color(0xff718096))),
+          )
+        else
+          ...rows.map((t) => Card(
+                child: ListTile(
+                  title: Text(t.station, style: const TextStyle(fontWeight: FontWeight.w500)),
+                  subtitle: Text('${t.vrn}\n${t.date}', style: const TextStyle(fontSize: 12)),
+                  isThreeLine: true,
+                  trailing: Text(
+                    '${_txnCredit(t) ? '+' : '-'}₹${t.amount}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: _txnCredit(t) ? const Color(0xff16a34a) : const Color(0xff111827),
+                    ),
+                  ),
+                ),
+              )),
+      ],
     );
   }
 
+  String _txnFilterLabel(String f) {
+    switch (f) {
+      case 'successful':
+        return 'Successful';
+      case 'failed':
+        return 'Failed';
+      default:
+        return 'All';
+    }
+  }
+
+  String _emptyTxnMsg() {
+    switch (_txnFilter) {
+      case 'successful':
+        return 'No successful transactions';
+      case 'failed':
+        return 'No failed transactions';
+      default:
+        return 'No transactions';
+    }
+  }
+
+  bool _txnStatusOk(String st) => st.toUpperCase() == 'SUCCESS' || st == 'Success';
+
   Widget _tabProfile(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(16),
       children: [
-        Text(s.profile.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        Text(s.profile.maskedMobile),
+        Column(
+          children: [
+            CircleAvatar(radius: 32, backgroundColor: Colors.green.shade100, child: Text(s.profile.initials, style: TextStyle(color: Colors.green.shade800, fontSize: 22, fontWeight: FontWeight.bold))),
+            const SizedBox(height: 8),
+            Text(s.profile.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Driver', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+          ],
+        ),
         const SizedBox(height: 24),
-        OutlinedButton(onPressed: engine.logout, child: const Text('Log out')),
+        Card(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: const BorderSide(color: Color(0xffe5e7eb))),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('Account', style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+              const Divider(height: 1),
+              _profileRow('Mobile', s.profile.maskedMobile),
+              const Divider(height: 1),
+              _profileRow('Registered', '—'),
+              const Divider(height: 1),
+              _profileRow('Fleet Operator', '—'),
+              const Divider(height: 1),
+              _profileRow('Driver ID', s.profile.id),
+              const Divider(height: 1),
+              _profileRow('Licence Number', '—'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xffdc2626),
+            side: const BorderSide(color: Color(0xfffecaca)),
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+          onPressed: engine.logout,
+          child: const Text('Sign out', style: TextStyle(fontWeight: FontWeight.w500)),
+        ),
       ],
+    );
+  }
+
+  Widget _profileRow(String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Text(k, style: const TextStyle(color: Color(0xff718096), fontSize: 13))),
+          Expanded(
+            flex: 2,
+            child: Text(v, textAlign: TextAlign.end, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+          ),
+        ],
+      ),
     );
   }
 }

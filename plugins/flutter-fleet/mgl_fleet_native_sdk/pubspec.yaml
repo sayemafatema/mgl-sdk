@@ -1,6 +1,6 @@
 name: mgl_fleet_native_sdk
 description: Flutter bridge for MGL Fleet native SDK (Android Kotlin / iOS Swift).
-version: 0.2.0
+version: 0.5.0
 publish_to: none # Remove when publishing — see ../../docs/PUBLISH_FOR_EXTERNAL_CONSUMERS.md
 
 homepage: https://github.com/YOUR_ORG/mgl-sdk/tree/main/plugins/flutter-fleet/mgl_fleet_native_sdk

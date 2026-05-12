@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'fleet_config.dart';
 import 'fleet_flow_screen.dart';
+import 'fleet_react_theme.dart';
 import 'fleet_repository.dart';
 import 'fleet_scope.dart';
 import 'fleet_app_engine.dart';
@@ -18,7 +19,7 @@ class FleetSdkApp extends StatefulWidget {
 
 class _FleetSdkAppState extends State<FleetSdkApp> {
   late final FleetRepository _repository = FleetRepository(widget.config);
-  late final FleetAppEngine _engine = FleetAppEngine();
+  late final FleetAppEngine _engine = FleetAppEngine(config: widget.config);
 
   @override
   void dispose() {
@@ -32,10 +33,7 @@ class _FleetSdkAppState extends State<FleetSdkApp> {
       repository: _repository,
       child: MaterialApp(
         title: 'MGL Fleet Connect',
-        theme: ThemeData(
-          colorSchemeSeed: const Color(0xFF047857),
-          useMaterial3: true,
-        ),
+        theme: FleetReactTheme.materialTheme(),
         home: FleetFlowScreen(engine: _engine),
       ),
     );

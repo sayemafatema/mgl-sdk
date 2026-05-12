@@ -247,7 +247,7 @@ final List<FleetTransaction> mockTransactions = [
     date: 'Mar 23, 10:30 AM',
     type: 'Fueling',
     quantity: '4.2 kg',
-    status: 'Success',
+    status: 'SUCCESS',
   ),
   const FleetTransaction(
     id: 'TXN002',
@@ -256,7 +256,7 @@ final List<FleetTransaction> mockTransactions = [
     amount: 10000,
     date: 'Mar 22, 02:15 PM',
     type: 'Credit',
-    status: 'Success',
+    status: 'SUCCESS',
   ),
   const FleetTransaction(
     id: 'TXN003',
@@ -266,7 +266,7 @@ final List<FleetTransaction> mockTransactions = [
     date: 'Mar 21, 08:45 AM',
     type: 'Fueling',
     quantity: '7.5 kg',
-    status: 'Success',
+    status: 'SUCCESS',
   ),
   const FleetTransaction(
     id: 'TXN004',
@@ -276,7 +276,7 @@ final List<FleetTransaction> mockTransactions = [
     date: 'Mar 20, 06:20 PM',
     type: 'Fueling',
     quantity: '6.0 kg',
-    status: 'Success',
+    status: 'SUCCESS',
   ),
 ];
 

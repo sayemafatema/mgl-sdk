@@ -1,6 +1,6 @@
 name: mgl_fleet_sdk
 description: Single-entry MGL Fleet flow — native Flutter UI, same API contract as TS core SDK.
-version: 0.2.0
+version: 0.5.0
 publish_to: none
 
 environment:

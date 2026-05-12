@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.0
+
+- Version bump to align with `mgl_fleet_sdk` 0.5.0 (screen/banner/OTP parity pass). Rebuild host apps after `npx cap sync`.
+
 ## Unreleased
 
 - **Bridge:** **`openFleetNativeFlow`** (native) + **`openMglFleetNativeFlow`** (TS) now use **one Capacitor invoke** for **initialize + present** — avoids ordering/race issues when the host stacks two separate native calls (Angular `Zone.js`, slow devices, or bridge batching). **`presentFleetFlow`** alone now rejects with **`NOT_INITIALIZED`** if **`initialize`** never ran (clearer than a generic native error).

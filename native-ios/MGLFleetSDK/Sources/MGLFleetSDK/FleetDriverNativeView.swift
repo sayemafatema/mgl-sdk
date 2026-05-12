@@ -11,14 +11,11 @@ struct FleetDriverNativeView: View {
     @State private var mobile = ""
     @State private var otpDigits = Array(repeating: "", count: 6)
     @State private var otpError = ""
-    @State private var forgotOtpDigits = Array(repeating: "", count: 6)
     @State private var rstPin = ""
     @State private var rstPinConfirm = ""
     @State private var rstPinError = ""
-    @State private var loginPin = ""
-    @State private var loginPinError = ""
-    @State private var wrongAttempts = 0
-    @State private var mainTab = 0
+    /// 0 card, 1 scan, 2 assignments, 3 profile, 4 transactions (no bottom-nav highlight; opened from Home View all).
+    @State private var mainContent = 0
     @State private var activeCard = 0
     @State private var overlay: String = "none"
     @State private var inviteField = ""
@@ -35,6 +32,9 @@ struct FleetDriverNativeView: View {
     @State private var parsedScanQr: FleetpayQrPayloadIOS?
     @State private var qrPayBusy = false
     @State private var lastQrPay: QrPayResultParsed?
+
+    @State private var showQrCameraScanner = false
+    @State private var txnFilterIos = "all"
 
     @State private var apiBanner: String?
     @State private var onboardingAction: String?
@@ -118,6 +118,88 @@ struct FleetDriverNativeView: View {
         }
     }
 
+    private var pendingAssignmentCount: Int {
+        bindingsEffective.filter {
+            $0.state == .pendingAcceptance || (!$0.paired && $0.state == .active)
+        }.count
+    }
+
+    private func indiaGreeting() -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Kolkata")!
+        let h = cal.component(.hour, from: Date())
+        if (5 ..< 12).contains(h) { return "Good Morning" }
+        if (12 ..< 17).contains(h) { return "Good Afternoon" }
+        return "Good Evening"
+    }
+
+    private func txnStatusSuccess(_ s: String) -> Bool {
+        s.caseInsensitiveCompare("SUCCESS") == .orderedSame || s.caseInsensitiveCompare("Success") == .orderedSame
+    }
+
+    private func foLine(for card: DemoBinding) -> String {
+        let fp = fleetPinFoDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !fp.isEmpty { return fp }
+        if let n = apiHome?.foName?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
+        return card.fo
+    }
+
+    private func authBadge(_ m: DemoAuthMode, card: DemoBinding) -> (String, Color, Color) {
+        switch m {
+        case .vehicleLinked:
+            return ("Vehicle-linked", Color(red: 232 / 255, green: 245 / 255, blue: 233 / 255), Color(red: 27 / 255, green: 94 / 255, blue: 32 / 255))
+        case .shiftBased:
+            return ("Shift · ends \(card.shiftEnd)", Color(red: 254 / 255, green: 243 / 255, blue: 199 / 255), Color(red: 146 / 255, green: 64 / 255, blue: 14 / 255))
+        case .tripLinked:
+            return ("Trip · ends \(card.tripEnd)", Color(red: 219 / 255, green: 234 / 255, blue: 254 / 255), Color(red: 30 / 255, green: 64 / 255, blue: 175 / 255))
+        }
+    }
+
+    private func profileRegisteredLine() -> String {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let iso2 = ISO8601DateFormatter()
+        let dates: [Date] = apiAssignments.compactMap { a in
+            guard let s = a.assignedAt?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+            return iso.date(from: s) ?? iso2.date(from: s)
+        }
+        guard let minD = dates.min() else { return "—" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_IN")
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f.string(from: minD)
+    }
+
+    private var fleetOperatorDisplay: String {
+        let fp = fleetPinFoDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !fp.isEmpty { return fp }
+        if let n = apiHome?.foName?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
+        return "—"
+    }
+
+    private var driverIdLine: String {
+        guard let d = apiProfile?.driverId, !d.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "—" }
+        return d
+    }
+
+    private var profileSubtitle: String {
+        if liveMode, apiProfile != nil {
+            if let n = apiHome?.foName?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty {
+                return "Driver · \(n)"
+            }
+            return "Driver"
+        }
+        let fp = fleetPinFoDisplay.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !fp.isEmpty { return "Driver · \(fp)" }
+        return "Driver"
+    }
+
+    private var navHighlightIndex: Int? {
+        if mainContent >= 0, mainContent <= 3 { return mainContent }
+        return nil
+    }
+
     var body: some View {
         Group {
             if onboardingStep != "complete" {
@@ -136,7 +218,7 @@ struct FleetDriverNativeView: View {
             guard liveMode, onboardingStep == "login_otp", newVal.count == 6, onboardingAction == nil else { return }
             Task { await verifyLoginOtpLive() }
         }
-        .onChange(of: mainTab) { tab in
+        .onChange(of: mainContent) { tab in
             guard tab == 1 else { return }
             if selectedScan == nil, let first = scanEligible.first { selectedScan = first }
         }
@@ -195,49 +277,19 @@ struct FleetDriverNativeView: View {
                     otpError = ""
                     let s = otpDigits.joined()
                     if s == "123456" {
-                        onboardingStep = isRegistered ? "complete" : "set_pin_first"
+                        onboardingStep = isRegistered ? "complete" : "set_pin"
                     } else {
                         otpError = "Incorrect OTP."
                     }
                 }
             }
-        case "pin_login":
-            pinLoginStep
         case "forgot_pin":
-            forgotPinIntro
-        case "forgot_otp":
-            otpStep(digits: $forgotOtpDigits, error: "", back: "forgot_pin") {
-                if forgotOtpDigits.joined() == "123456" {
-                    rstPin = ""
-                    rstPinConfirm = ""
-                    rstPinError = ""
-                    onboardingStep = "set_pin_reset"
-                }
-            }
-        case "set_pin_reset":
-            pinReset(title: "Create new PIN", pin: $rstPin, onNext: {
-                if rstPin.count == 6 { onboardingStep = "confirm_pin_reset" }
-            })
-        case "confirm_pin_reset":
-            pinReset(title: "Confirm new PIN", pin: $rstPinConfirm, hint: rstPinError, onNext: {
-                if rstPinConfirm == rstPin {
-                    rstPinError = ""
-                    rstPin = ""
-                    rstPinConfirm = ""
-                    loginPin = ""
-                    loginPinError = ""
-                    wrongAttempts = 0
-                    onboardingStep = "pin_login"
-                } else {
-                    rstPinError = "PINs don't match."
-                    rstPinConfirm = ""
-                }
-            })
-        case "set_pin_first":
+            forgotPinReactStep
+        case "set_pin":
             pinReset(title: "Create your PIN", pin: $rstPin, onNext: {
-                if rstPin.count == 6 { onboardingStep = "confirm_pin_first" }
+                if rstPin.count == 6 { onboardingStep = "confirm_pin" }
             })
-        case "confirm_pin_first":
+        case "confirm_pin":
             pinReset(title: "Confirm your PIN", pin: $rstPinConfirm, hint: rstPinError, onNext: {
                 if rstPinConfirm == rstPin {
                     onboardingStep = "complete"
@@ -272,78 +324,181 @@ struct FleetDriverNativeView: View {
     }
 
     private var loginStep: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("MGL Fleet Connect").font(.title2).bold()
-            Text("Driver App").font(.caption).foregroundStyle(.secondary)
-            Text("Mobile").font(.caption)
-            TextField(
-                "10-digit mobile",
-                text: Binding(
-                    get: { mobile },
-                    set: { mobile = String($0.filter(\.isNumber).prefix(10)) },
-                ),
-            )
-            .keyboardType(.numberPad)
-            .textFieldStyle(.roundedBorder)
+        let showFormatError =
+            !mobile.isEmpty && !(mobile.first.map { ch in "6789".contains(ch) } ?? true)
+        return VStack(spacing: 24) {
+            VStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color(red: 82 / 255, green: 82 / 255, blue: 91 / 255).opacity(0.8), lineWidth: 1)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color(red: 63 / 255, green: 63 / 255, blue: 70 / 255)))
+                    Text("MGL")
+                        .foregroundStyle(.white)
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                }
+                .fixedSize()
+                Text("Driver App")
+                    .font(.title3)
+                    .fontWeight(.medium)
+                    .foregroundStyle(Color(red: 107 / 255, green: 114 / 255, blue: 128 / 255))
+            }
+            .frame(maxWidth: .infinity)
 
-            Button("Send OTP") {
-                apiBanner = nil
-                otpDigits = Array(repeating: "", count: 6)
-                otpError = ""
-                onboardingAction = nil
-                if liveMode {
-                    guard DriverFleetQr.validIndianMobile10(mobile) else {
-                        apiBanner = "Enter a valid 10-digit mobile number starting with 6–9."
-                        return
-                    }
-                    Task {
-                        onboardingAction = "login_send_mobile_check"
-                        defer { onboardingAction = nil }
-                        switch await api.driverCheckMobile(mobile) {
-                        case let .failure(e):
-                            apiBanner = e.localizedDescription
-                        case let .success(status):
-                            switch status {
-                            case .newUser:
-                                inviteOtpRef = nil
-                                inviteMobileVerificationToken = nil
-                                inviteField = ""
-                                onboardingStep = "1c"
-                            case .returningUser:
-                                _ = await api.driverSendLoginOtp(mobile)
-                                otpCountdown = 60
-                                onboardingStep = "login_otp"
+            VStack(alignment: .leading, spacing: 24) {
+                Text("Sign in to continue")
+                    .font(.headline)
+                    .foregroundStyle(Color(red: 26 / 255, green: 32 / 255, blue: 44 / 255))
+                Text("Mobile number")
+                    .font(.subheadline)
+                    .foregroundStyle(Color(red: 113 / 255, green: 128 / 255, blue: 150 / 255))
+                if showFormatError {
+                    Text("Please enter a valid mobile number")
+                        .font(.subheadline)
+                        .foregroundStyle(Color(red: 127 / 255, green: 29 / 255, blue: 29 / 255))
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color(red: 254 / 255, green: 242 / 255, blue: 242 / 255)))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 254 / 255, green: 202 / 255, blue: 202 / 255)))
+                }
+                HStack(spacing: 0) {
+                    Text("+91")
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 14)
+                        .foregroundStyle(Color(red: 113 / 255, green: 128 / 255, blue: 150 / 255))
+                    Rectangle()
+                        .fill(Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255))
+                        .frame(width: 1)
+                    TextField(
+                        "98765 01234",
+                        text: Binding(
+                            get: { mobile },
+                            set: { mobile = String($0.filter(\.isNumber).prefix(10)) },
+                        ),
+                    )
+                    .keyboardType(.numberPad)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 14)
+                }
+                .background(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255)))
+
+                Button {
+                    apiBanner = nil
+                    otpDigits = Array(repeating: "", count: 6)
+                    otpError = ""
+                    onboardingAction = nil
+                    if liveMode {
+                        guard DriverFleetQr.validIndianMobile10(mobile) else { return }
+                        Task {
+                            onboardingAction = "login_send_mobile_check"
+                            defer { onboardingAction = nil }
+                            switch await api.driverCheckMobile(mobile) {
+                            case let .failure(e):
+                                apiBanner = ReactParityBanner.forGenericFailure(e)
+                            case let .success(status):
+                                switch status {
+                                case .newUser:
+                                    apiBanner = ReactParityBanner.newUserContinueInvite
+                                    inviteOtpRef = nil
+                                    inviteMobileVerificationToken = nil
+                                    inviteField = ""
+                                    onboardingStep = "1c"
+                                case .returningUser:
+                                    _ = await api.driverSendLoginOtp(mobile)
+                                    otpCountdown = 60
+                                    onboardingStep = "login_otp"
+                                }
                             }
                         }
+                    } else {
+                        otpCountdown = 30
+                        onboardingStep = "login_otp"
                     }
-                } else {
-                    onboardingStep = "login_otp"
+                } label: {
+                    if onboardingAction == "login_send_mobile_check" {
+                        ProgressView()
+                            .tint(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    } else {
+                        Text("Send OTP")
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(Color(red: 67 / 255, green: 160 / 255, blue: 71 / 255))
+                .disabled(!DriverFleetQr.validIndianMobile10(mobile) || onboardingAction == "login_send_mobile_check")
+
+                Rectangle()
+                    .fill(Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255))
+                    .frame(height: 1)
+
+                Button {
+                    inviteField = ""
+                    apiBanner = nil
+                    inviteOtpRef = nil
+                    inviteMobileVerificationToken = nil
+                    if liveMode {
+                        mobile = ""
+                        onboardingStep = "1c"
+                    } else {
+                        onboardingStep = "1b"
+                    }
+                } label: {
+                    Text("New user? I have an invite code")
+                        .fontWeight(.medium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(24)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1),
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255)),
+            )
+
+            Text("By continuing, I agree to MGL Fleet Terms of Service")
+                .font(.caption)
+                .foregroundStyle(Color(red: 148 / 255, green: 163 / 255, blue: 184 / 255))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: 448)
+    }
+
+    private var forgotPinReactStep: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Button {
+                onboardingStep = "login"
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.left")
+                    Text("Back")
+                }
+                .foregroundStyle(Color(red: 107 / 255, green: 114 / 255, blue: 128 / 255))
+            }
+            .buttonStyle(.plain)
+            Text("Reset PIN")
+                .font(.title3)
+                .bold()
+                .foregroundStyle(Color(red: 26 / 255, green: 32 / 255, blue: 44 / 255))
+            Text("Sign out and open Login with your mobile OTP, or contact your fleet operator for help.")
+                .font(.subheadline)
+                .foregroundStyle(Color(red: 107 / 255, green: 114 / 255, blue: 128 / 255))
+            Button("Back to login") {
+                onboardingStep = "login"
             }
             .buttonStyle(.borderedProminent)
-            .tint(Color(red: 4 / 255, green: 120 / 255, blue: 87 / 255))
-            .disabled(mobile.count != 10)
-
-            Button("Returning user · PIN login") {
-                loginPin = ""
-                loginPinError = ""
-                onboardingStep = "pin_login"
-            }
-            .buttonStyle(.bordered)
-
-            Button("New user — invite code") {
-                inviteField = ""
-                apiBanner = nil
-                inviteOtpRef = nil
-                inviteMobileVerificationToken = nil
-                if liveMode {
-                    mobile = ""
-                    onboardingStep = "1c"
-                } else {
-                    onboardingStep = "1b"
-                }
-            }
-            .buttonStyle(.bordered)
+            .tint(Color(red: 67 / 255, green: 160 / 255, blue: 71 / 255))
         }
     }
 
@@ -383,60 +538,6 @@ struct FleetDriverNativeView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color(red: 4 / 255, green: 120 / 255, blue: 87 / 255))
                 .disabled(digits.wrappedValue.joined().count != 6)
-        }
-    }
-
-    private var pinLoginStep: some View {
-        VStack(spacing: 12) {
-            Text("Welcome back").font(.caption).foregroundStyle(.secondary)
-            Text(displayDriver.name).font(.title2).bold()
-            SecureField(
-                "6-digit PIN",
-                text: Binding(
-                    get: { loginPin },
-                    set: {
-                        loginPin = String($0.filter(\.isNumber).prefix(6))
-                        loginPinError = ""
-                    },
-                ),
-            )
-            .keyboardType(.numberPad)
-            .textFieldStyle(.roundedBorder)
-            if !loginPinError.isEmpty { Text(loginPinError).font(.caption).foregroundStyle(.red) }
-            Button("Continue") {
-                if loginPin == displayDriver.pin {
-                    onboardingStep = "complete"
-                } else {
-                    wrongAttempts += 1
-                    loginPinError = "Incorrect PIN"
-                    loginPin = ""
-                }
-            }
-            .disabled(loginPin.count != 6 || wrongAttempts >= 3)
-
-            Button("Forgot PIN?") {
-                onboardingStep = "forgot_pin"
-            }
-
-            if wrongAttempts >= 3 {
-                Text("Too many attempts. Reset via OTP.").font(.caption).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var forgotPinIntro: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button("< Back") { onboardingStep = "pin_login" }
-                .buttonStyle(.plain)
-            Text("Reset your PIN").font(.title3).bold()
-            Text("Verify via OTP on your registered number.").font(.caption).foregroundStyle(.secondary)
-            Text(displayDriver.maskedMobile).padding().frame(maxWidth: .infinity).background(Color(.secondarySystemFill)).clipShape(RoundedRectangle(cornerRadius: 12))
-            Button("Send OTP") {
-                forgotOtpDigits = Array(repeating: "", count: 6)
-                onboardingStep = "forgot_otp"
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Color(red: 4 / 255, green: 120 / 255, blue: 87 / 255))
         }
     }
 
@@ -536,7 +637,7 @@ struct FleetDriverNativeView: View {
                     let tok = await api.driverFoSelect(bearerPartial: phase, foCompanyId: sel, pin: foPinEntry)
                     switch tok {
                     case let .failure(e):
-                        apiBanner = e.localizedDescription
+                        apiBanner = ReactParityBanner.forGenericFailure(e)
                     case let .success(fleetTok):
                         foScopedToken = fleetTok
                         otpPhaseToken = nil
@@ -575,7 +676,7 @@ struct FleetDriverNativeView: View {
                     return
                 }
                 guard DriverFleetQr.validIndianMobile10(mobile) else {
-                    apiBanner = "Enter a valid 10-digit mobile number."
+                    apiBanner = ReactParityBanner.validMobileError
                     return
                 }
                 Task {
@@ -583,14 +684,14 @@ struct FleetDriverNativeView: View {
                     defer { onboardingAction = nil }
                     switch await api.driverCheckMobile(mobile) {
                     case let .failure(e):
-                        apiBanner = e.localizedDescription
+                        apiBanner = ReactParityBanner.forGenericFailure(e)
                     case let .success(st):
                         if st == .returningUser {
-                            apiBanner = "Use “Send OTP” on the login screen."
+                        apiBanner = ReactParityBanner.useSendOtpOnLogin
                             return
                         }
                         switch await api.driverInviteMobileSendOtp(mobile) {
-                        case let .failure(e): apiBanner = e.localizedDescription
+                        case let .failure(e): apiBanner = ReactParityBanner.forGenericFailure(e)
                         case let .success(ref):
                             inviteOtpRef = ref
                             inviteOtpDigits = Array(repeating: "", count: 6)
@@ -631,7 +732,7 @@ struct FleetDriverNativeView: View {
             Button("Continue") {
                 if liveMode {
                     guard let tok = inviteMobileVerificationToken, inviteField.count == 6 else {
-                        apiBanner = "Invite flow incomplete — verify mobile first."
+                        apiBanner = ReactParityBanner.inviteVerifyMobileFirst
                         return
                     }
                     Task {
@@ -639,7 +740,7 @@ struct FleetDriverNativeView: View {
                         defer { onboardingAction = nil }
                         let r = await api.driverInviteValidate(mobile: mobile, inviteCode: inviteField, mobileVerificationToken: tok)
                         switch r {
-                        case let .failure(e): apiBanner = e.localizedDescription
+                        case let .failure(e): apiBanner = ReactParityBanner.forGenericFailure(e)
                         case let .success(v):
                             validatedInvite = v
                             inviteSessionToken = v.sessionToken
@@ -677,25 +778,49 @@ struct FleetDriverNativeView: View {
                         .background(Color.red.opacity(0.08))
                 }
                 Group {
-                    switch mainTab {
+                    switch mainContent {
                     case 0: cardTab
                     case 1: scanTab
                     case 2: assignmentsSectioned
-                    default: profileTab
+                    case 3: profileTab
+                    case 4: transactionsTabIos
+                    default: EmptyView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    (mainContent == 0 || mainContent == 2)
+                        ? Color(red: 236 / 255, green: 239 / 255, blue: 241 / 255)
+                        : Color(.systemBackground),
+                )
                 Divider()
-                HStack {
-                    tabBtn(0, "Home")
-                    tabBtn(1, "Scan")
-                    tabBtn(2, "Assignments")
-                    tabBtn(3, "Profile")
+                HStack(spacing: 0) {
+                    iosTabItem(0, "house.fill", "Home")
+                    iosTabItem(1, "qrcode", "Scan & Pay")
+                    iosTabItem(2, "shippingbox", "My Vehicles")
+                    iosTabItem(3, "person.fill", "Profile")
                 }
                 .padding(.vertical, 8)
             }
 
             overlayContent
+        }
+        .sheet(isPresented: $showQrCameraScanner) {
+            FleetPayQrCameraSheet { raw in
+                showQrCameraScanner = false
+                guard selectedScan != nil || scanEligible.first != nil else {
+                    apiBanner = ReactParityBanner.selectVehicleFirst
+                    return
+                }
+                if let pq = DriverFleetQr.parseFleetpayPayUri(raw) {
+                    parsedScanQr = pq
+                    sessionIdle = false
+                    sessionPhase = "confirmation"
+                    apiBanner = nil
+                } else {
+                    apiBanner = ReactParityBanner.invalidFleetpayQr
+                }
+            }
         }
         .sheet(isPresented: $showPairingHelp) {
             VStack(alignment: .leading, spacing: 12) {
@@ -862,7 +987,7 @@ struct FleetDriverNativeView: View {
                 .foregroundStyle(.secondary)
             Button("Go to My Assignments") {
                 overlay = "none"
-                mainTab = 2
+                mainContent = 2
             }
             .buttonStyle(.borderedProminent)
             .tint(Color(red: 4 / 255, green: 120 / 255, blue: 87 / 255))
@@ -875,62 +1000,334 @@ struct FleetDriverNativeView: View {
     }
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text("Good morning").font(.caption).foregroundStyle(.secondary)
-                Text(displayDriver.name).font(.title3).bold()
+        let headerGreen = Color(red: 26 / 255, green: 48 / 255, blue: 32 / 255)
+        let muted = Color(red: 200 / 255, green: 230 / 255, blue: 201 / 255)
+        let avatarRing = Color(red: 45 / 255, green: 74 / 255, blue: 54 / 255)
+        return HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(indiaGreeting()).font(.subheadline).foregroundStyle(muted)
+                Text(displayDriver.name).font(.title3).bold().foregroundStyle(.white)
             }
             Spacer()
             Text(displayDriver.initials)
                 .bold()
+                .font(.subheadline)
                 .frame(width: 40, height: 40)
-                .background(Color.white.opacity(0.2))
+                .background(avatarRing)
+                .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 2))
                 .clipShape(Circle())
                 .foregroundStyle(.white)
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.vertical, 20)
         .frame(maxWidth: .infinity)
-        .background(Color(red: 5 / 255, green: 150 / 255, blue: 105 / 255))
-        .foregroundStyle(.white)
+        .background(headerGreen)
     }
 
-    private var cardTab: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Button("Open assignment (demo)") { overlay = "assignment" }
-                    .font(.caption)
-                let cards = activeCards
-                let idx = min(activeCard, max(cards.count - 1, 0))
-                if let c = cards[safe: idx] {
-                    Text(c.fo).font(.caption).foregroundStyle(.secondary)
-                    Text(c.vrn).font(.title).bold().monospaced()
-                    Text("₹\(c.balance)").font(.largeTitle).bold()
-                    Button("Scan & Pay") { mainTab = 1 }
-                        .buttonStyle(.borderedProminent)
-                    HStack {
-                        ForEach(Array(cards.enumerated()), id: \.offset) { i, _ in
-                            Circle()
-                                .fill(i == idx ? Color.green : Color.gray.opacity(0.3))
-                                .frame(width: 8, height: 8)
-                                .onTapGesture { activeCard = i }
+    private var transactionsTabIos: some View {
+        let rows = txnSource.filter { t in
+            switch txnFilterIos {
+            case "successful": return txnStatusSuccess(t.status)
+            case "failed": return !txnStatusSuccess(t.status)
+            default: return true
+            }
+        }
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Transactions").font(.title2.bold())
+                HStack(spacing: 8) {
+                    ForEach([("all", "All"), ("successful", "Successful"), ("failed", "Failed")], id: \.0) { pair in
+                        let f = pair.0
+                        let label = pair.1
+                        Button {
+                            txnFilterIos = f
+                        } label: {
+                            Text(label)
+                                .font(.caption).padding(.horizontal, 14).padding(.vertical, 8)
+                                .background(txnFilterIos == f ? Color.green : Color(.secondarySystemBackground))
+                                .foregroundStyle(txnFilterIos == f ? Color.white : Color.primary)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
                         }
+                        .buttonStyle(.plain)
                     }
                 }
-                ForEach(txnSource.prefix(15)) { t in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(t.station).bold()
-                            Text(t.date).font(.caption).foregroundStyle(.secondary)
+                if rows.isEmpty {
+                    Text(
+                        txnFilterIos == "successful"
+                            ? "No successful transactions"
+                            : txnFilterIos == "failed" ? "No failed transactions" : "No transactions",
+                    )
+                    .foregroundStyle(.secondary)
+                    .padding()
+                } else {
+                    ForEach(rows) { t in
+                        let credit =
+                            t.type.lowercased() == "credit"
+                            || t.status.range(of: "credit|top-up|wallet|neft", options: [.regularExpression, .caseInsensitive]) != nil
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(t.station).bold()
+                                Text(t.vrn).font(.caption).foregroundStyle(.secondary)
+                                Text(t.date).font(.caption2).foregroundStyle(.tertiary)
+                            }
+                            Spacer()
+                            Text("\(credit ? "+" : "-")₹\(t.amount)")
+                                .bold()
+                                .foregroundStyle(credit ? Color.green : Color.primary)
                         }
-                        Spacer()
-                        Text("-₹\(t.amount)").foregroundStyle(.red)
+                        .padding(12)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
-                    .padding(8)
-                    .background(Color(.secondarySystemBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
             .padding()
+        }
+    }
+
+    private func txnIsCreditRow(_ t: DemoTxn) -> Bool {
+        if t.type.lowercased() == "credit" { return true }
+        return t.status.range(of: "credit|top-up|top up|wallet|neft", options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private func recentTxnSubtitle(_ t: DemoTxn) -> (String, String) {
+        let raw = t.date
+        let segs = raw.split(separator: "T", maxSplits: 1, omittingEmptySubsequences: false)
+        if segs.count == 2 {
+            return (String(segs[0]), String(segs[1].prefix(5)))
+        }
+        return (raw, "")
+    }
+
+    private var cardTab: some View {
+        let cards = activeCards
+        let idx = min(activeCard, max(cards.count - 1, 0))
+        let c = cards[safe: idx]
+        let noV = cards.isEmpty
+        let noTx = txnSource.isEmpty
+        let recent3 = Array(txnSource.prefix(3))
+        let scanGreen = Color(red: 67 / 255, green: 160 / 255, blue: 71 / 255)
+
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if pendingAssignmentCount > 0 {
+                    HStack(alignment: .center) {
+                        Text("\(pendingAssignmentCount) assignment\(pendingAssignmentCount > 1 ? "s" : "") need your attention")
+                            .font(.subheadline)
+                            .foregroundStyle(Color(red: 120 / 255, green: 53 / 255, blue: 15 / 255))
+                        Spacer()
+                        Button("View") { mainContent = 2 }
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Color(red: 46 / 255, green: 125 / 255, blue: 50 / 255))
+                    }
+                    .padding(12)
+                    .background(Color(red: 255 / 255, green: 251 / 255, blue: 235 / 255))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 253 / 255, green: 230 / 255, blue: 138 / 255)))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+
+                if noV && noTx {
+                    VStack(spacing: 16) {
+                        Image(systemName: "shippingbox")
+                            .font(.system(size: 36))
+                            .foregroundStyle(Color(red: 125 / 255, green: 145 / 255, blue: 136 / 255))
+                            .frame(width: 72, height: 72)
+                            .background(Color(red: 241 / 255, green: 244 / 255, blue: 242 / 255))
+                            .clipShape(Circle())
+                        Text("No vehicles or transactions").font(.headline)
+                        Text("There's nothing to show yet. When your fleet operator assigns you a vehicle and you use Scan & Pay, your balance and activity will appear here.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        if pendingAssignmentCount > 0 {
+                            Button("Go to vehicles") { mainContent = 2 }
+                                .buttonStyle(.borderedProminent)
+                                .tint(scanGreen)
+                        } else {
+                            Button("Browse vehicles") { mainContent = 2 }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color(red: 46 / 255, green: 125 / 255, blue: 50 / 255))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(24)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255)))
+                } else if noV {
+                    VStack(spacing: 12) {
+                        Image(systemName: "shippingbox")
+                            .foregroundStyle(Color(red: 125 / 255, green: 145 / 255, blue: 136 / 255))
+                            .frame(width: 56, height: 56)
+                            .background(Color(red: 241 / 255, green: 244 / 255, blue: 242 / 255))
+                            .clipShape(Circle())
+                        Text("No active vehicle").font(.headline)
+                        Text("You don't have a paired vehicle right now. Accept an assignment to unlock Scan & Pay.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        if pendingAssignmentCount > 0 {
+                            Button("View vehicles") { mainContent = 2 }
+                                .buttonStyle(.borderedProminent)
+                                .tint(scanGreen)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(24)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255)))
+                    recentSection(recent3, showViewAll: !txnSource.isEmpty, scanGreen: scanGreen)
+                } else if let card = c {
+                    ZStack {
+                        if activeCard > 0 {
+                            HStack {
+                                Button {
+                                    activeCard -= 1
+                                } label: {
+                                    Image(systemName: "chevron.left").foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                            }
+                        }
+                        if activeCard < cards.count - 1 {
+                            HStack {
+                                Spacer()
+                                Button {
+                                    activeCard += 1
+                                } label: {
+                                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 0) {
+                            let badge = authBadge(card.authMode, card: card)
+                            HStack(alignment: .top) {
+                                Text(foLine(for: card))
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color(red: 75 / 255, green: 85 / 255, blue: 99 / 255))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Text(badge.0)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(badge.2)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .background(badge.1)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+                            Text(card.vrn)
+                                .font(.title2.bold())
+                                .monospaced()
+                                .padding(.top, 16)
+                                .foregroundStyle(Color(red: 26 / 255, green: 32 / 255, blue: 44 / 255))
+                            Divider().padding(.vertical, 16)
+                            Text("VEHICLE BALANCE")
+                                .font(.system(size: 10, weight: .medium))
+                                .tracking(2.2)
+                                .foregroundStyle(Color(red: 156 / 255, green: 163 / 255, blue: 175 / 255))
+                            Text("₹\(card.balance)")
+                                .font(.system(size: 28, weight: .bold))
+                                .padding(.top, 8)
+                                .foregroundStyle(Color(red: 26 / 255, green: 32 / 255, blue: 44 / 255))
+                            if card.incentiveBalance > 0 {
+                                Text("Card ₹\(card.cardBalance) · Incentive ₹\(card.incentiveBalance)")
+                                    .font(.caption)
+                                    .foregroundStyle(Color(red: 107 / 255, green: 114 / 255, blue: 128 / 255))
+                                    .padding(.top, 8)
+                            }
+                        }
+                        .padding(20)
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255)))
+                        .padding(.horizontal, 8)
+                    }
+                    HStack(spacing: 8) {
+                        ForEach(Array(cards.enumerated()), id: \.offset) { i, _ in
+                            Capsule()
+                                .fill(i == idx ? scanGreen : Color.gray.opacity(0.35))
+                                .frame(width: i == idx ? 28 : 8, height: 8)
+                                .onTapGesture { activeCard = i }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    let scanBlocked = card.scanPayStatus == "out_window"
+                    Button {
+                        mainContent = 1
+                    } label: {
+                        Label("Scan & Pay", systemImage: "qrcode")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(scanGreen)
+                    .disabled(scanBlocked)
+                    recentSection(recent3, showViewAll: !noTx, scanGreen: scanGreen)
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    @ViewBuilder
+    private func recentSection(_ rows: [DemoTxn], showViewAll: Bool, scanGreen: Color) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Recent").font(.headline)
+                Spacer()
+                if showViewAll && !rows.isEmpty {
+                    Button("View all") { mainContent = 4 }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color(red: 46 / 255, green: 125 / 255, blue: 50 / 255))
+                }
+            }
+            .padding(.top, 8)
+            if rows.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.title)
+                        .foregroundStyle(.secondary)
+                    Text("No transactions yet").font(.subheadline.weight(.medium))
+                    Text("Fuel payments and wallet activity will show here once you use Scan & Pay.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(24)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                ForEach(rows) { t in
+                    let credit = txnIsCreditRow(t)
+                    let parts = recentTxnSubtitle(t)
+                    HStack(spacing: 12) {
+                        Text(credit ? "↑" : "↓")
+                            .font(.headline)
+                            .foregroundStyle(credit ? Color.green : Color.red)
+                            .frame(width: 40, height: 40)
+                            .background(credit ? Color.green.opacity(0.08) : Color.red.opacity(0.08))
+                            .clipShape(Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(t.station).font(.subheadline.weight(.semibold))
+                            Text("\(t.vrn) · \(parts.0)").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing) {
+                            Text("\(credit ? "+" : "-")₹\(t.amount)")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(credit ? Color.green : Color.primary)
+                            if !parts.1.isEmpty {
+                                Text(parts.1).font(.caption2).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(red: 243 / 255, green: 244 / 255, blue: 246 / 255)))
+                }
+            }
         }
     }
 
@@ -972,12 +1369,21 @@ struct FleetDriverNativeView: View {
                             Button("Simulate Scan") {
                                 if liveMode {
                                     parsedScanQr = DriverFleetQr.parseFleetpayPayUri(DriverFleetQr.simulatedUri)
-                                    if parsedScanQr == nil { apiBanner = "Invalid Fleetpay QR (demo)." }
+                                    if parsedScanQr == nil { apiBanner = ReactParityBanner.invalidFleetpayQr }
                                 }
                                 sessionIdle = false
                                 sessionPhase = "confirmation"
                             }
                             .buttonStyle(.borderedProminent)
+                            Button("Scan QR with camera") {
+                                guard selectedScan != nil || !avail.isEmpty else {
+                                    apiBanner = ReactParityBanner.selectVehicleFirst
+                                    return
+                                }
+                                apiBanner = nil
+                                showQrCameraScanner = true
+                            }
+                            .buttonStyle(.bordered)
                         }
                         .padding()
                     }
@@ -986,7 +1392,9 @@ struct FleetDriverNativeView: View {
                     HStack {
                         Text("Confirm fueling").font(.headline)
                         Spacer()
-                        Button("Close") { resetScanSession() }
+                        Button { resetScanSession() } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
                     }
                     Text(parsedScanQr?.merchantName ?? "MGL Hind CNG Filling Station").font(.subheadline.bold())
                     if let pq = parsedScanQr {
@@ -996,6 +1404,29 @@ struct FleetDriverNativeView: View {
                         Text("Vehicle \(b.vrn)")
                         Text("Balance ₹\(b.balance)")
                     }
+                    Button("Continue") {
+                        sessionPhase = "pin_confirm"
+                        sessionPin = ""
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color(red: 67 / 255, green: 160 / 255, blue: 71 / 255))
+
+                case "pin_confirm":
+                    HStack {
+                        Button {
+                            sessionPhase = "confirmation"
+                            sessionPin = ""
+                        } label: {
+                            Image(systemName: "chevron.left").foregroundStyle(Color.primary)
+                        }
+                        Spacer()
+                        Text("Verify PIN").font(.headline)
+                        Spacer()
+                        Button { resetScanSession() } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("Enter your PIN to confirm").font(.subheadline).foregroundStyle(.secondary)
                     SecureField(
                         "Enter PIN",
                         text: Binding(
@@ -1016,8 +1447,6 @@ struct FleetDriverNativeView: View {
                     }
                     .disabled(sessionPin.count != 6 || qrPayBusy)
                     .buttonStyle(.borderedProminent)
-
-                case "otp_entry":
                     Text("One-time password").font(.headline)
                     sessionOtpRow
                     Button("Verify & Authorize") {
@@ -1080,7 +1509,7 @@ struct FleetDriverNativeView: View {
     private func resetScanAfterComplete() {
         resetScanSession()
         selectedScan = nil
-        mainTab = 0
+        mainContent = 0
     }
 
     private func formatInrNumber(_ value: Double) -> String {
@@ -1124,7 +1553,7 @@ struct FleetDriverNativeView: View {
                 await MainActor.run {
                     onboardingAction = nil
                     switch r {
-                    case let .failure(e): apiBanner = e.localizedDescription
+                    case let .failure(e): apiBanner = ReactParityBanner.forOtpFailure(e)
                     case let .success(t):
                         inviteMobileVerificationToken = t
                         inviteOtpDigits = Array(repeating: "", count: 6)
@@ -1136,14 +1565,14 @@ struct FleetDriverNativeView: View {
             }
         } else {
             inviteOtpDigits = Array(repeating: "", count: 6)
-            onboardingStep = "1e"
+            onboardingStep = "1b"
             nuPinInvite = ""
         }
     }
 
     private func inviteSetPinConfirm() {
         if nuPinInviteConfirm != nuPinInvite {
-            pinInviteError = "PINs don't match, try again"
+            pinInviteError = "PINs don't match. Try again."
             nuPinInviteConfirm = ""
             return
         }
@@ -1153,7 +1582,7 @@ struct FleetDriverNativeView: View {
             return
         }
         guard let sess = inviteSessionToken, !sess.isEmpty else {
-            apiBanner = "Session missing — go back to invite step."
+            apiBanner = ReactParityBanner.sessionMissingInvite
             return
         }
         Task {
@@ -1162,7 +1591,8 @@ struct FleetDriverNativeView: View {
             await MainActor.run {
                 onboardingAction = nil
                 switch r {
-                case let .failure(e): apiBanner = e.localizedDescription
+                case let .failure(e):
+                    apiBanner = ReactParityBanner.forPinFailure(e)
                 case let .success(tok):
                     foScopedToken = tok
                     if let p = validatedInvite { fleetPinFoDisplay = p.foName.trimmingCharacters(in: .whitespaces) }
@@ -1185,9 +1615,9 @@ struct FleetDriverNativeView: View {
         let h = await hr
         let p = await pr
         let a = await ar
-        if case let .success(hv) = h { apiHome = hv } else if case let .failure(e) = h { apiBanner = e.localizedDescription }
+        if case let .success(hv) = h { apiHome = hv } else if case let .failure(e) = h { apiBanner = ReactParityBanner.forGenericFailure(e) }
         if case let .success(pv) = p { apiProfile = pv }
-        if case let .success(av) = a { apiAssignments = av } else if case let .failure(e) = a { apiBanner = e.localizedDescription }
+        if case let .success(av) = a { apiAssignments = av } else if case let .failure(e) = a { apiBanner = ReactParityBanner.forGenericFailure(e) }
     }
 
     @MainActor
@@ -1199,7 +1629,7 @@ struct FleetDriverNativeView: View {
         }
         let pg = await api.driverGetTransactions(t, vehicleId: vid, page: 0)
         switch pg {
-        case let .failure(e): apiBanner = e.localizedDescription
+        case let .failure(e): apiBanner = ReactParityBanner.forGenericFailure(e)
         case let .success(txPage):
             recentLiveTx = txPage.rows.map { mapTxnRow($0) }
         }
@@ -1226,7 +1656,8 @@ struct FleetDriverNativeView: View {
         let partial = await api.driverOauthOtpGrant(mobile: mobile, otp: otpStr)
         switch partial {
         case let .failure(e):
-            otpError = e.localizedDescription
+            apiBanner = ReactParityBanner.forOtpFailure(e)
+            otpError = ""
             otpDigits = Array(repeating: "", count: 6)
             onboardingAction = nil
             return
@@ -1235,13 +1666,14 @@ struct FleetDriverNativeView: View {
             let fos = await api.driverFoList(pTok)
             switch fos {
             case let .failure(e):
-                otpError = e.localizedDescription
+                apiBanner = ReactParityBanner.forOtpFailure(e)
+                otpError = ""
                 otpPhaseToken = nil
                 otpDigits = Array(repeating: "", count: 6)
             case let .success(list):
                 let active = list.filter { $0.foStatus == "ACTIVE" }
                 if active.isEmpty {
-                    apiBanner = "No active fleet — use your invite code."
+                    apiBanner = ReactParityBanner.noActiveFleet
                     otpPhaseToken = nil
                     otpDigits = Array(repeating: "", count: 6)
                 } else if active.count == 1 {
@@ -1283,7 +1715,7 @@ struct FleetDriverNativeView: View {
             )
         switch pay {
         case let .failure(e):
-            apiBanner = e.localizedDescription
+            apiBanner = ReactParityBanner.forPinFailure(e)
             sessionPin = ""
         case let .success(result):
             lastQrPay = result
@@ -1352,24 +1784,113 @@ struct FleetDriverNativeView: View {
     }
 
     private var profileTab: some View {
-        VStack(spacing: 16) {
-            Text(displayDriver.name).font(.title2).bold()
-            Text("DRV · \(displayDriver.id)").font(.caption).foregroundStyle(.secondary)
-            Button("Logout") {
-                onFinish(.success(event: "FLEET_FLOW_COMPLETED", payload: ["reason": "logout"]))
+        ScrollView {
+            VStack(spacing: 16) {
+                VStack(spacing: 8) {
+                    Text(displayDriver.initials)
+                        .font(.title2.bold())
+                        .frame(width: 64, height: 64)
+                        .background(Color.green.opacity(0.2))
+                        .clipShape(Circle())
+                        .foregroundStyle(Color.green)
+                    Text(displayDriver.name).font(.title3.bold())
+                    Text(profileSubtitle).font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Account")
+                        .font(.headline)
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.systemBackground))
+                    Divider()
+                    profileRow("Mobile", displayDriver.maskedMobile)
+                    Divider()
+                    profileRow("Registered", profileRegisteredLine())
+                    Divider()
+                    profileRow("Fleet Operator", fleetOperatorDisplay)
+                    Divider()
+                    profileRow("Driver ID", driverIdLine)
+                    Divider()
+                    profileRow("Licence Number", "—")
+                }
+                .background(Color(.systemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255)))
+                if !profileVehicleRows.isEmpty {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("My Vehicles")
+                            .font(.headline)
+                            .padding()
+                        Divider()
+                        ForEach(Array(profileVehicleRows.enumerated()), id: \.offset) { i, row in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(row.0).font(.subheadline.weight(.medium))
+                                HStack(spacing: 8) {
+                                    Text(row.1)
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(Color.green)
+                                        .padding(.horizontal, 8).padding(.vertical, 4)
+                                        .background(Color.green.opacity(0.12))
+                                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                                    Circle().fill(Color.green).frame(width: 8, height: 8)
+                                }
+                            }
+                            .padding()
+                            if i < profileVehicleRows.count - 1 { Divider() }
+                        }
+                    }
+                    .background(Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color(red: 229 / 255, green: 231 / 255, blue: 235 / 255)))
+                }
+                Button("Sign out") {
+                    onFinish(.success(event: "FLEET_FLOW_COMPLETED", payload: ["reason": "logout"]))
+                }
+                .buttonStyle(.bordered)
+                .tint(Color.red)
+                .padding(.top, 8)
             }
-            .buttonStyle(.bordered)
+            .padding(16)
         }
-        .padding()
     }
 
-    private func tabBtn(_ i: Int, _ label: String) -> some View {
-        Button(label) {
-            mainTab = i
+    private var profileVehicleRows: [(String, String)] {
+        if !apiAssignments.isEmpty {
+            return apiAssignments.map { ($0.vehicleRegNo, $0.status) }
         }
-        .font(.caption)
-        .frame(maxWidth: .infinity)
-        .foregroundStyle(mainTab == i ? Color.green : Color.gray)
+        return activeCards.map { ($0.vrn, "ACTIVE") }
+    }
+
+    private func profileRow(_ k: String, _ v: String) -> some View {
+        HStack {
+            Text(k).font(.subheadline).foregroundStyle(.secondary)
+            Spacer()
+            Text(v).font(.subheadline.weight(.medium)).multilineTextAlignment(.trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func iosTabItem(_ index: Int, _ systemImage: String, _ title: String) -> some View {
+        let tint = Color(red: 4 / 255, green: 120 / 255, blue: 87 / 255)
+        let inactive = Color.gray
+        let on = navHighlightIndex == index
+        return Button {
+            mainContent = index
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: systemImage)
+                Text(title)
+                    .font(.system(size: 10, weight: on ? .medium : .regular))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .foregroundStyle(on ? tint : inactive)
+        }
+        .buttonStyle(.plain)
     }
 
     private func sectionTitle(_ s: String) -> some View {

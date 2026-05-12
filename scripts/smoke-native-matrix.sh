@@ -21,6 +21,15 @@ echo "== React Native plugin build =="
 cd "$ROOT/plugins/react-native-fleet"
 npm run build
 
+echo "== Angular fleet SDK TypeScript compile =="
+cd "$ROOT/angular-sdk"
+if [[ -d node_modules ]]; then
+  npx tsc --noEmit -p tsconfig.json
+else
+  npm install --no-audit --no-fund >/dev/null
+  npx tsc --noEmit -p tsconfig.json
+fi
+
 if [[ "${SKIP_FLUTTER:-}" != "1" ]] && command -v flutter >/dev/null 2>&1; then
   echo "== Flutter plugin analyze =="
   cd "$ROOT/plugins/flutter-fleet/mgl_fleet_native_sdk"
