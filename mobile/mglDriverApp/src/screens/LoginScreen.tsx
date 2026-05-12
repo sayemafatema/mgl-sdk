@@ -26,8 +26,10 @@ import {
   type CheckMobileStatus,
   type FoListEntry,
 } from '../mgl/driver-api';
-import { setAccessToken, setApiBase } from '../storage/session';
+import { setAccessToken, setApiBase, setFoCompanyId } from '../storage/session';
 import type { RootStackParamList } from '../navigation/RootNavigator';
+import { DRIVER_APP_PIN_LENGTH, useDualPinEntry, validateCompleteSixDigit } from '../../../../components/mgl/driver-pin-flow';
+import { PinDots, PinNumpad } from '../components/PinEntryUi';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -41,14 +43,14 @@ export default function LoginScreen({ navigation }: Props) {
   const [newOtp, setNewOtp] = useState('');
   const [newMvt, setNewMvt] = useState<string | null>(null);
   const [inviteSessionToken, setInviteSessionToken] = useState<string | null>(null);
-  const [newPin, setNewPin] = useState('');
+  const inviteSignupPin = useDualPinEntry();
 
   const [retOtp, setRetOtp] = useState('');
   const [retToken1, setRetToken1] = useState<string | null>(null);
   const [foList, setFoList] = useState<FoListEntry[]>([]);
   const [selectedFoId, setSelectedFoId] = useState<number | null>(null);
-  const [retPin, setRetPin] = useState('');
-  const [resetNewPin, setResetNewPin] = useState('');
+  const fleetLoginPin = useDualPinEntry();
+  const forgotFleetPin = useDualPinEntry();
   const [retPinSubStep, setRetPinSubStep] = useState<'login' | 'forgot'>('login');
 
   const [loading, setLoading] = useState(false);
@@ -65,14 +67,15 @@ export default function LoginScreen({ navigation }: Props) {
     setNewMvt(null);
     setInviteCode('');
     setInviteSessionToken(null);
-    setNewPin('');
+    inviteSignupPin.resetFlow();
     setRetOtp('');
     setRetToken1(null);
     setFoList([]);
     setSelectedFoId(null);
-    setRetPin('');
-    setResetNewPin('');
+    fleetLoginPin.resetFlow();
+    forgotFleetPin.resetFlow();
     setRetPinSubStep('login');
+    void setFoCompanyId(null);
   }
 
   async function onCheckMobile() {
@@ -94,7 +97,6 @@ export default function LoginScreen({ navigation }: Props) {
     }
   }
 
-  /** Flow 1 — send-otp */
   async function onNewSendOtp() {
     const m = mobile.trim();
     setLoading(true);
@@ -140,6 +142,8 @@ export default function LoginScreen({ navigation }: Props) {
       const base = await resolvedBase();
       const v = await driverInviteValidate(base, m, inviteCode.trim(), newMvt);
       setInviteSessionToken(v.sessionToken);
+      inviteSignupPin.resetFlow();
+      await setFoCompanyId(v.foCompanyId);
       Alert.alert('Invite OK', `Welcome — set your PIN (${v.foName}).`);
     } catch (e) {
       Alert.alert('Invite invalid', e instanceof Error ? e.message : String(e));
@@ -148,12 +152,17 @@ export default function LoginScreen({ navigation }: Props) {
     }
   }
 
-  async function onInviteSetPin() {
-    const pin = newPin.trim();
-    if (!inviteSessionToken || pin.length < 4) {
-      Alert.alert('Invalid', 'Validate invite and enter PIN.');
+  async function onInviteSetPinComplete() {
+    if (!inviteSessionToken) {
+      Alert.alert('Invalid', 'Validate invite first.');
       return;
     }
+    if (inviteSignupPin.phase === 'first') {
+      inviteSignupPin.goToConfirmStep();
+      return;
+    }
+    const pin = inviteSignupPin.tryFinish();
+    if (!pin) return;
     setLoading(true);
     try {
       const base = await resolvedBase();
@@ -161,6 +170,7 @@ export default function LoginScreen({ navigation }: Props) {
       const access = oauthAccessToken(tr);
       if (!access) throw new Error('Missing access token');
       await setAccessToken(access);
+      inviteSignupPin.resetFlow();
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
     } catch (e) {
       Alert.alert('Set PIN failed', e instanceof Error ? e.message : String(e));
@@ -206,6 +216,8 @@ export default function LoginScreen({ navigation }: Props) {
         return;
       }
       setSelectedFoId(active.length === 1 ? active[0].foCompanyId : null);
+      fleetLoginPin.resetFlow();
+      forgotFleetPin.resetFlow();
       setRetPinSubStep('login');
     } catch (e) {
       Alert.alert('Login OTP failed', e instanceof Error ? e.message : String(e));
@@ -214,14 +226,14 @@ export default function LoginScreen({ navigation }: Props) {
     }
   }
 
-  async function onReturningFoLogin() {
+  async function onFleetLoginPrimaryPress() {
     if (!retToken1 || selectedFoId == null) {
       Alert.alert('Invalid', 'Complete OTP exchange and select fleet if needed.');
       return;
     }
-    const pin = retPin.trim();
-    if (pin.length < 4 || pin.length > 6) {
-      Alert.alert('Invalid', 'PIN must be 4–6 digits.');
+    const pin = fleetLoginPin.pinFirst;
+    if (validateCompleteSixDigit(pin) != null) {
+      Alert.alert('Invalid', 'Enter a 6-digit PIN.');
       return;
     }
     setLoading(true);
@@ -231,35 +243,40 @@ export default function LoginScreen({ navigation }: Props) {
       const access = oauthAccessToken(tr);
       if (!access) throw new Error('Missing access token');
       await setAccessToken(access);
+      await setFoCompanyId(selectedFoId);
+      fleetLoginPin.resetFlow();
       navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
     } catch (e) {
+      fleetLoginPin.resetFlow();
       Alert.alert('PIN login failed', e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
   }
 
-  async function onReturningPinResetAndLogin() {
+  async function onFleetForgotPinSubmit() {
     if (!retToken1 || selectedFoId == null) {
       Alert.alert('Invalid', 'Complete OTP exchange and select fleet if needed.');
       return;
     }
-    const pin = resetNewPin.trim();
-    if (pin.length < 4 || pin.length > 6) {
-      Alert.alert('Invalid', 'New PIN must be 4–6 digits.');
+    if (forgotFleetPin.phase === 'first') {
+      forgotFleetPin.goToConfirmStep();
       return;
     }
+    const pin = forgotFleetPin.tryFinish();
+    if (!pin) return;
     setLoading(true);
     try {
       const base = await resolvedBase();
       await driverPinReset(base, retToken1, selectedFoId, pin);
       await setAccessToken(null);
+      await setFoCompanyId(null);
       setRetToken1(null);
       setFoList([]);
       setSelectedFoId(null);
       setRetOtp('');
-      setRetPin('');
-      setResetNewPin('');
+      fleetLoginPin.resetFlow();
+      forgotFleetPin.resetFlow();
       setRetPinSubStep('login');
       Alert.alert(
         'PIN reset',
@@ -273,10 +290,29 @@ export default function LoginScreen({ navigation }: Props) {
   }
 
   async function onContinueWithoutLogin() {
-    const base = await resolvedBase();
+    await resolvedBase();
     await setAccessToken(null);
+    await setFoCompanyId(null);
     navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   }
+
+  const inviteSignupDisabledContinue =
+    !inviteSessionToken ||
+    loading ||
+    (inviteSignupPin.phase === 'first'
+      ? inviteSignupPin.pinFirst.length !== 6
+      : inviteSignupPin.pinSecond.length !== 6);
+
+  const fleetLoginDisabledContinue =
+    !retToken1 || loading || selectedFoId == null || fleetLoginPin.pinFirst.length !== DRIVER_APP_PIN_LENGTH;
+
+  const forgotPinDisabledContinue =
+    !retToken1 ||
+    loading ||
+    selectedFoId == null ||
+    (forgotFleetPin.phase === 'first'
+      ? forgotFleetPin.pinFirst.length !== 6
+      : forgotFleetPin.pinSecond.length !== 6);
 
   return (
     <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -333,18 +369,44 @@ export default function LoginScreen({ navigation }: Props) {
           <View style={styles.actions}>
             <Button title="3 · Validate invite" disabled={loading} onPress={() => void onInviteValidate()} />
           </View>
-          <Text style={styles.label}>Choose PIN</Text>
-          <TextInput
-            value={newPin}
-            onChangeText={setNewPin}
-            keyboardType="number-pad"
-            secureTextEntry
-            placeholder="4–6 digits"
-            style={styles.input}
-          />
-          <View style={styles.actions}>
-            <Button title="4 · Complete signup" disabled={loading} onPress={() => void onInviteSetPin()} />
-          </View>
+          {inviteSessionToken ? (
+            <>
+              <Text style={styles.section}>
+                {inviteSignupPin.phase === 'first' ? 'Enter New PIN' : 'Confirm New PIN'}
+              </Text>
+              <Text style={styles.hint}>6 digits, numeric keypad only.</Text>
+              <PinDots filled={inviteSignupPin.activeValue.length} />
+              <PinNumpad
+                disabled={loading}
+                onDigit={inviteSignupPin.appendDigit}
+                onBackspace={inviteSignupPin.backspace}
+              />
+              {inviteSignupPin.error ? <Text style={styles.pinErr}>{inviteSignupPin.error}</Text> : null}
+              {inviteSignupPin.phase === 'second' ? (
+                <TouchableOpacity
+                  style={styles.textBtn}
+                  accessibilityRole="button"
+                  disabled={loading}
+                  onPress={() => inviteSignupPin.goBackToFirst()}
+                >
+                  <Text style={styles.backToLoginText}>{'← Back'}</Text>
+                </TouchableOpacity>
+              ) : null}
+              <View style={styles.actions}>
+                <Button
+                  title={
+                    inviteSignupPin.phase === 'first'
+                      ? '4 · Confirm PIN'
+                      : loading
+                        ? '…'
+                        : '5 · Complete signup'
+                  }
+                  disabled={inviteSignupDisabledContinue}
+                  onPress={() => void onInviteSetPinComplete()}
+                />
+              </View>
+            </>
+          ) : null}
         </>
       )}
 
@@ -368,8 +430,9 @@ export default function LoginScreen({ navigation }: Props) {
                   style={[styles.foRow, selectedFoId === f.foCompanyId && styles.foRowSelected]}
                   onPress={() => {
                     setSelectedFoId(f.foCompanyId);
+                    fleetLoginPin.resetFlow();
+                    forgotFleetPin.resetFlow();
                     setRetPinSubStep('login');
-                    setResetNewPin('');
                   }}
                 >
                   <Text style={styles.foName}>{f.foName}</Text>
@@ -381,17 +444,24 @@ export default function LoginScreen({ navigation }: Props) {
           {retToken1 && foList.length > 0 ? (
             retPinSubStep === 'login' ? (
               <>
-                <Text style={styles.label}>PIN</Text>
-                <TextInput value={retPin} onChangeText={setRetPin} keyboardType="number-pad" secureTextEntry style={styles.input} />
+                <Text style={styles.section}>Enter Fleet PIN</Text>
+                <PinDots filled={fleetLoginPin.pinFirst.length} />
+                <PinNumpad disabled={loading} onDigit={fleetLoginPin.appendDigit} onBackspace={fleetLoginPin.backspace} />
+                {fleetLoginPin.error ? <Text style={styles.pinErr}>{fleetLoginPin.error}</Text> : null}
                 <View style={styles.actions}>
-                  <Button title="Login" disabled={loading} onPress={() => void onReturningFoLogin()} />
+                  <Button
+                    title={loading ? '…' : 'Unlock app'}
+                    disabled={fleetLoginDisabledContinue}
+                    onPress={() => void onFleetLoginPrimaryPress()}
+                  />
                 </View>
                 <TouchableOpacity
                   onPress={() => {
-                    setResetNewPin('');
+                    forgotFleetPin.resetFlow();
                     setRetPinSubStep('forgot');
                   }}
                   style={styles.forgotPinTouchable}
+                  accessibilityRole="button"
                 >
                   <Text style={styles.forgotPinLink}>Forgot PIN?</Text>
                 </TouchableOpacity>
@@ -400,25 +470,41 @@ export default function LoginScreen({ navigation }: Props) {
               <>
                 <TouchableOpacity
                   onPress={() => {
-                    setResetNewPin('');
+                    forgotFleetPin.resetFlow();
                     setRetPinSubStep('login');
                   }}
                   style={styles.backToLoginRow}
+                  accessibilityRole="button"
                 >
-                  <Text style={styles.backToLoginText}>← Back to PIN login</Text>
+                  <Text style={styles.backToLoginText}>{'← Back to PIN login'}</Text>
                 </TouchableOpacity>
                 <Text style={styles.section}>Forgot or locked PIN</Text>
-                <Text style={styles.label}>New PIN — you will verify OTP again after reset</Text>
-                <TextInput
-                  value={resetNewPin}
-                  onChangeText={setResetNewPin}
-                  keyboardType="number-pad"
-                  secureTextEntry
-                  placeholder="4–6 digits"
-                  style={styles.input}
-                />
+                <Text style={styles.label}>
+                  {forgotFleetPin.phase === 'first'
+                    ? 'Enter New PIN (6 digits). You will verify OTP again after reset.'
+                    : 'Confirm New PIN'}
+                </Text>
+                <PinDots filled={forgotFleetPin.activeValue.length} />
+                <PinNumpad disabled={loading} onDigit={forgotFleetPin.appendDigit} onBackspace={forgotFleetPin.backspace} />
+                {forgotFleetPin.error ? <Text style={styles.pinErr}>{forgotFleetPin.error}</Text> : null}
+                {forgotFleetPin.phase === 'second' ? (
+                  <TouchableOpacity
+                    style={styles.textBtn}
+                    accessibilityRole="button"
+                    disabled={loading}
+                    onPress={() => forgotFleetPin.goBackToFirst()}
+                  >
+                    <Text style={styles.backToLoginText}>{'← Back'}</Text>
+                  </TouchableOpacity>
+                ) : null}
                 <View style={styles.actions}>
-                  <Button title="Reset PIN" disabled={loading} onPress={() => void onReturningPinResetAndLogin()} />
+                  <Button
+                    title={
+                      forgotFleetPin.phase === 'first' ? 'Confirm PIN' : loading ? '…' : 'Reset PIN'
+                    }
+                    disabled={forgotPinDisabledContinue}
+                    onPress={() => void onFleetForgotPinSubmit()}
+                  />
                 </View>
               </>
             )
@@ -437,6 +523,9 @@ const styles = StyleSheet.create({
   scroll: { flexGrow: 1, padding: 16, gap: 8, paddingBottom: 32 },
   title: { fontSize: 22, fontWeight: '700', textAlign: 'center', marginBottom: 8 },
   section: { fontSize: 15, fontWeight: '700', marginTop: 8 },
+  hint: { fontSize: 13, color: '#616161', marginBottom: 2 },
+  pinErr: { fontSize: 13, fontWeight: '600', color: '#c62828', textAlign: 'center', marginTop: 6 },
+  textBtn: { marginTop: 4, paddingVertical: 6 },
   label: { fontSize: 13, fontWeight: '600' },
   input: {
     borderWidth: 1,

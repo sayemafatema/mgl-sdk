@@ -461,7 +461,7 @@ export async function driverFoSelect(
   return unwrapDriverBody(body) as TokenResponse;
 }
 
-/** Forgot / locked PIN: Bearer must be OTP grant token-1 (same as fo-list / fo-select). Then re-login with {@link driverFoSelect} using `newPin`. */
+/** Set new fleet PIN (`POST …/auth/pin/reset`). Bearer is often OTP-phase token during forgot-PIN; FO-scoped bearer + `foCompanyId` is used for signed-in “change PIN”. */
 export async function driverPinReset(
   baseUrl: string,
   bearerPartial: string,

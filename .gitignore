@@ -1,4 +1,5 @@
 # Node / JS
+*.tsbuildinfo
 node_modules/
 dist/
 pnpm-lock.yaml
