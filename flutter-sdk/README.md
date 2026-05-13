@@ -93,5 +93,5 @@ flutter run
 
 ## More detail
 
-- **[`docs/README.FLUTTER.md`](../docs/README.FLUTTER.md)** — E2E checklist, devices, publishing.
+- **[`docs/FLUTTER_SDK_INTEGRATION_GUIDE.md`](../docs/FLUTTER_SDK_INTEGRATION_GUIDE.md)** — E2E checklist, devices, publishing.
 - **[`flutter-integration/README.md`](../flutter-integration/README.md)** — REST-only / custom UI appendix.

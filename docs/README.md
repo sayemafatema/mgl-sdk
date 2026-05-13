@@ -45,13 +45,13 @@ Core emits string events suitable for logging or bridging:
 The core SDK uses **fetch** only — safe inside Capacitor’s Angular bundle.
 
 - **Angular:** **`initFleetNativeSdk`** + **`provideRouter`** → [README.ANGULAR-CAPACITOR.md](./README.ANGULAR-CAPACITOR.md)
-- **Flutter:** **`FleetNativeSdk`** → [README.FLUTTER.md](./README.FLUTTER.md)
+- **Flutter:** **`FleetNativeSdk`** → [FLUTTER_SDK_INTEGRATION_GUIDE.md](./FLUTTER_SDK_INTEGRATION_GUIDE.md)
 
 ## Integration guides
 
 - **[README.NATIVE-SDK.md](./README.NATIVE-SDK.md)** — native cores + bridges (**preferred**).
 - **[Angular + Capacitor](./README.ANGULAR-CAPACITOR.md)** — embedded Angular shell route pattern.
-- **[Flutter](./README.FLUTTER.md)** — pure-Dart SDK package pattern.
+- **[Flutter](./FLUTTER_SDK_INTEGRATION_GUIDE.md)** — pure-Dart SDK package pattern.
 
 ## Further reading
 

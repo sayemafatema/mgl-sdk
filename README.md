@@ -57,6 +57,6 @@ OpenAPI contract: [`docs/openapi/fleet-api.yaml`](docs/openapi/fleet-api.yaml).
 | Host | Legacy / transitional |
 |------|------------------------|
 | Angular + Capacitor | **`initFleetNativeSdk`** — [`docs/README.ANGULAR-CAPACITOR.md`](docs/README.ANGULAR-CAPACITOR.md) |
-| Flutter | **`FleetNativeSdk`** — [`docs/README.FLUTTER.md`](docs/README.FLUTTER.md), [`flutter-sdk/`](flutter-sdk/) |
+| Flutter | **`FleetNativeSdk`** — [`docs/FLUTTER_SDK_INTEGRATION_GUIDE.md`](docs/FLUTTER_SDK_INTEGRATION_GUIDE.md), [`flutter-sdk/`](flutter-sdk/) |
 
 Headless TS core: [`core-sdk/`](core-sdk/).

@@ -49,7 +49,7 @@ See **[README.ANGULAR-CAPACITOR.md](./README.ANGULAR-CAPACITOR.md)**.
 
 ## Flutter (legacy Dart UI)
 
-See **[README.FLUTTER.md](./README.FLUTTER.md)** — manual HTTP appendix: **[flutter-integration/README.md](../flutter-integration/README.md)**.
+See **[FLUTTER_SDK_INTEGRATION_GUIDE.md](./FLUTTER_SDK_INTEGRATION_GUIDE.md)** — manual HTTP appendix: **[flutter-integration/README.md](../flutter-integration/README.md)**.
 
 ---
 
