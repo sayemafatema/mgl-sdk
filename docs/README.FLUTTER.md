@@ -1,6 +1,7 @@
 # Flutter — MGL Fleet SDK integration
 
-This is the **single** integration guide for the **`mgl_fleet_sdk`** package ([`flutter-sdk/`](../flutter-sdk/)). Follow sections in order to complete integration in one pass.
+This is the **single** integration guide for the **`mgl_fleet_sdk`** package ([`flutter-sdk/`](../flutter-sdk/)). 
+Follow sections in order to complete integration in one pass.
 
 Flutter **does not embed the TypeScript SDK**. The bundled driver UI talks to the **driver-app REST API** (same contract as [`components/mgl/driver-api.ts`](../components/mgl/driver-api.ts) and native `DriverAppApiClient`). Broader fleet contracts are described in [`openapi/fleet-api.yaml`](openapi/fleet-api.yaml).
 
@@ -10,7 +11,7 @@ Flutter **does not embed the TypeScript SDK**. The bundled driver UI talks to th
 
 | Item | Value |
 |------|--------|
-| **GitHub** | [https://github.com/sayemafatema/mgl-sdk](https://github.com/sayemafatema/mgl-sdk) |
+| **GitHub** | [https://github.com/sayemafatema/mgl-sdk]|
 | **Integration branch** | `mgl-app-sdk` |
 | **Package directory** | [`flutter-sdk/`](../flutter-sdk/) |
 | **Dart package name** | `mgl_fleet_sdk` |
