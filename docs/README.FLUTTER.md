@@ -1,80 +1,123 @@
-# Integrating with a Flutter app
+# Flutter — MGL Fleet SDK integration
 
-Flutter **does not load the TypeScript SDK**. It connects through the **same REST API** as [`openapi/fleet-api.yaml`](openapi/fleet-api.yaml).
+This is the **single** integration guide for the **`mgl_fleet_sdk`** package ([`flutter-sdk/`](../flutter-sdk/)). Follow sections in order to complete integration in one pass.
 
----
-
-## Seamless integration (entire flow, one initialization)
-
-Use **`FleetNativeSdk.root(config)`** (`runApp`) or **`FleetNativeSdk.present(context, config)`** from your existing navigator. That **single** call mounts **`FleetFlowScreen`** via **`FleetSdkApp`**, driven end-to-end by **`FleetAppEngine`**:
-
-| What you do | What you skip |
-|-------------|----------------|
-| Pass **`FleetConfig`** (`apiBaseUrl`, `useMock`, optional `authToken`) once | Wiring login, OTP/PIN, invite signup, tabs, overlays, or scan confirmation screens individually |
-
-**`FleetSdkApp`** remains the underlying widget — **`FleetNativeSdk`** is the native-SDK façade for hosts that only want initialization-style calls.
-
-There are **no separate screen integrations** for the bundled UX path when using **`FleetNativeSdk`** — only **`FleetRepository`** HTTP when **`useMock: false`**.
+Flutter **does not embed the TypeScript SDK**. The bundled driver UI talks to the **driver-app REST API** (same contract as [`components/mgl/driver-api.ts`](../components/mgl/driver-api.ts) and native `DriverAppApiClient`). Broader fleet contracts are described in [`openapi/fleet-api.yaml`](openapi/fleet-api.yaml).
 
 ---
 
-## Prerequisites
+## 1. Source repository and branch
 
-- Flutter SDK (**3.x**) with **`dart`** / **`flutter`** on your **`PATH`**.
-- For **`useMock: false`**, a reachable **`apiBaseUrl`** and backend implementing [`openapi/fleet-api.yaml`](openapi/fleet-api.yaml).
+| Item | Value |
+|------|--------|
+| **GitHub** | [https://github.com/sayemafatema/mgl-sdk](https://github.com/sayemafatema/mgl-sdk) |
+| **Integration branch** | `mgl-app-sdk` |
+| **Package directory** | [`flutter-sdk/`](../flutter-sdk/) |
+| **Dart package name** | `mgl_fleet_sdk` |
 
----
-
-## Integrate this SDK (follow in order)
-
-| Step | What to do |
-|------|------------|
-| **1** | Add **`mgl_fleet_sdk`** as a **`path:`** dependency in your host app **`pubspec.yaml`**, pointing at **[`flutter-sdk/`](../flutter-sdk/)** (or a local copy). |
-| **2** | Run **`flutter pub get`** in the host app. |
-| **3** | Import **`package:mgl_fleet_sdk/mgl_fleet_sdk.dart`** and call **`FleetNativeSdk.root`** or **`FleetNativeSdk.present`**. |
-| **4** | Use **`FleetConfig(apiBaseUrl: '…', useMock: true)`** for offline demo; set **`useMock: false`** when your API exists. |
-| **5** | Run **`flutter analyze`** (recommended), then **`flutter run`** on simulator or device to verify the flow end-to-end. |
-
----
-
-## **`FleetNativeSdk`** — native entry
-
-This repo ships **`mgl_fleet_sdk`** — **`FleetNativeSdk`** is the **initialization-only** API; it wraps **`FleetSdkApp`** (same full flow: mobile login / invite signup → OTP / PIN → driver shell). Behaviour matches Angular **`FleetFlowHostComponent`**; Dart **`FleetAppEngine`** mirrors TS **`FleetAppEngine`**.
-
-### How it connects
-
-```mermaid
-flowchart LR
-  subgraph flutter [Flutter host]
-    App[FleetNativeSdk]
-    Repo[FleetRepository]
-    Engine[FleetAppEngine]
-    UI[FleetFlowScreen]
-    App --> Repo
-    App --> Engine
-    Engine --> UI
-    Repo -->|HTTP when useMock false| Backend[Your Fleet API]
-  end
+```bash
+git clone https://github.com/sayemafatema/mgl-sdk.git
+cd mgl-sdk
+git checkout mgl-app-sdk
 ```
 
-| Mode | Behaviour |
-|------|-----------|
-| `FleetConfig(useMock: true)` | In-memory demo drivers (same IDs as TS mocks). |
-| `useMock: false` | `GET/PATCH /fleet/drivers…` aligned with TS **`DriversApi`**. |
+---
 
-### Code — add dependency
+## 2. UAT backend (driver fleet API)
+
+| Environment | Base URL |
+|-------------|----------|
+| **UAT (driver app)** | `https://api-fleet-uat.enkash.in` |
+
+Pass this as **`FleetConfig.apiBaseUrl`**. Do **not** append paths; the SDK adds `/api/v0/driver-app/...`, `/oauth/token`, etc.
+
+If your organisation uses a different UAT host, substitute it here and in the examples below.
+
+---
+
+## 3. Prerequisites
+
+- Flutter **3.x** with **`flutter`** / **`dart`** on **`PATH`** (`flutter doctor`).
+- Dart **`>=3.0.0 <4.0.0`** (see [`flutter-sdk/pubspec.yaml`](../flutter-sdk/pubspec.yaml)).
+- For **`useMock: false`**: reachable **`apiBaseUrl`** implementing the driver-app contract above.
+
+---
+
+## 4. One-shot integration checklist
+
+Complete these in order:
+
+| Step | Action |
+|------|--------|
+| **1** | Add **`mgl_fleet_sdk`** to the host app **`pubspec.yaml`** using **Section 5** (path and/or git). |
+| **2** | Run **`flutter pub get`** in the host app. |
+| **3** | Import **`package:mgl_fleet_sdk/mgl_fleet_sdk.dart`** and call **`FleetNativeSdk.root`** or **`FleetNativeSdk.present`** (Section 6). |
+| **4** | Set **`FleetConfig`**: **`useMock: true`** for offline demo; **`useMock: false`** + UAT **`apiBaseUrl`** for live UAT. |
+| **5** | Configure **Section 8** (Android/iOS) before exercising **Scan** on a device. |
+| **6** | Run **`flutter analyze`**, then **`flutter run`** and verify **Section 10** (mock and/or UAT). |
+
+---
+
+## 5. Dependency (`pubspec.yaml`)
+
+### Option A — Path (local clone)
 
 ```yaml
 dependencies:
+  flutter:
+    sdk: flutter
   mgl_fleet_sdk:
-    path: ../path/to/mgl-sdk/flutter-sdk
+    path: ../mgl-sdk/flutter-sdk   # adjust to your clone location
 ```
 
-Then **`flutter pub get`**.
+### Option B — Git (teams / CI)
 
-### Code — launch (native SDK)
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  mgl_fleet_sdk:
+    git:
+      url: https://github.com/sayemafatema/mgl-sdk.git
+      ref: mgl-app-sdk
+      path: flutter-sdk
+```
 
-**Option A — entire window**
+References: [Git-hosted dependencies](https://dart.dev/tools/pub/dependencies#git-packages).
+
+Then:
+
+```bash
+flutter pub get
+```
+
+---
+
+## 6. Entry points and `FleetConfig`
+
+### Single call, full flow
+
+| What you do | What you skip |
+|-------------|----------------|
+| Pass **`FleetConfig`** once | Wiring login, OTP/PIN, invite, tabs, scan confirmation, etc. |
+
+Use **`FleetNativeSdk.root(config)`** with **`runApp`**, or **`FleetNativeSdk.present(context, config)`** from an existing **`Navigator`**. That mounts **`FleetFlowScreen`** via **`FleetSdkApp`**, driven by **`FleetAppEngine`**. **`FleetSdkApp`** is the underlying widget; **`FleetNativeSdk`** is the initialization-style façade.
+
+**`FleetNativeSdk.present`** pushes a route whose child includes an inner **`MaterialApp`** — valid, but watch **nested `Theme` / inherited widgets** if the host depends on the outer app.
+
+| Method | When |
+|--------|------|
+| **`FleetNativeSdk.root(config)`** | Fleet-only app or full-window experience. |
+| **`FleetNativeSdk.present(context, config)`** | Embed from existing navigation. |
+| **`FleetSdkApp(config: config)`** | Same as **`root`**; backward compatibility. |
+
+```dart
+import 'package:mgl_fleet_sdk/mgl_fleet_sdk.dart';
+```
+
+### Examples
+
+**UAT — full window**
 
 ```dart
 import 'package:flutter/material.dart';
@@ -84,107 +127,228 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     FleetNativeSdk.root(
-      FleetConfig(
-        apiBaseUrl: 'https://your-api.example',
-        useMock: true,
+      const FleetConfig(
+        apiBaseUrl: 'https://api-fleet-uat.enkash.in',
+        useMock: false,
       ),
     ),
   );
 }
 ```
 
-**Option B — push from existing `MaterialApp`**
+**UAT — push**
 
 ```dart
 await FleetNativeSdk.present(
   context,
-  FleetConfig(useMock: false, apiBaseUrl: baseUrl),
+  const FleetConfig(
+    apiBaseUrl: 'https://api-fleet-uat.enkash.in',
+    useMock: false,
+  ),
 );
 ```
 
-More examples: [`flutter-sdk/README.md`](../flutter-sdk/README.md).
+**Mock / no backend**
+
+```dart
+FleetNativeSdk.root(
+  const FleetConfig(
+    apiBaseUrl: 'https://api-fleet-uat.enkash.in', // ignored when useMock is true
+    useMock: true,
+  ),
+);
+```
+
+**Generic placeholder**
+
+```dart
+FleetNativeSdk.root(
+  FleetConfig(
+    apiBaseUrl: 'https://your-api.example',
+    useMock: true,
+  ),
+);
+```
+
+More samples: [`flutter-sdk/README.md`](../flutter-sdk/README.md).
+
+### `FleetConfig` fields
+
+| Field | Purpose |
+|-------|---------|
+| **`apiBaseUrl`** | Driver-app API host (UAT: **`https://api-fleet-uat.enkash.in`**). |
+| **`useMock`** | **`true`** — in-memory demo (same IDs as TS mocks). **`false`** — live driver-app HTTP via **`FleetAppEngine`** → **`DriverAppHttp`**. |
+| **`authToken`** | Applied to **`FleetRepository`** headers only. The bundled **`FleetFlowScreen`** does **not** use it (driver-app flow always starts at login unless **Skip to main (dev)**). Use if **your** code calls **`FleetScope.of(context).repository`**. |
 
 ---
 
-## Test end-to-end (mock mode)
+## 7. Architecture
 
-With **`useMock: true`**, **no backend** is required.
+**`FleetNativeSdk` / `FleetSdkApp`** wires **`FleetAppEngine`** + **`FleetFlowScreen`**. For **`useMock: false`**, the engine uses **`DriverAppHttp`** against **`apiBaseUrl`**.
 
-### Example app in **this** repo (Flutter SDK)
+**`FleetRepository`** (also constructed by **`FleetSdkApp`**) targets OpenAPI-style **`/fleet/drivers`** operations for **custom** UIs that opt into **`FleetScope`**; the **bundled** screens do **not** call it today.
+
+```mermaid
+flowchart LR
+  subgraph host [Flutter host]
+    App[FleetNativeSdk / FleetSdkApp]
+    Engine[FleetAppEngine]
+    UI[FleetFlowScreen]
+    Repo[FleetRepository]
+    App --> Engine
+    App --> Repo
+    Engine --> UI
+    Engine -->|useMock false| Http[DriverAppHttp]
+    Http --> DriverApi[Driver-app REST]
+    Repo -->|useMock false; custom UI| OpenAPI[fleet OpenAPI /drivers...]
+  end
+```
+
+Behaviour matches Angular **`FleetFlowHostComponent`**; **`FleetAppEngine`** mirrors TS **`FleetAppEngine`**.
+
+There are **no per-screen integrations** for the bundled UX beyond this single mount point.
+
+---
+
+## 8. Android vs iOS (host app)
+
+| Topic | Android | iOS |
+|-------|---------|-----|
+| **Networking** | **`INTERNET`** (typical default). Prefer HTTPS; cleartext only for controlled dev. | Prefer HTTPS; ATS works with UAT HTTPS without extra keys. |
+| **Camera (QR)** | **`mobile_scanner`** merges camera usage; test on hardware or emulator with camera. | **`NSCameraUsageDescription`** in host **`Info.plist`** is **required** (e.g. “Camera is used to scan Fleetpay QR codes”). |
+| **Deep links** | Custom schemes → **`AndroidManifest.xml`** intent filters. | Universal links → **URL types** / **Associated Domains**. |
+| **Run** | **`flutter run`** — Android device/emulator. | Simulator or device; meaningful QR tests need a **device**. |
+
+**Pure Flutter package:** no extra Gradle/CocoaPods entries beyond what Flutter resolves for **`http`** and **`mobile_scanner`**. For **native** fleet UI via the plugin, see [**`plugins/flutter-fleet/mgl_fleet_native_sdk`**](../plugins/flutter-fleet/mgl_fleet_native_sdk/) — that path is **not** this guide’s focus.
+
+### Platform networking notes
+
+| Topic | Guidance |
+|-------|-----------|
+| Android cleartext | Prefer HTTPS; enable cleartext only when needed for dev. |
+| iOS ATS | Prefer HTTPS. |
+| Emulator vs device | Use LAN IP or a deployed URL — **`localhost`** differs per emulator type. |
+
+---
+
+## 9. Bundled app capabilities
+
+| Area | Capability |
+|------|------------|
+| **Authentication** | Mobile check, login OTP, OAuth (`grant_type=otp`), FO list, FO PIN unlock |
+| **Onboarding** | Invite code, mobile OTP, invite validate, set fleet PIN |
+| **Shell** | **Card**, **Scan**, **Assignments**, **Profile**; **Transactions** from card flow when shown |
+| **Fleet** | Live home / assignments when **`useMock: false`**; pairing accept; mock demos when **`true`** |
+| **Scan & pay** | Simulate scan, **`mobile_scanner`** camera, Fleetpay URIs, live **`driverQrPay`** |
+| **Profile** | Summary; **Log out** |
+| **Dev** | **Skip to main (dev)** — gate or remove for production |
+
+---
+
+## 10. End-to-end verification
+
+### 10.1 In-repo example (mock)
+
+From the **`mgl-sdk`** repository root:
 
 ```bash
 cd flutter-sdk/example
 flutter pub get
-flutter run -d chrome   # or: flutter devices → flutter run -d <id>
+flutter run
+# optional: flutter run -d chrome — then pick a device with flutter devices if needed
 ```
 
-Same demo credentials as below (**OTP/PIN `123456`**).
+Example defaults: [`flutter-sdk/example/lib/main.dart`](../flutter-sdk/example/lib/main.dart) uses **`useMock: true`**.
 
-### Manual checklist
+### 10.2 Mock mode checklist (host or example)
 
-1. **`flutter pub get`** then **`flutter run`** from your host project.
-2. **Login:** any **10-digit** mobile → **Send OTP** → **`123456`** → PIN **`123456`**. You should see the shell tabs.
-3. **Skip shortcut:** **Skip to main (dev)** (QA only).
-4. **Invite (optional):** **New user? I have an invite code** → **`ABC123`** or **`XYZ789`** → mobile → OTP **`123456`** → set PIN twice → shell.
-5. Try **Demo: assignment push**, **Demo: pairing** (codes **`123456`**, **`789012`**).
-6. **Scan:** vehicle chip → **Simulate scan** → authorize **`123456`**.
-7. **Profile** → **Log out**.
+With **`useMock: true`**, **no backend** is required. Demo OTP and PIN **`123456`**; pairing demo codes **`123456`**, **`789012`**; invite codes **`ABC123`**, **`XYZ789`**.
 
-If something fails: **`flutter doctor`**, **`dart analyze`** on **`flutter-sdk/lib`**, and check **`path:`** in **`pubspec.yaml`**.
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | Launch | Login / invite visible |
+| 2 | Login: 10-digit mobile → **Send OTP** | OTP entry |
+| 3 | OTP **`123456`** | FO PIN or next step |
+| 4 | FO PIN **`123456`** if shown | Main tabs |
+| 5 | (Optional) Invite path → **`ABC123`** / **`XYZ789`** → OTP **`123456`** → set PIN | Shell |
+| 6 | Card / Assignments | Demo assignment / pairing |
+| 7 | Scan | **Simulate scan** / session PIN **`123456`** as UI allows |
+| 8 | Profile → **Log out** | Back toward login |
+| — | **Skip to main (dev)** | QA shortcut only |
 
----
+**Manual short list (same flow):** **`flutter pub get`** → **`flutter run`** → login path → invite optional → demo assignment/pairing → scan simulate → profile logout. On failure: **`flutter doctor`**, **`dart analyze`** / **`flutter analyze`** on **`flutter-sdk/lib`**, verify **`path:`** / **`git:`** in **`pubspec.yaml`**.
 
-## Do I need to push this code to GitHub?
+### 10.3 UAT live checklist
 
-**No.** A **`path:`** dependency works with a local **`mgl-sdk`** folder.
+| # | Action | Expected |
+|---|--------|----------|
+| 1 | **`FleetConfig(apiBaseUrl: 'https://api-fleet-uat.enkash.in', useMock: false)`** | Traffic to UAT |
+| 2 | Login with **real UAT** mobile | SMS / UAT OTP |
+| 3 | OTP + FO PIN per UAT data | Token; home / assignments |
+| 4 | Assignments / pairing | Per UAT fixtures |
+| 5 | Scan | Permissions OK; real QR per UAT |
+| 6 | Transactions | Data from **`driverGetTransactions`** when UI exposes it |
+| 7 | Log out | Session cleared in app |
 
-Push to **GitHub** (or similar) only when you want collaboration, backups, or CI—not because Flutter integration requires it.
-
----
-
-## Integrate on someone else's machine
-
-They need **`mgl_fleet_sdk`** on **their** disk (**or** a published Dart package). **`path:`** must point from **their host app’s `pubspec.yaml`** to **their** copy of **`flutter-sdk/`**.
-
-| How they get the code | Typical setup |
-|----------------------|----------------|
-| **`git clone`** | Clone **`mgl-sdk`** → set **`path: ../relative/path/to/mgl-sdk/flutter-sdk`** (or absolute path). Run **`flutter pub get`** in **their** host app. |
-| **Zip / shared drive** | Unzip **`mgl-sdk`** beside (or inside) their repo → adjust **`path:`** accordingly. |
-| **Published package** | If you publish **`mgl_fleet_sdk`** to a private Pub server or **[Git‑hosted dependency](https://dart.dev/tools/pub/dependencies#git-packages)** (`git:` URL), they depend by **version / git ref** instead of **`path:`**. |
-
-**Checklist for your teammate**
-
-1. Flutter **3.x**, **`flutter doctor`** clean enough to run **`flutter pub get`** / **`flutter run`**.
-2. **`pubspec.yaml`** **`path:`** (or **`git:`**) resolves on **their** machine after clone/unzip.
-3. Same **branch/tag** as you if you want identical demo behaviour.
+If requests fail: network, TLS, URL, credentials; compare with **`DriverAppHttp`** (Section 11) and reference client **`components/mgl/driver-api.ts`**.
 
 ---
 
-## Alternative — Hand-written Dart client only
+## 11. HTTP surface (live driver-app)
 
-If you **don’t** use **`FleetNativeSdk`** / **`FleetSdkApp`**, implement **`FleetRepository`-equivalent** calls yourself — same paths as OpenAPI / TS SDK. Examples (manual copy): [`flutter-integration/README.md`](../flutter-integration/README.md).
+Implemented in **`DriverAppHttp`** (**`FleetAppEngine`**, **`useMock: false`**):
 
----
+| Area | Dart methods | Typical paths (under **`apiBaseUrl`**) |
+|------|----------------|----------------------------------------|
+| Auth / OTP | `driverCheckMobile`, `driverSendLoginOtp`, `driverOauthOtpGrant` | `/api/v0/driver-app/auth/…`, `/oauth/token` |
+| FO | `driverFoList`, `driverFoSelect` | `/api/v0/driver-app/auth/fo-list`, `fo-select` |
+| Invite | `driverInviteMobileSendOtp`, `driverInviteMobileVerifyOtp`, `driverInviteValidate`, `driverInviteSetPin` | `/auth/mobile/…`, `/auth/invite/…` |
+| Shell | `driverGetHome`, `driverGetProfile`, `driverGetAssignments` | `/home`, `/profile`, assignments |
+| Ops | `driverAcceptPairing`, `driverQrPay`, `driverGetTransactions` | pairing, QR pay, transactions |
 
-## Platform networking
-
-| Topic | Guidance |
-|-------|-----------|
-| Android cleartext | Prefer HTTPS; enable cleartext only for controlled dev. |
-| iOS ATS | Prefer HTTPS. |
-| Emulator vs device | Use LAN IP or deployed URL — **`localhost`** differs per emulator. |
-
----
-
-## Stay aligned with Angular / TS
-
-1. Treat **`docs/openapi/fleet-api.yaml`** as the contract.
-2. When APIs change, bump spec + rebuild TS core + update **`FleetRepository`** (or regenerate Dart from OpenAPI).
+Exact paths and bodies align with **`components/mgl/driver-api.ts`** and native **`DriverAppApiClient`**.
 
 ---
 
-## Related files
+## 12. Distributing the package to your team
 
-- Package: [`flutter-sdk/`](../flutter-sdk/)
-- OpenAPI: [`openapi/fleet-api.yaml`](openapi/fleet-api.yaml)
-- TS reference: [`core-sdk/api/drivers-api.ts`](../core-sdk/api/drivers-api.ts)
+You **do not** need to push **`mgl-sdk`** to GitHub for a **`path:`** dependency — a local clone is enough. Push only for collaboration, backup, or CI.
+
+| How others get the code | Setup |
+|-------------------------|--------|
+| **`git clone`** | Point **`path:`** at **`…/mgl-sdk/flutter-sdk`** on their machine. |
+| **Zip / share** | Extract repo; fix **`path:`**. |
+| **Published / private pub** or **`git:`** | Depend by version or **`ref:`** (Section 5). |
+
+**Teammate checklist:** Flutter **3.x**; **`path:`** / **`git:`** resolves; **same branch/tag** (e.g. **`mgl-app-sdk`**) for identical behaviour.
+
+---
+
+## 13. Custom UI / hand-written client
+
+- If you **omit** **`FleetNativeSdk`** / **`FleetSdkApp`**, reimplement **`FleetRepository`**-style **`/fleet/drivers`** calls or driver-app calls yourself — same OpenAPI / TS contracts.
+- Appendix and patterns: [**`flutter-integration/README.md`**](../flutter-integration/README.md).
+
+---
+
+## 14. Stay aligned when APIs change
+
+1. Treat [**`openapi/fleet-api.yaml`**](openapi/fleet-api.yaml) and **`components/mgl/driver-api.ts`** as contract sources.
+2. On changes: bump spec, TS core, then **`DriverAppHttp`** / **`FleetRepository`** (or regenerate Dart from OpenAPI if you adopt codegen).
+
+---
+
+## 15. Reference paths in this repo
+
+| Resource | Path |
+|----------|------|
+| Package | [`flutter-sdk/`](../flutter-sdk/) |
+| Example host | [`flutter-sdk/example/`](../flutter-sdk/example/) |
+| OpenAPI | [`openapi/fleet-api.yaml`](openapi/fleet-api.yaml) |
+| TS drivers (legacy OpenAPI client) | [`core-sdk/api/drivers-api.ts`](../core-sdk/api/drivers-api.ts) |
+
+**Versioning:** Prefer branch **`mgl-app-sdk`** until you publish semver tags.
+
+---
+
+*Combined guide: UAT driver-app SDK, branch **`mgl-app-sdk`**. Replace the UAT URL in Section 2 if your environment differs.*
