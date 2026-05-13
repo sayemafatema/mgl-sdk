@@ -18,14 +18,64 @@ enum ReactParityBanner {
     private static let bannerMsgMax = 280
 
     private static func errTxt(_ e: Error) -> String {
-        let m = (e as LocalizedError).errorDescription ?? (e as NSError).localizedDescription
-        let t = m.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? String(describing: type(of: e)) : t
+        var collected: [String] = []
+        var current: Error? = e
+        var depth = 0
+        while let err = current, depth < 8 {
+            depth += 1
+            let localized = (err as? LocalizedError)?.errorDescription?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let fromNs = (err as NSError).localizedDescription
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let piece: String
+            if let l = localized, !l.isEmpty {
+                piece = l
+            } else if !fromNs.isEmpty {
+                piece = fromNs
+            } else {
+                piece = ""
+            }
+            if !piece.isEmpty {
+                collected.append(piece)
+            }
+            current = (err as NSError).userInfo[NSUnderlyingErrorKey] as? Error
+        }
+        if let last = collected.last { return last }
+        return String(describing: type(of: e))
     }
 
     private static func isLikelyNetworkFailure(_ msg: String) -> Bool {
         let l = msg.lowercased()
         return l.range(of: "network|fetch|failed to fetch|timeout|502|503|504|econn|aborted", options: .regularExpression) != nil
+    }
+
+    private static let otpVerifyBannerFallback = "Could not verify OTP. Check your connection and try again."
+    private static let pinVerifyBannerFallback = "Could not verify PIN. Check your connection and try again."
+
+    private static let otpAuthNoisePattern =
+        "unauthori[sz]ed|invalid[_\\s-]?grant|invalid[_\\s-]?token|\\b401\\b|bad\\s*credentials|access\\s*denied|^oauth\\s+failed|^http\\s*401|authentication\\s*failed|full\\s*authentication"
+
+    private static let pinAuthNoisePattern =
+        "unauthori[sz]ed|invalid[_\\s-]?grant|\\b401\\b|bad\\s*credentials|access\\s*denied|^oauth\\s+failed|^http\\s*401|wrong\\s*pin|incorrect\\s*pin|invalid\\s*pin|authentication\\s*failed"
+
+    private static func humanizeOtpVerifyBanner(_ base: String, transportFallback: String) -> String {
+        if base == transportFallback { return base }
+        let t = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty || t == "Request failed." { return "Incorrect OTP. Try again." }
+        if t.range(of: otpAuthNoisePattern, options: [.regularExpression, .caseInsensitive]) != nil {
+            return "Incorrect OTP. Try again."
+        }
+        return base
+    }
+
+    private static func humanizePinVerifyBanner(_ base: String, transportFallback: String) -> String {
+        if base == transportFallback { return base }
+        let t = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty || t == "Request failed." { return "Incorrect PIN. Try again." }
+        if t.range(of: pinAuthNoisePattern, options: [.regularExpression, .caseInsensitive]) != nil {
+            return "Incorrect PIN. Try again."
+        }
+        return base
     }
 
     static func fromThrown(_ e: Error?, transportFallback: String) -> String {
@@ -40,11 +90,17 @@ enum ReactParityBanner {
     }
 
     static func forOtpFailure(_ e: Error?) -> String {
-        fromThrown(e, transportFallback: "Could not verify OTP. Check your connection and try again.")
+        humanizeOtpVerifyBanner(
+            fromThrown(e, transportFallback: otpVerifyBannerFallback),
+            transportFallback: otpVerifyBannerFallback,
+        )
     }
 
     static func forPinFailure(_ e: Error?) -> String {
-        fromThrown(e, transportFallback: "Could not verify PIN. Check your connection and try again.")
+        humanizePinVerifyBanner(
+            fromThrown(e, transportFallback: pinVerifyBannerFallback),
+            transportFallback: pinVerifyBannerFallback,
+        )
     }
 
     static func forGenericFailure(_ e: Error?) -> String {

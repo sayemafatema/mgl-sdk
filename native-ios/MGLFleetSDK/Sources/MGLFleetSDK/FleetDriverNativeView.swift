@@ -57,6 +57,10 @@ struct FleetDriverNativeView: View {
     @State private var apiAssignments: [DriverAssignmentParsed] = []
     @State private var apiProfile: DriverProfileParsed?
     @State private var recentLiveTx: [DemoTxn] = []
+    @FocusState private var focusedOtpDigitIndex: Int?
+    @FocusState private var sessionOtpDigitIndex: Int?
+    @FocusState private var foPinFieldFocused: Bool
+    @FocusState private var scanSessionPinFocused: Bool
 
     init(onFinish: @escaping (FleetSdkResult) -> Void, options: FleetSdkOptions) {
         self.onFinish = onFinish
@@ -222,28 +226,12 @@ struct FleetDriverNativeView: View {
             guard tab == 1 else { return }
             if selectedScan == nil, let first = scanEligible.first { selectedScan = first }
         }
-        .onChange(of: apiBanner) { newVal in
-            guard newVal != nil else { return }
-            Task {
-                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                await MainActor.run { apiBanner = nil }
-            }
-        }
     }
 
     private var onboarding: some View {
         ZStack(alignment: .bottomTrailing) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    if let b = apiBanner {
-                        Text(b)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                            .padding(8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.red.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
                     stepContent
                 }
                 .padding()
@@ -262,6 +250,13 @@ struct FleetDriverNativeView: View {
             }
             .padding()
         }
+        .overlay(alignment: .bottom) {
+            if let b = apiBanner {
+                FleetApiErrorBanner(message: b, onDismiss: { apiBanner = nil })
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 52)
+            }
+        }
     }
 
     @ViewBuilder
@@ -270,7 +265,7 @@ struct FleetDriverNativeView: View {
         case "login":
             loginStep
         case "login_otp":
-            otpStep(digits: $otpDigits, error: otpError, back: "login") {
+            otpStep(digits: $otpDigits, focusedField: $focusedOtpDigitIndex, error: otpError, back: "login") {
                 if liveMode {
                     Task { await verifyLoginOtpLive() }
                 } else {
@@ -280,6 +275,8 @@ struct FleetDriverNativeView: View {
                         onboardingStep = isRegistered ? "complete" : "set_pin"
                     } else {
                         otpError = "Incorrect OTP."
+                        otpDigits = Array(repeating: "", count: 6)
+                        focusedOtpDigitIndex = 0
                     }
                 }
             }
@@ -504,6 +501,7 @@ struct FleetDriverNativeView: View {
 
     private func otpStep(
         digits: Binding<[String]>,
+        focusedField: FocusState<Int?>.Binding,
         error: String,
         back: String,
         onVerify: @escaping () -> Void,
@@ -531,6 +529,7 @@ struct FleetDriverNativeView: View {
                     .multilineTextAlignment(.center)
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
+                    .focused(focusedField, equals: i)
                 }
             }
             if !error.isEmpty { Text(error).foregroundStyle(.red).font(.caption) }
@@ -629,6 +628,7 @@ struct FleetDriverNativeView: View {
             )
             .keyboardType(.numberPad)
             .textFieldStyle(.roundedBorder)
+            .focused($foPinFieldFocused)
             Button(onboardingAction == "fo_unlock" ? "Unlocking…" : "Unlock app") {
                 guard let sel = selectedFoCompanyId, let phase = otpPhaseToken, foPinEntry.count == 6 else { return }
                 Task {
@@ -637,7 +637,9 @@ struct FleetDriverNativeView: View {
                     let tok = await api.driverFoSelect(bearerPartial: phase, foCompanyId: sel, pin: foPinEntry)
                     switch tok {
                     case let .failure(e):
-                        apiBanner = ReactParityBanner.forGenericFailure(e)
+                        apiBanner = ReactParityBanner.forPinFailure(e)
+                        foPinEntry = ""
+                        foPinFieldFocused = true
                     case let .success(fleetTok):
                         foScopedToken = fleetTok
                         otpPhaseToken = nil
@@ -671,6 +673,7 @@ struct FleetDriverNativeView: View {
                 apiBanner = nil
                 guard liveMode else {
                     inviteOtpDigits = Array(repeating: "", count: 6)
+                    focusedOtpDigitIndex = 0
                     otpCountdown = 30
                     onboardingStep = "1d"
                     return
@@ -695,6 +698,7 @@ struct FleetDriverNativeView: View {
                         case let .success(ref):
                             inviteOtpRef = ref
                             inviteOtpDigits = Array(repeating: "", count: 6)
+                            focusedOtpDigitIndex = 0
                             otpCountdown = 60
                             onboardingStep = "1d"
                         }
@@ -708,7 +712,7 @@ struct FleetDriverNativeView: View {
     }
 
     private var inviteOtpLiveStep: some View {
-        otpStep(digits: $inviteOtpDigits, error: "", back: "1c") {
+        otpStep(digits: $inviteOtpDigits, focusedField: $focusedOtpDigitIndex, error: "", back: "1c") {
             inviteVerifyOtpTapped()
         }
     }
@@ -768,15 +772,6 @@ struct FleetDriverNativeView: View {
         ZStack {
             VStack(spacing: 0) {
                 header
-                if let b = apiBanner {
-                    Text(b)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.red.opacity(0.08))
-                }
                 Group {
                     switch mainContent {
                     case 0: cardTab
@@ -804,6 +799,16 @@ struct FleetDriverNativeView: View {
             }
 
             overlayContent
+
+            if let b = apiBanner {
+                VStack {
+                    Spacer()
+                    FleetApiErrorBanner(message: b, onDismiss: { apiBanner = nil })
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 96)
+                }
+                .zIndex(300)
+            }
         }
         .sheet(isPresented: $showQrCameraScanner) {
             FleetPayQrCameraSheet { raw in
@@ -1338,8 +1343,44 @@ struct FleetDriverNativeView: View {
                 switch sessionPhase {
                 case "idle":
                     if avail.isEmpty {
-                        Text("Scan & Pay unavailable").font(.headline)
-                        Text("No vehicles available right now.").font(.caption).foregroundStyle(.secondary)
+                        let locked =
+                            bindingsEffective.filter {
+                                ["locked_unpaired", "locked_repair", "out_window"].contains($0.scanPayStatus)
+                            }
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("Scan & Pay unavailable").font(.headline)
+                            Text("No vehicles available for scanning right now")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            if !locked.isEmpty {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    ForEach(locked, id: \.id) { b in
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(b.vrn).font(.subheadline.weight(.medium))
+                                            Text(
+                                                b.scanPayStatus == "locked_unpaired"
+                                                    ? "Pair to unlock"
+                                                    : b.scanPayStatus == "locked_repair"
+                                                        ? "Re-pair required"
+                                                        : b.scanPayStatus == "out_window"
+                                                            ? "Outside shift/trip window"
+                                                            : b.scanPayStatus.replacingOccurrences(of: "_", with: " "),
+                                            )
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                                .padding(16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Color(red: 249 / 255, green: 250 / 255, blue: 251 / 255))
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                            }
+                            Button("Go to My Vehicles") { mainContent = 2 }
+                                .buttonStyle(.borderedProminent)
+                                .tint(Color(red: 67 / 255, green: 160 / 255, blue: 71 / 255))
+                        }
+                        .padding()
                     } else if let sel = selectedScan ?? avail.first {
                         VStack(alignment: .leading, spacing: 12) {
                             if avail.count > 1 {
@@ -1436,6 +1477,7 @@ struct FleetDriverNativeView: View {
                     )
                     .keyboardType(.numberPad)
                     .textFieldStyle(.roundedBorder)
+                    .focused($scanSessionPinFocused)
                     Button(qrPayBusy ? "Processing…" : "Verify PIN") {
                         if liveMode { Task { await verifyScanPinLive() } }
                         else if sessionPin == displayDriver.pin {
@@ -1443,6 +1485,7 @@ struct FleetDriverNativeView: View {
                             sessionPhase = "otp_entry"
                         } else {
                             sessionPin = ""
+                            scanSessionPinFocused = true
                         }
                     }
                     .disabled(sessionPin.count != 6 || qrPayBusy)
@@ -1492,6 +1535,7 @@ struct FleetDriverNativeView: View {
                 .multilineTextAlignment(.center)
                 .keyboardType(.numberPad)
                 .textFieldStyle(.roundedBorder)
+                .focused($sessionOtpDigitIndex, equals: i)
             }
         }
     }
@@ -1504,6 +1548,7 @@ struct FleetDriverNativeView: View {
         parsedScanQr = nil
         lastQrPay = nil
         apiBanner = nil
+        sessionOtpDigitIndex = 0
     }
 
     private func resetScanAfterComplete() {
@@ -1553,7 +1598,10 @@ struct FleetDriverNativeView: View {
                 await MainActor.run {
                     onboardingAction = nil
                     switch r {
-                    case let .failure(e): apiBanner = ReactParityBanner.forOtpFailure(e)
+                    case let .failure(e):
+                        apiBanner = ReactParityBanner.forOtpFailure(e)
+                        inviteOtpDigits = Array(repeating: "", count: 6)
+                        focusedOtpDigitIndex = 0
                     case let .success(t):
                         inviteMobileVerificationToken = t
                         inviteOtpDigits = Array(repeating: "", count: 6)
@@ -1593,6 +1641,7 @@ struct FleetDriverNativeView: View {
                 switch r {
                 case let .failure(e):
                     apiBanner = ReactParityBanner.forPinFailure(e)
+                    nuPinInviteConfirm = ""
                 case let .success(tok):
                     foScopedToken = tok
                     if let p = validatedInvite { fleetPinFoDisplay = p.foName.trimmingCharacters(in: .whitespaces) }
@@ -1659,6 +1708,7 @@ struct FleetDriverNativeView: View {
             apiBanner = ReactParityBanner.forOtpFailure(e)
             otpError = ""
             otpDigits = Array(repeating: "", count: 6)
+            focusedOtpDigitIndex = 0
             onboardingAction = nil
             return
         case let .success(pTok):
@@ -1670,12 +1720,14 @@ struct FleetDriverNativeView: View {
                 otpError = ""
                 otpPhaseToken = nil
                 otpDigits = Array(repeating: "", count: 6)
+                focusedOtpDigitIndex = 0
             case let .success(list):
                 let active = list.filter { $0.foStatus == "ACTIVE" }
                 if active.isEmpty {
                     apiBanner = ReactParityBanner.noActiveFleet
                     otpPhaseToken = nil
                     otpDigits = Array(repeating: "", count: 6)
+                    focusedOtpDigitIndex = 0
                 } else if active.count == 1 {
                     selectedFoCompanyId = active[0].foCompanyId
                     fleetPinFoDisplay = active[0].foName
@@ -1717,6 +1769,7 @@ struct FleetDriverNativeView: View {
         case let .failure(e):
             apiBanner = ReactParityBanner.forPinFailure(e)
             sessionPin = ""
+            scanSessionPinFocused = true
         case let .success(result):
             lastQrPay = result
             sessionPin = ""
@@ -1898,6 +1951,46 @@ struct FleetDriverNativeView: View {
             .font(.caption.bold())
             .foregroundStyle(.secondary)
             .padding(.top, 8)
+    }
+}
+
+/// Matches `app/page.tsx` fixed API error banner (amber alert, icon, scroll, Dismiss).
+private struct FleetApiErrorBanner: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    private static let amber50 = Color(red: 1, green: 0.984, blue: 0.922)
+    private static let amber200 = Color(red: 0.992, green: 0.902, blue: 0.541)
+    private static let amber700 = Color(red: 0.706, green: 0.325, blue: 0.024)
+    private static let amber900 = Color(red: 0.471, green: 0.231, blue: 0.059)
+    private static let amber950 = Color(red: 0.271, green: 0.102, blue: 0.012)
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 16))
+                .foregroundStyle(Self.amber700)
+            ScrollView {
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Self.amber950)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 220)
+            Button("Dismiss", action: onDismiss)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Self.amber900)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Self.amber50)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Self.amber200, lineWidth: 1),
+        )
+        .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
     }
 }
 

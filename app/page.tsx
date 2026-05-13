@@ -1596,17 +1596,6 @@ export default function Page() {
           </div>
         )}
 
-        {/* Session In Progress Banner */}
-        {/* {sessionState !== 'idle' && (
-          <div className="bg-blue-100 border-b border-blue-300 px-4 py-2 flex items-center gap-2 text-xs">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"/>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"/>
-            </span>
-            <span className="text-blue-900 font-medium">Fueling in progress · MH 02 AB 1234</span>
-          </div>
-        )} */}
-
         {/* Content Area */}
         <div className="flex-1 min-h-0 overflow-hidden flex flex-col bg-white">
           {/* Assignment Notification Screen */}

@@ -2,11 +2,14 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'fleet_live_models.dart';
+
 /// Driver-app HTTP aligned with [components/mgl/driver-api.ts] / Kotlin [DriverAppApiClient].
 class DriverAppHttp {
   DriverAppHttp({required this.apiBaseUrl});
 
   final String apiBaseUrl;
+  static const _userAgent = 'mgl-fleet-flutter-sdk/1.0';
 
   String get _base => apiBaseUrl.replaceAll(RegExp(r'/+$'), '');
 
@@ -55,6 +58,7 @@ class DriverAppHttp {
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': _userAgent,
       },
       body: enc,
     );
@@ -176,10 +180,157 @@ class DriverAppHttp {
     return tok;
   }
 
+  Future<DriverHomeJson?> driverGetHome(String token) async {
+    final uri = Uri.parse('$_base/api/v0/driver-app/home');
+    final res = await http.get(uri, headers: _jsonHeaders(bearer: token));
+    final body = _parseBody(res);
+    if (!res.ok) throw Exception(_errMsg(body) ?? 'HTTP ${res.statusCode}');
+    final peeled = peelFleetEnvelope(body);
+    final inner = unwrapDriverBody(peeled);
+    final map = inner is Map<String, dynamic> ? inner : null;
+    return DriverHomeJson.fromJson(map);
+  }
+
+  Future<DriverProfileJson> driverGetProfile(String token) async {
+    final uri = Uri.parse('$_base/api/v0/driver-app/profile');
+    final res = await http.get(uri, headers: _jsonHeaders(bearer: token));
+    final body = _parseBody(res);
+    if (!res.ok) throw Exception(_errMsg(body) ?? 'HTTP ${res.statusCode}');
+    final peeled = peelFleetEnvelope(body);
+    final o = unwrapDriverBody(peeled) as Map<String, dynamic>?;
+    return DriverProfileJson.fromJson(o ?? {});
+  }
+
+  Future<List<DriverAssignmentJson>> driverGetAssignments(String token) async {
+    final uri = Uri.parse('$_base/api/v0/driver-app/assignments');
+    final res = await http.get(uri, headers: _jsonHeaders(bearer: token));
+    final body = _parseBody(res);
+    if (!res.ok) throw Exception(_errMsg(body) ?? 'HTTP ${res.statusCode}');
+    final peeled = peelFleetEnvelope(body);
+    final inner = unwrapDriverBody(peeled);
+    if (inner is! List) return [];
+    return inner
+        .map((e) => DriverAssignmentJson.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<({String vehicleRegNo, String status})> driverAcceptPairing(
+    String token,
+    String pairingCode,
+  ) async {
+    final uri = Uri.parse('$_base/api/v0/driver-app/vehicle/accept-pairing');
+    final res = await http.post(
+      uri,
+      headers: _jsonHeaders(bearer: token),
+      body: json.encode({'pairingCode': pairingCode}),
+    );
+    final body = _parseBody(res);
+    if (!res.ok) throw Exception(_errMsg(body) ?? 'HTTP ${res.statusCode}');
+    final peeled = peelFleetEnvelope(body);
+    final o = unwrapDriverBody(peeled) as Map<String, dynamic>?;
+    final vrn = o?['vehicleRegNo']?.toString() ?? '';
+    final st = o?['status']?.toString() ?? '';
+    return (vehicleRegNo: vrn, status: st);
+  }
+
+  Future<QrPayResultLive> driverQrPay({
+    required String token,
+    required String txnId,
+    required String vehicleRegNoNorm,
+    required String pin,
+    required String mid,
+    required String terminalId,
+    required int amountPaise,
+    required int expiryEpoch,
+    required String sign,
+  }) async {
+    final uri = Uri.parse('$_base/api/v0/driver-app/qr/pay');
+    final res = await http.post(
+      uri,
+      headers: _jsonHeaders(bearer: token),
+      body: json.encode({
+        'txnId': txnId,
+        'vehicleRegNo': vehicleRegNoNorm,
+        'pin': pin,
+        'mid': mid,
+        'terminalId': terminalId,
+        'amountPaise': amountPaise,
+        'expiryEpoch': expiryEpoch,
+        'sign': sign,
+      }),
+    );
+    final body = _parseBody(res);
+    if (!res.ok) throw Exception(_errMsg(body) ?? 'HTTP ${res.statusCode}');
+    final peeled = peelFleetEnvelope(body);
+    final o = unwrapDriverBody(peeled) as Map<String, dynamic>?;
+    if (o == null) throw Exception('Empty qr/pay response');
+    final stRaw = o['status']?.toString() ?? '';
+    final st = stRaw.isEmpty ? '' : stRaw.toUpperCase();
+    double? d(dynamic v) =>
+        v == null ? null : (v is num ? v.toDouble() : double.tryParse('$v'));
+    return QrPayResultLive(
+      serverTxnId: o['serverTxnId']?.toString(),
+      vehicleRegNo: o['vehicleRegNo']?.toString(),
+      amountINR: d(o['amountINR']),
+      newBalanceINR: d(o['newBalanceINR']),
+      authCode: o['authCode']?.toString(),
+      txnTime: o['txnTime']?.toString(),
+      status: st == 'FAILED' ? 'FAILED' : 'SUCCESS',
+      quantityKg: d(o['quantityKg']),
+    );
+  }
+
+  Future<TxnsPageParsed> driverGetTransactions(
+    String token,
+    String vehicleId,
+    int page,
+  ) async {
+    final vid = Uri.encodeComponent(vehicleId);
+    final q = page > 0 ? '?page=$page' : '';
+    final uri = Uri.parse(
+        '$_base/api/v0/driver-app/vehicles/$vid/transactions$q');
+    final res = await http.get(uri, headers: _jsonHeaders(bearer: token));
+    final body = _parseBody(res);
+    if (!res.ok) throw Exception(_errMsg(body) ?? 'HTTP ${res.statusCode}');
+    final peeled = peelFleetEnvelope(body);
+    final inner = unwrapDriverBody(peeled);
+    return _normalizeDriverTransactionsPayload(inner);
+  }
+
+  TxnsPageParsed _normalizeDriverTransactionsPayload(dynamic data) {
+    if (data is List) {
+      final rows = _txnRowsFromList(data);
+      return TxnsPageParsed(rows: rows);
+    }
+    if (data is Map) {
+      final m = Map<String, dynamic>.from(data as Map);
+      final content = m['content'];
+      final list = content is List ? content : <dynamic>[];
+      final rows = _txnRowsFromList(list);
+      return TxnsPageParsed(rows: rows);
+    }
+    return const TxnsPageParsed(rows: []);
+  }
+
+  List<DriverTxnRowParse> _txnRowsFromList(List<dynamic> arr) {
+    return arr.map((e) {
+      final o = Map<String, dynamic>.from(e as Map);
+      return DriverTxnRowParse(
+        serverTxnId: o['serverTxnId']?.toString() ?? '',
+        vehicleRegNo: o['vehicleRegNo']?.toString() ?? '',
+        amountINR: (o['amountINR'] as num?)?.toDouble() ?? 0,
+        status: o['status']?.toString() ?? '',
+        driverName: o['driverName']?.toString() ?? '',
+        createdOn: o['createdOn']?.toString() ?? '',
+      );
+    }).toList();
+  }
+
   Map<String, String> _jsonHeaders({String? bearer, bool nullAuth = false}) {
     return {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
+      'User-Agent': _userAgent,
       if (bearer != null && bearer.isNotEmpty) 'Authorization': 'Bearer $bearer',
     };
   }

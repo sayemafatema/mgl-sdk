@@ -22,12 +22,55 @@ object ReactParityBanner {
 
     private const val BANNER_MSG_MAX = 280
 
-    private fun errTxt(t: Throwable): String =
-        t.message?.trim().orEmpty().ifEmpty { t.javaClass.simpleName }
+    private fun errTxt(t: Throwable): String {
+        val chain = generateSequence(t) { it.cause }.toList().asReversed()
+        for (ex in chain) {
+            val m = ex.message?.trim().orEmpty()
+            if (m.isNotEmpty()) return m
+        }
+        return t.javaClass.simpleName
+    }
 
     private fun isLikelyNetworkFailure(msg: String): Boolean =
         Regex("network|fetch|failed to fetch|timeout|502|503|504|econn|aborted", RegexOption.IGNORE_CASE)
             .containsMatchIn(msg)
+
+    private val otpVerifyBannerFallback = "Could not verify OTP. Check your connection and try again."
+    private val pinVerifyBannerFallback = "Could not verify PIN. Check your connection and try again."
+
+    private val otpAuthNoise =
+        Regex(
+            "unauthori[sz]ed|invalid[_\\s-]?grant|invalid[_\\s-]?token|\\b401\\b|bad\\s*credentials|access\\s*" +
+                "denied|^oauth\\s+failed|^http\\s*401|authentication\\s*failed|full\\s*authentication",
+            RegexOption.IGNORE_CASE,
+        )
+
+    private val pinAuthNoise =
+        Regex(
+            "unauthori[sz]ed|invalid[_\\s-]?grant|\\b401\\b|bad\\s*credentials|access\\s*denied|^oauth\\s+failed|" +
+                "^http\\s*401|wrong\\s*pin|incorrect\\s*pin|invalid\\s*pin|authentication\\s*failed",
+            RegexOption.IGNORE_CASE,
+        )
+
+    private fun humanizeOtpVerifyBanner(
+        base: String,
+        transportFallback: String,
+    ): String {
+        if (base == transportFallback) return base
+        val t = base.trim()
+        if (t.isEmpty() || t == "Request failed.") return "Incorrect OTP. Try again."
+        return if (otpAuthNoise.containsMatchIn(t)) "Incorrect OTP. Try again." else base
+    }
+
+    private fun humanizePinVerifyBanner(
+        base: String,
+        transportFallback: String,
+    ): String {
+        if (base == transportFallback) return base
+        val t = base.trim()
+        if (t.isEmpty() || t == "Request failed.") return "Incorrect PIN. Try again."
+        return if (pinAuthNoise.containsMatchIn(t)) "Incorrect PIN. Try again." else base
+    }
 
     fun fromThrowable(
         e: Throwable?,
@@ -41,10 +84,10 @@ object ReactParityBanner {
     }
 
     fun forOtpFailure(e: Throwable?) =
-        fromThrowable(e, "Could not verify OTP. Check your connection and try again.")
+        humanizeOtpVerifyBanner(fromThrowable(e, otpVerifyBannerFallback), otpVerifyBannerFallback)
 
     fun forPinFailure(e: Throwable?) =
-        fromThrowable(e, "Could not verify PIN. Check your connection and try again.")
+        humanizePinVerifyBanner(fromThrowable(e, pinVerifyBannerFallback), pinVerifyBannerFallback)
 
     fun forGenericFailure(e: Throwable?) =
         fromThrowable(e, "Something went wrong. Check your connection and try again.")

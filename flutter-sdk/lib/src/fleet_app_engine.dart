@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'driver_app_http.dart';
+import 'fleet_bindings_mapper.dart';
 import 'fleet_config.dart';
 import 'fleet_demo_data.dart';
+import 'fleet_live_models.dart';
+import 'fleetpay_qr.dart';
 import 'react_parity_strings.dart';
 
 const _kUnset = Object();
@@ -64,6 +67,10 @@ class FleetAppSnapshot {
     required this.invitePreviewDriver,
     required this.invitePreviewFo,
     required this.onboardingBusy,
+    required this.fleetPinFoDisplay,
+    this.parsedScanQr,
+    required this.qrPayBusy,
+    this.lastQrPay,
   });
 
   final String authStep;
@@ -113,6 +120,10 @@ class FleetAppSnapshot {
   final String? invitePreviewDriver;
   final String? invitePreviewFo;
   final bool onboardingBusy;
+  final String fleetPinFoDisplay;
+  final ParsedFleetpayQr? parsedScanQr;
+  final bool qrPayBusy;
+  final QrPayResultLive? lastQrPay;
 
   FleetAppSnapshot copy({
     Object? authStep = _kUnset,
@@ -160,6 +171,10 @@ class FleetAppSnapshot {
     Object? invitePreviewDriver = _kUnset,
     Object? invitePreviewFo = _kUnset,
     Object? onboardingBusy = _kUnset,
+    Object? fleetPinFoDisplay = _kUnset,
+    Object? parsedScanQr = _kUnset,
+    Object? qrPayBusy = _kUnset,
+    Object? lastQrPay = _kUnset,
   }) {
     T pick<T>(Object? v, T cur) =>
         identical(v, _kUnset) ? cur : v as T;
@@ -222,6 +237,14 @@ class FleetAppSnapshot {
       invitePreviewDriver: pick(invitePreviewDriver, this.invitePreviewDriver),
       invitePreviewFo: pick(invitePreviewFo, this.invitePreviewFo),
       onboardingBusy: pick(onboardingBusy, this.onboardingBusy),
+      fleetPinFoDisplay: pick(fleetPinFoDisplay, this.fleetPinFoDisplay),
+      parsedScanQr: identical(parsedScanQr, _kUnset)
+          ? this.parsedScanQr
+          : parsedScanQr as ParsedFleetpayQr?,
+      qrPayBusy: pick(qrPayBusy, this.qrPayBusy),
+      lastQrPay: identical(lastQrPay, _kUnset)
+          ? this.lastQrPay
+          : lastQrPay as QrPayResultLive?,
     );
   }
 
@@ -272,6 +295,10 @@ class FleetAppSnapshot {
       invitePreviewDriver: null,
       invitePreviewFo: null,
       onboardingBusy: false,
+      fleetPinFoDisplay: '',
+      parsedScanQr: null,
+      qrPayBusy: false,
+      lastQrPay: null,
     );
   }
 }
@@ -348,7 +375,18 @@ class FleetAppEngine extends ChangeNotifier {
       sessionOtp: '',
       otpDigitsLogin: _cloneOtpSlots(),
       apiBanner: null,
+      fleetPinFoDisplay: '',
+      parsedScanQr: null,
+      qrPayBusy: false,
+      lastQrPay: null,
     ));
+    if (_live) Future.microtask(refreshLiveFleetData);
+  }
+
+  void dismissApiBanner() {
+    if (_s.apiBanner != null) {
+      _emit(_s.copy(apiBanner: null));
+    }
   }
 
   void setMobileNumber(String value) {
@@ -503,10 +541,18 @@ class FleetAppEngine extends ChangeNotifier {
   }
 
   void selectFoOrganization(int foCompanyId) {
+    var name = '';
+    for (final f in _s.foOrganizations) {
+      if (f.foCompanyId == foCompanyId) {
+        name = f.foName;
+        break;
+      }
+    }
     _emit(_s.copy(
       selectedFoCompanyId: foCompanyId,
       authStep: 'fo_pin_login',
       loginPin: '',
+      fleetPinFoDisplay: name,
     ));
   }
 
@@ -523,17 +569,28 @@ class FleetAppEngine extends ChangeNotifier {
         foCompanyId: id,
         pin: pin,
       );
+      var foDisp = _s.fleetPinFoDisplay;
+      if (foDisp.isEmpty) {
+        for (final f in _s.foOrganizations) {
+          if (f.foCompanyId == id) {
+            foDisp = f.foName;
+            break;
+          }
+        }
+      }
       _emit(_s.copy(
         foScopedToken: tok,
         otpPhaseToken: null,
         authStep: 'complete',
         loginPin: '',
+        fleetPinFoDisplay: foDisp,
         onboardingBusy: false,
       ));
+      await refreshLiveFleetData();
     } catch (e) {
       _emit(_s.copy(
         loginPin: '',
-        apiBanner: ReactParityStrings.forGenericFailure(e),
+        apiBanner: ReactParityStrings.forPinFailure(e),
         onboardingBusy: false,
       ));
     }
@@ -807,6 +864,7 @@ class FleetAppEngine extends ChangeNotifier {
         inviteSessionToken: v.sessionToken,
         invitePreviewDriver: v.driverName,
         invitePreviewFo: v.foName,
+        fleetPinFoDisplay: v.foName.trim(),
         authStep: '1e',
         invitePin: '',
         invitePinConfirm: '',
@@ -936,6 +994,7 @@ class FleetAppEngine extends ChangeNotifier {
     try {
       final tok =
           await _http!.driverInviteSetPin(sess, _s.invitePin);
+      final foDisp = (_s.invitePreviewFo ?? '').trim();
       _emit(_s.copy(
         foScopedToken: tok,
         authStep: 'complete',
@@ -944,10 +1003,16 @@ class FleetAppEngine extends ChangeNotifier {
         inviteSessionToken: null,
         invitePin: '',
         invitePinConfirm: '',
+        fleetPinFoDisplay: foDisp.isNotEmpty ? foDisp : _s.fleetPinFoDisplay,
         onboardingBusy: false,
       ));
+      await refreshLiveFleetData();
     } catch (e) {
-      _emit(_s.copy(apiBanner: ReactParityStrings.forGenericFailure(e), onboardingBusy: false));
+      _emit(_s.copy(
+        apiBanner: ReactParityStrings.forPinFailure(e),
+        invitePinConfirm: '',
+        onboardingBusy: false,
+      ));
     }
   }
 
@@ -959,7 +1024,13 @@ class FleetAppEngine extends ChangeNotifier {
         sel = avail.first.id;
       }
     }
+       final wasComplete = _s.authStep == 'complete';
     _emit(_s.copy(activeTab: tab, selectedScanBindingId: sel));
+    if (_live &&
+        wasComplete &&
+        (tab == 'card' || tab == 'assignments' || tab == 'transactions')) {
+      Future.microtask(refreshLiveFleetData);
+    }
   }
 
   void setMainOverlay(String o) {
@@ -994,9 +1065,34 @@ class FleetAppEngine extends ChangeNotifier {
     _emit(_s.copy(pairingDigits: next));
   }
 
-  void submitPairingCode() {
+  Future<void> submitPairingCode() async {
     final code = _s.pairingDigits.join();
     if (code.length != 6) return;
+    if (_live && _http != null && _s.foScopedToken != null) {
+      _emit(_s.copy(onboardingBusy: true, pairingError: ''));
+      try {
+        await _http!.driverAcceptPairing(_s.foScopedToken!, code);
+        await refreshLiveFleetData();
+        _emit(_s.copy(
+          mainOverlay: 'home',
+          pairingError: '',
+          activeTab: 'assignments',
+          pairingDigits: _cloneOtpSlots(),
+          pairingAttempts: 0,
+          onboardingBusy: false,
+        ));
+      } catch (e) {
+        final attempts = _s.pairingAttempts + 1;
+        _emit(_s.copy(
+          apiBanner: ReactParityStrings.forGenericFailure(e),
+          pairingAttempts: attempts,
+          pairingDigits: _cloneOtpSlots(),
+          pairingError: 'Invalid pairing code',
+          onboardingBusy: false,
+        ));
+      }
+      return;
+    }
     final info = mockPairingCodes[code];
     if (info == null) {
       final attempts = _s.pairingAttempts + 1;
@@ -1016,7 +1112,12 @@ class FleetAppEngine extends ChangeNotifier {
 
   void setActiveCardIndex(int i) {
     final active = activeCards();
-    if (i >= 0 && i < active.length) _emit(_s.copy(activeCardIndex: i));
+    if (i >= 0 && i < active.length) {
+      _emit(_s.copy(activeCardIndex: i));
+      if (_live && _s.authStep == 'complete') {
+        Future.microtask(refreshLiveTransactions);
+      }
+    }
   }
 
   List<FleetBinding> activeCards() {
@@ -1081,7 +1182,41 @@ class FleetAppEngine extends ChangeNotifier {
 
   void scanContinueToPin() {
     if (_s.sessionState != 'confirmation') return;
+    if (_live && _s.parsedScanQr == null) {
+      _emit(_s.copy(apiBanner: ReactParityStrings.invalidFleetpayQr));
+      return;
+    }
     _emit(_s.copy(sessionState: 'pin_confirm', sessionPin: ''));
+  }
+
+  void scanSimulateDemoQr() {
+    final p = parseFleetpayPayUri(kSimulatedFleetpayUri);
+    if (p == null) {
+      _emit(_s.copy(apiBanner: ReactParityStrings.invalidFleetpayQr));
+      return;
+    }
+    _emit(_s.copy(
+      parsedScanQr: p,
+      sessionState: 'confirmation',
+      sessionPin: '',
+      sessionOtp: '',
+      apiBanner: null,
+    ));
+  }
+
+  void applyFleetpayQrRaw(String raw) {
+    final p = parseFleetpayPayUri(raw);
+    if (p == null) {
+      _emit(_s.copy(apiBanner: ReactParityStrings.invalidFleetpayQr));
+      return;
+    }
+    _emit(_s.copy(
+      parsedScanQr: p,
+      sessionState: 'confirmation',
+      sessionPin: '',
+      sessionOtp: '',
+      apiBanner: null,
+    ));
   }
 
   void scanBackFromPin() {
@@ -1090,12 +1225,58 @@ class FleetAppEngine extends ChangeNotifier {
   }
 
   void scanCancelConfirmation() {
-    _emit(_s.copy(sessionState: 'idle', sessionPin: '', sessionOtp: ''));
+    _emit(_s.copy(
+      sessionState: 'idle',
+      sessionPin: '',
+      sessionOtp: '',
+      parsedScanQr: null,
+      lastQrPay: null,
+    ));
   }
 
   void scanVerifyPin() {
     if (_s.sessionState != 'pin_confirm') return;
-    if (_s.sessionPin != _demoPin) return;
+    final sel = selectedScanBinding();
+    final qr = _s.parsedScanQr;
+    if (_live && _http != null && _s.foScopedToken != null && sel != null && qr != null) {
+      if (_s.sessionPin.length != 6) return;
+      Future.microtask(() async {
+        _emit(_s.copy(qrPayBusy: true, apiBanner: null));
+        try {
+          final vrn = normVrnPublic(sel.vrn).replaceAll(' ', '');
+          final pay = await _http!.driverQrPay(
+            token: _s.foScopedToken!,
+            txnId: qr.txnId,
+            vehicleRegNoNorm: vrn,
+            pin: _s.sessionPin,
+            mid: qr.mid,
+            terminalId: qr.terminalId,
+            amountPaise: qr.amountPaise,
+            expiryEpoch: qr.expiryEpoch,
+            sign: qr.sign,
+          );
+          _emit(_s.copy(
+            sessionState: 'complete',
+            sessionPin: '',
+            lastQrPay: pay,
+            parsedScanQr: null,
+            qrPayBusy: false,
+          ));
+          await refreshLiveFleetData();
+        } catch (e) {
+          _emit(_s.copy(
+            sessionPin: '',
+            qrPayBusy: false,
+            apiBanner: ReactParityStrings.forPinFailure(e),
+          ));
+        }
+      });
+      return;
+    }
+    if (_s.sessionPin != _demoPin) {
+      _emit(_s.copy(sessionPin: ''));
+      return;
+    }
     _emit(_s.copy(
       sessionState: 'otp_entry',
       sessionPin: '',
@@ -1147,6 +1328,8 @@ class FleetAppEngine extends ChangeNotifier {
         sessionOtp: '',
         mainOverlay: 'home',
         activeTab: 'card',
+        parsedScanQr: null,
+        lastQrPay: null,
       ),
     );
   }
@@ -1161,5 +1344,60 @@ class FleetAppEngine extends ChangeNotifier {
   void logout() {
     _cancelTimers();
     _emit(FleetAppSnapshot.initial(useLive: _s.useLiveDriverApp));
+  }
+
+  Future<void> refreshLiveFleetData() async {
+    final tok = _s.foScopedToken;
+    final http = _http;
+    if (!_live || tok == null || tok.isEmpty || http == null) return;
+    if (_s.authStep != 'complete') return;
+    try {
+      final home = await http.driverGetHome(tok);
+      final prof = await http.driverGetProfile(tok);
+      final rows = await http.driverGetAssignments(tok);
+      final mapped = mapAssignmentsToFleetBindings(home, rows);
+      final profile = mapLiveProfile(prof, _s.mobileNumber);
+      _emit(_s.copy(
+        bindings: mapped,
+        profile: profile,
+      ));
+      await refreshLiveTransactions();
+    } catch (e) {
+      _emit(_s.copy(apiBanner: ReactParityStrings.forGenericFailure(e)));
+    }
+  }
+
+  Future<void> refreshLiveTransactions() async {
+    final tok = _s.foScopedToken;
+    final http = _http;
+    if (!_live || tok == null || http == null || _s.authStep != 'complete') {
+      return;
+    }
+    final vid = _vehicleIdForActiveCard();
+    if (vid == null || vid.isEmpty) return;
+    try {
+      final page = await http.driverGetTransactions(tok, vid, 0);
+      final tx = page.rows.map((r) {
+        final credit = r.status.toUpperCase().contains('CREDIT');
+        return FleetTransaction(
+          id: r.serverTxnId.isEmpty ? '-' : r.serverTxnId,
+          station: r.status.isEmpty ? 'Fueling' : r.status,
+          vrn: r.vehicleRegNo,
+          amount: r.amountINR.abs().round(),
+          date: r.createdOn,
+          type: credit ? 'Credit' : 'Fueling',
+          status: r.status,
+          quantity: '',
+        );
+      }).toList();
+      _emit(_s.copy(transactions: tx));
+    } catch (_) {}
+  }
+
+  String? _vehicleIdForActiveCard() {
+    final c = currentCard();
+    final id = c?.vehicleId;
+    if (id != null && id.isNotEmpty) return id;
+    return null;
   }
 }

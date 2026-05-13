@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 
 import 'fleet_app_engine.dart';
 import 'fleet_demo_data.dart';
+import 'fleet_qr_scan_screen.dart';
 import 'fleet_react_theme.dart';
+import 'fleetpay_qr.dart';
 import 'react_parity_strings.dart';
 
 /// Full-screen flow matching Angular `FleetFlowHostComponent` / TS `FleetAppEngine`.
@@ -81,6 +83,16 @@ class _FleetFlowScreenState extends State<FleetFlowScreen> {
                   : _MainPane(engine: widget.engine, s: s),
             ),
           ),
+          if (s.authStep != 'complete' && s.apiBanner != null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 52,
+              child: FleetReactApiBanner(
+                message: s.apiBanner!,
+                onDismiss: widget.engine.dismissApiBanner,
+              ),
+            ),
           Positioned(
             bottom: 8,
             right: 8,
@@ -126,25 +138,6 @@ class _AuthPane extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(bottom: 8),
               child: LinearProgressIndicator(minHeight: 2, color: FleetReactTheme.green700),
-            ),
-          if (s.apiBanner != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Material(
-                color: const Color(0xfffef2f2),
-                borderRadius: BorderRadius.circular(FleetReactTheme.radiusMd),
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Text(
-                    s.apiBanner!,
-                    style: const TextStyle(
-                      color: Color(0xff991b1b),
-                      fontSize: FleetReactTheme.caption,
-                      height: 1.35,
-                    ),
-                  ),
-                ),
-              ),
             ),
           _authBody(context),
         ],
@@ -874,7 +867,7 @@ class _MainPaneState extends State<_MainPane> {
               const Text('Demo valid codes include 123456, 789012'),
               _OtpRow(key: ValueKey('pair-${s.pairingAttempts}'), onDigit: engine.setPairingDigit),
               if (s.pairingError.isNotEmpty) Text(s.pairingError, style: const TextStyle(color: Color(0xffb91c1c))),
-              FilledButton(onPressed: engine.submitPairingCode, child: const Text('Pair')),
+              FilledButton(onPressed: () => engine.submitPairingCode(), child: const Text('Pair')),
               TextButton(onPressed: () => engine.setMainOverlay('home'), child: const Text('Cancel')),
             ],
           ),
@@ -1115,7 +1108,7 @@ class _MainPaneState extends State<_MainPane> {
                       children: [
                         Expanded(
                           child: Text(
-                            c.fo,
+                            s.fleetPinFoDisplay.isEmpty ? c.fo : s.fleetPinFoDisplay,
                             style: TextStyle(fontSize: 14, height: 1.35, color: Colors.grey[600]),
                           ),
                         ),
@@ -1367,14 +1360,60 @@ class _MainPaneState extends State<_MainPane> {
     final avail = engine.scanAvailableBindings();
     final sel = engine.selectedScanBinding();
     if (avail.isEmpty) {
+      final locked = s.bindings
+          .where((b) =>
+              b.scanPayStatus == 'locked_unpaired' ||
+              b.scanPayStatus == 'locked_repair' ||
+              b.scanPayStatus == 'out_window')
+          .toList();
       return ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          const Text('Scan & Pay unavailable', style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text('Scan & Pay unavailable', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           const SizedBox(height: 8),
-          const Text('No vehicles available right now.', style: TextStyle(color: Color(0xff718096))),
-          const SizedBox(height: 16),
-          OutlinedButton(onPressed: () => engine.setTab('assignments'), child: const Text('Go to Assignments')),
+          const Text('No vehicles available for scanning right now.', style: TextStyle(color: Color(0xff718096))),
+          if (locked.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Card(
+              color: const Color(0xfff9fafb),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: locked.map((b) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(b.vrn, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14)),
+                          Text(
+                            switch (b.scanPayStatus) {
+                              'locked_unpaired' => 'Pair to unlock',
+                              'locked_repair' => 'Re-pair required',
+                              'out_window' => 'Outside shift/trip window',
+                              _ => b.scanPayStatus.replaceAll('_', ' '),
+                            },
+                            style: const TextStyle(fontSize: 14, color: Color(0xff6b7280)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: () => engine.setTab('assignments'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xff047857),
+              minimumSize: const Size.fromHeight(48),
+            ),
+            child: const Text('Go to My Vehicles'),
+          ),
         ],
       );
     }
@@ -1390,11 +1429,17 @@ class _MainPaneState extends State<_MainPane> {
               IconButton(onPressed: engine.scanCancelConfirmation, icon: const Icon(Icons.close)),
             ],
           ),
-          const Text('MGL Hind CNG Filling Station',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: FleetReactTheme.body)),
+          Text(
+            s.parsedScanQr?.merchantName?.trim().isNotEmpty == true
+                ? s.parsedScanQr!.merchantName!
+                : 'Fuel station',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: FleetReactTheme.body),
+          ),
           const SizedBox(height: 8),
-          Text('Vehicle ${sel.vrn}', style: const TextStyle(color: FleetReactTheme.textMuted)),
-          Text('Balance ₹${sel.balance}', style: const TextStyle(color: FleetReactTheme.textMuted)),
+          Text(
+            '${sel.vrn} · ₹${s.parsedScanQr != null ? paiseToInrDisplay(s.parsedScanQr!.amountPaise) : '—'}',
+            style: const TextStyle(color: FleetReactTheme.textMuted),
+          ),
           const SizedBox(height: 16),
           FilledButton(
             style: FilledButton.styleFrom(
@@ -1445,8 +1490,10 @@ class _MainPaneState extends State<_MainPane> {
                     BorderRadius.circular(FleetReactTheme.radiusLg),
               ),
             ),
-            onPressed: s.sessionPin.length == 6 ? engine.scanVerifyPin : null,
-            child: const Text('Verify PIN'),
+            onPressed: s.qrPayBusy
+                ? null
+                : (s.sessionPin.length == 6 ? engine.scanVerifyPin : null),
+            child: Text(s.qrPayBusy ? 'Processing…' : 'Verify PIN'),
           ),
         ],
       );
@@ -1537,13 +1584,27 @@ class _MainPaneState extends State<_MainPane> {
       );
     }
     if (s.sessionState == 'complete') {
+      final pay = s.lastQrPay;
+      final failed = pay?.payFailed == true;
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Icon(Icons.check_circle, color: Color(0xff16a34a), size: 48),
+          Icon(
+            failed ? Icons.error_outline : Icons.check_circle,
+            color: failed ? const Color(0xffdc2626) : const Color(0xff16a34a),
+            size: 48,
+          ),
           const SizedBox(height: 12),
-          const Text('Payment complete', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          Text(
+            pay != null
+                ? (failed ? 'Transaction failed' : 'Fueling complete')
+                : 'Payment complete',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
           const SizedBox(height: 8),
+          if (pay?.amountINR != null)
+            Text('Amount ₹${pay!.amountINR!.toStringAsFixed(2)}',
+                style: TextStyle(color: failed ? const Color(0xffdc2626) : const Color(0xff15803d), fontWeight: FontWeight.w600)),
           Text(sel != null ? 'Vehicle ${sel.vrn}' : '', style: const TextStyle(color: Color(0xff718096))),
           const SizedBox(height: 24),
           FilledButton(
@@ -1578,15 +1639,23 @@ class _MainPaneState extends State<_MainPane> {
         ),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
-          onPressed: engine.scanBeginConfirmation,
-          child: const Text('Simulate Scan'),
+          onPressed: () {
+            if (s.useLiveDriverApp) {
+              engine.scanSimulateDemoQr();
+            } else {
+              engine.scanBeginConfirmation();
+            }
+          },
+          child: Text(s.useLiveDriverApp ? 'Simulate fleetpay scan' : 'Simulate Scan'),
         ),
         const SizedBox(height: 8),
         OutlinedButton(
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('QR camera not wired in Flutter demo — use Simulate Scan')),
+          onPressed: () async {
+            final raw = await Navigator.of(context).push<String>(
+              MaterialPageRoute(builder: (_) => const FleetpayQrScanScreen()),
             );
+            if (!context.mounted || raw == null) return;
+            engine.applyFleetpayQrRaw(raw);
           },
           child: const Text('Scan QR with camera'),
         ),

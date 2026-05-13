@@ -53,6 +53,7 @@ class FleetBinding {
     this.assignedBy,
     this.validPairingCode,
     this.repairReason,
+    this.vehicleId,
   });
 
   final String id;
@@ -79,6 +80,7 @@ class FleetBinding {
   final String? assignedBy;
   final String? validPairingCode;
   final String? repairReason;
+  final String? vehicleId;
 
   FleetBinding copy() => FleetBinding(
         id: id,
@@ -105,6 +107,7 @@ class FleetBinding {
         assignedBy: assignedBy,
         validPairingCode: validPairingCode,
         repairReason: repairReason,
+        vehicleId: vehicleId,
       );
 }
 

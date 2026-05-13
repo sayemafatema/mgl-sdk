@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -61,6 +63,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,10 +76,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
@@ -261,7 +268,7 @@ internal fun PhoneFrame(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun OnboardingBackRow(onClick: () -> Unit) {
+internal fun OnboardingBackRow(onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
         contentPadding = PaddingValues(0.dp),
@@ -283,11 +290,18 @@ private fun OnboardingBackRow(onClick: () -> Unit) {
 private fun SixDigitOtpFields(
     digits: MutableList<String>,
     modifier: Modifier = Modifier,
+    refocusFirstAfterKey: Int = 0,
 ) {
     val focusRequesters = remember { List(6) { FocusRequester() } }
+    LaunchedEffect(refocusFirstAfterKey) {
+        if (refocusFirstAfterKey > 0) {
+            delay(10)
+            focusRequesters[0].requestFocus()
+        }
+    }
     Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         repeat(6) { idx ->
@@ -305,15 +319,29 @@ private fun SixDigitOtpFields(
                 },
                 modifier =
                     Modifier
-                        .width(56.dp)
-                        .height(68.dp)
-                        .focusRequester(focusRequesters[idx]),
+                        .weight(1f)
+                        .height(52.dp)
+                        .focusRequester(focusRequesters[idx])
+                        .onPreviewKeyEvent { ev ->
+                            if (ev.type == KeyEventType.KeyDown && ev.key == Key.Backspace) {
+                                if (digits[idx].isEmpty() && idx > 0) {
+                                    digits[idx - 1] = ""
+                                    focusRequesters[idx - 1].requestFocus()
+                                    true
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
+                        },
                 textStyle =
                     TextStyle(
-                        fontSize = 24.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     ),
+                shape = RoundedCornerShape(10.dp),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             )
@@ -489,6 +517,7 @@ internal fun LoginOtpScreen(
     otpDigits: MutableList<String>,
     otpError: String,
     otpCountdown: Int,
+    otpRefocusAfterKey: Int = 0,
     onBack: () -> Unit,
     onResend: () -> Unit,
     onVerifyManual: () -> Unit,
@@ -512,7 +541,7 @@ internal fun LoginOtpScreen(
             )
         }
         Spacer(Modifier.height(24.dp))
-        SixDigitOtpFields(otpDigits)
+        SixDigitOtpFields(otpDigits, refocusFirstAfterKey = otpRefocusAfterKey)
         if (otpError.isNotEmpty()) {
             Text(otpError, color = Color.Red, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
         }
@@ -766,6 +795,7 @@ internal fun InviteOtpScreen(
     mobile: String,
     otpDigits: MutableList<String>,
     otpCountdown: Int,
+    otpRefocusAfterKey: Int = 0,
     onBack: () -> Unit,
     onVerify: () -> Unit,
     onResend: () -> Unit,
@@ -789,7 +819,7 @@ internal fun InviteOtpScreen(
             )
         }
         Spacer(Modifier.height(16.dp))
-        SixDigitOtpFields(otpDigits)
+        SixDigitOtpFields(otpDigits, refocusFirstAfterKey = otpRefocusAfterKey)
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = onVerify,
@@ -924,20 +954,6 @@ internal fun Numpad(enabled: Boolean, onDigit: (String) -> Unit, onBackspace: ()
             }
             OutlinedButton(onClick = { if (enabled) onDigit("0") }, modifier = Modifier.weight(1f), enabled = enabled) { Text("0") }
         }
-    }
-}
-
-@Composable
-internal fun FuelingBanner() {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(Color(0xFFDBEAFE))
-            .border(BorderStroke(1.dp, Color(0xFF93C5FD)))
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Fueling in progress · MH 02 AB 1234", fontSize = 12.sp)
     }
 }
 
@@ -1378,7 +1394,7 @@ internal fun ScanTab(
     onSessionDigit: (String) -> Unit,
     onSessionBs: () -> Unit,
     sessionOtpDigits: MutableList<String>,
-    onCameraScan: () -> Unit,
+    onFleetpayQrScanned: (String) -> Unit,
     onCloseConfirm: () -> Unit,
     onContinueToPin: () -> Unit,
     onBackFromPinConfirm: () -> Unit,
@@ -1521,17 +1537,18 @@ internal fun ScanTab(
                             }
                         }
                         Spacer(Modifier.height(12.dp))
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .border(4.dp, Color.White, RoundedCornerShape(16.dp))
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.Black),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Filled.QrCode2, null, tint = Color.White.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
-                        }
+                        val scanIdle = phase == "idle"
+                        FleetInlineQrScanner(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .border(4.dp, Color.White, RoundedCornerShape(16.dp))
+                                    .clip(RoundedCornerShape(16.dp)),
+                            active = scanIdle,
+                            scanResetKey = "${sel.id}|$phase",
+                            onBarcodeRaw = onFleetpayQrScanned,
+                        )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "Point camera at the QR on the POS screen",
@@ -1540,13 +1557,6 @@ internal fun ScanTab(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                         )
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedButton(
-                            onClick = onCameraScan,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text("Scan QR with camera")
-                        }
                     }
                 }
             }
@@ -2135,6 +2145,30 @@ internal fun ScanTab(
 }
 
 @Composable
+private fun assignmentsDetailRow(
+    label: String,
+    value: String,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(label, color = Color(0xFF6B7280), fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
+        Text(
+            value,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            textAlign = TextAlign.End,
+            modifier = Modifier.weight(1f),
+        )
+    }
+    HorizontalDivider(color = Color(0xFFF3F4F6))
+}
+
+@Composable
 internal fun AssignmentsTab(
     bindings: List<DemoBinding>,
     onOpenScan: (DemoBinding) -> Unit,
@@ -2152,6 +2186,10 @@ internal fun AssignmentsTab(
     var tripDetail by remember { mutableStateOf<DemoBinding?>(null) }
     var declineTarget by remember { mutableStateOf<DemoBinding?>(null) }
 
+    val vehicleSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val shiftSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val tripSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
     fun openDetails(b: DemoBinding) {
         when (b.authMode) {
             DemoAuthMode.TRIP_LINKED -> tripDetail = b
@@ -2165,8 +2203,7 @@ internal fun AssignmentsTab(
             Modifier
                 .fillMaxWidth()
                 .background(Color(0xFFECEFF1))
-                .padding(horizontal = 16.dp, vertical = 16.dp)
-                .verticalScroll(rememberScrollState()),
+                .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text("My Vehicles", fontWeight = FontWeight.Bold, fontSize = 24.sp, color = ReactTextPrimary)
@@ -2472,89 +2509,124 @@ internal fun AssignmentsTab(
             }
         }
 
-        vehicleDetail?.let { b ->
-            Dialog(onDismissRequest = { vehicleDetail = null }) {
-                Card(
-                    Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+        if (vehicleDetail != null) {
+            val b = vehicleDetail!!
+            ModalBottomSheet(
+                onDismissRequest = { vehicleDetail = null },
+                sheetState = vehicleSheetState,
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 24.dp),
                 ) {
-                    Column(Modifier.padding(20.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                b.vrn,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.weight(1f),
-                            )
-                            IconButton(onClick = { vehicleDetail = null }) {
-                                Icon(Icons.Filled.Close, null, tint = Color(0xFF6B7280))
-                            }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            b.vrn,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 16.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { vehicleDetail = null }) {
+                            Icon(Icons.Filled.Close, null, tint = Color(0xFF6B7280))
                         }
-                        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Color(0xFFF3F4F6))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Balance", color = Color(0xFF6B7280), fontSize = 14.sp)
-                            Text("₹${b.balance.inr()}", fontWeight = FontWeight.Bold)
+                    }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Color(0xFFF3F4F6))
+                    assignmentsDetailRow("Balance", "₹${b.balance.inr()}")
+                    assignmentsDetailRow(
+                        "Assigned At",
+                        formatPayApiTxnDate(b.assignedAt),
+                    )
+                    assignmentsDetailRow("Fleet Operator", b.fo.trim().ifBlank { "—" })
+                }
+            }
+        }
+
+        if (shiftDetail != null) {
+            val b = shiftDetail!!
+            ModalBottomSheet(
+                onDismissRequest = { shiftDetail = null },
+                sheetState = shiftSheetState,
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 24.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Shift schedule", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        IconButton(onClick = { shiftDetail = null }) {
+                            Icon(Icons.Filled.Close, null, tint = Color(0xFF6B7280))
                         }
-                        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Assigned At", color = Color(0xFF6B7280), fontSize = 14.sp)
-                            Text(
-                                formatPayApiTxnDate(b.assignedAt),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier.padding(start = 8.dp),
-                            )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    b.shiftDays.forEach { day ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(day, fontSize = 14.sp)
+                            Text("${b.shiftStart} – ${b.shiftEnd}", fontFamily = FontFamily.Monospace, fontSize = 14.sp)
                         }
-                        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Fleet Operator", color = Color(0xFF6B7280), fontSize = 14.sp)
-                            Text(
-                                b.fo.trim().ifBlank { "—" },
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier.weight(1f).padding(start = 8.dp),
-                            )
-                        }
+                        HorizontalDivider(color = Color(0xFFF3F4F6))
+                    }
+                    if (b.shiftDays.isEmpty()) {
+                        Text("${b.shiftStart} – ${b.shiftEnd}", fontFamily = FontFamily.Monospace, fontSize = 14.sp)
                     }
                 }
             }
         }
 
-        shiftDetail?.let { b ->
-            AlertDialog(
-                onDismissRequest = { shiftDetail = null },
-                title = { Text("Shift schedule") },
-                text = {
-                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        b.shiftDays.forEach { day ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(day)
-                                Text("${b.shiftStart} – ${b.shiftEnd}", fontFamily = FontFamily.Monospace)
-                            }
-                        }
-                        if (b.shiftDays.isEmpty()) {
-                            Text("${b.shiftStart} – ${b.shiftEnd}", fontFamily = FontFamily.Monospace)
-                        }
-                    }
-                },
-                confirmButton = { TextButton({ shiftDetail = null }) { Text("OK") } },
-            )
-        }
-
-        tripDetail?.let { b ->
-            AlertDialog(
+        if (tripDetail != null) {
+            val b = tripDetail!!
+            ModalBottomSheet(
                 onDismissRequest = { tripDetail = null },
-                title = { Text("Trip details") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("${b.origin} → ${b.destination}", fontWeight = FontWeight.Medium)
-                        Text(b.tripDate, color = Color(0xFF6B7280), fontSize = 14.sp)
-                        Text("${b.tripStart} – ${b.tripEnd}", fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+                sheetState = tripSheetState,
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp)
+                        .padding(bottom = 24.dp),
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Trip details", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        IconButton(onClick = { tripDetail = null }) {
+                            Icon(Icons.Filled.Close, null, tint = Color(0xFF6B7280))
+                        }
                     }
-                },
-                confirmButton = { TextButton({ tripDetail = null }) { Text("OK") } },
-            )
+                    Spacer(Modifier.height(12.dp))
+                    assignmentsDetailRow("Vehicle", b.vrn)
+                    assignmentsDetailRow("Date", b.tripDate.ifBlank { "—" })
+                    assignmentsDetailRow("Window", "${b.tripStart} – ${b.tripEnd}".trim())
+                    assignmentsDetailRow("From", b.origin.ifBlank { "—" })
+                    assignmentsDetailRow("To", b.destination.ifBlank { "—" })
+                    assignmentsDetailRow("Notes", "Client delivery")
+                }
+            }
         }
 
         declineTarget?.let { _ ->
@@ -2576,8 +2648,9 @@ internal fun TransactionsTab(
     filter: String,
     onFilter: (String) -> Unit,
     rows: List<DriverTxnRowParse>,
+    modifier: Modifier = Modifier,
 ) {
-    Column(Modifier.background(Color.White)) {
+    Column(modifier.fillMaxWidth().fillMaxHeight().background(Color.White)) {
         Column {
             Row(
                 Modifier
@@ -2612,8 +2685,8 @@ internal fun TransactionsTab(
                     else -> true
                 }
             }
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (filtered.isEmpty()) {
+        when {
+            filtered.isEmpty() -> {
                 val emptyTitle =
                     when {
                         rows.isEmpty() -> "No transactions yet"
@@ -2627,99 +2700,118 @@ internal fun TransactionsTab(
                     } else {
                         "Nothing matches this filter. Try All or another tab."
                     }
-                Card(
-                    Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = BorderStroke(1.dp, Color(0xFFF3F4F6)),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Column(
-                        Modifier.padding(horizontal = 16.dp, vertical = 56.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
+                    Card(
+                        Modifier.fillMaxWidth(0.92f),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, Color(0xFFF3F4F6)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                     ) {
-                        Box(
-                            Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFFF9FAFB)),
-                            contentAlignment = Alignment.Center,
+                        Column(
+                            Modifier.padding(horizontal = 16.dp, vertical = 56.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Icon(Icons.Filled.History, null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(28.dp))
+                            Box(
+                                Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFF9FAFB)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(Icons.Filled.History, null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(28.dp))
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            Text(emptyTitle, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = ReactTextPrimary)
+                            Text(
+                                emptySub,
+                                fontSize = 12.sp,
+                                color = ReactTextMuted,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
                         }
-                        Spacer(Modifier.height(16.dp))
-                        Text(emptyTitle, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = ReactTextPrimary)
-                        Text(
-                            emptySub,
-                            fontSize = 12.sp,
-                            color = ReactTextMuted,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
                     }
                 }
-            } else {
-                val nf = NumberFormat.getNumberInstance(Locale("en", "IN"))
-                filtered.forEach { txn ->
-                    Card(
-                        Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFFE5E7EB)),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                    ) {
-                        Column(Modifier.padding(12.dp)) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.Top,
-                            ) {
-                                Column(Modifier.weight(1f)) {
+            }
+            else -> {
+                val listScroll = rememberScrollState()
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(listScroll)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    val nf = NumberFormat.getNumberInstance(Locale("en", "IN"))
+                    filtered.forEach { txn ->
+                        Card(
+                            Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFFE5E7EB)),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            txn.serverTxnId.ifEmpty { "—" },
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = ReactTextPrimary,
+                                        )
+                                        Text(
+                                            buildString {
+                                                append(txn.vehicleRegNo)
+                                                if (txn.driverName.isNotBlank()) {
+                                                    append(" · ")
+                                                    append(txn.driverName)
+                                                }
+                                            },
+                                            fontSize = 12.sp,
+                                            color = Color(0xFF4B5563),
+                                            maxLines = 2,
+                                        )
+                                    }
                                     Text(
-                                        txn.serverTxnId.ifEmpty { "—" },
+                                        "₹${nf.format(kotlin.math.abs(txn.amountINR))}",
                                         fontSize = 14.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = ReactTextPrimary,
-                                    )
-                                    Text(
-                                        buildString {
-                                            append(txn.vehicleRegNo)
-                                            if (txn.driverName.isNotBlank()) {
-                                                append(" · ")
-                                                append(txn.driverName)
-                                            }
-                                        },
-                                        fontSize = 12.sp,
-                                        color = Color(0xFF4B5563),
-                                        maxLines = 2,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFDC2626),
                                     )
                                 }
-                                Text(
-                                    "₹${nf.format(kotlin.math.abs(txn.amountINR))}",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFDC2626),
-                                )
-                            }
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                val st = txn.status.trim()
-                                val success = st.equals("SUCCESS", ignoreCase = true)
-                                Text(
-                                    st.ifEmpty { "—" },
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (success) Color(0xFF166534) else Color(0xFF92400E),
-                                    modifier =
-                                        Modifier
-                                            .clip(RoundedCornerShape(999.dp))
-                                            .background(if (success) Color(0xFFF0FDF4) else Color(0xFFFFFBEB))
-                                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                                )
-                                Text(txn.createdOn, fontSize = 12.sp, color = Color(0xFF4B5563))
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    val st = txn.status.trim()
+                                    val success = st.equals("SUCCESS", ignoreCase = true)
+                                    Text(
+                                        st.ifEmpty { "—" },
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (success) Color(0xFF166534) else Color(0xFF92400E),
+                                        modifier =
+                                            Modifier
+                                                .clip(RoundedCornerShape(999.dp))
+                                                .background(if (success) Color(0xFFF0FDF4) else Color(0xFFFFFBEB))
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    )
+                                    Text(txn.createdOn, fontSize = 12.sp, color = Color(0xFF4B5563))
+                                }
                             }
                         }
                     }
@@ -3075,7 +3167,11 @@ internal fun PairingOverlayExtended(
 }
 
 @Composable
-internal fun BottomNav(current: String?, onTab: (String) -> Unit) {
+internal fun BottomNav(
+    current: String?,
+    onTab: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val items =
         listOf(
             Triple("card", Icons.Filled.Home, "Home"),
@@ -3085,12 +3181,13 @@ internal fun BottomNav(current: String?, onTab: (String) -> Unit) {
         )
     val inactive = Color(0xFF6B7280)
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .background(Color.White)
             .border(BorderStroke(1.dp, Color(0xFFE5E7EB)))
             .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+        horizontalArrangement = Arrangement.Start,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         items.forEach { (id, icon, label) ->
@@ -3098,7 +3195,6 @@ internal fun BottomNav(current: String?, onTab: (String) -> Unit) {
             Column(
                 Modifier
                     .weight(1f)
-                    .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .clickable { onTab(id) }
                     .padding(vertical = 8.dp),

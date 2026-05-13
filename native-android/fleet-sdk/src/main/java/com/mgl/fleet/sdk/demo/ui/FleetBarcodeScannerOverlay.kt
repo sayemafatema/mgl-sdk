@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,7 +34,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -42,7 +48,116 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Fullscreen QR scanner — emits decoded URI/raw payload ([Fleetpay URI parsing](../../../../../fleet-pay-parse])). */
+private fun unbindAllCamera(ctx: android.content.Context) {
+    val future = ProcessCameraProvider.getInstance(ctx)
+    future.addListener(
+        { runCatching { future.get().unbindAll() } },
+        ContextCompat.getMainExecutor(ctx),
+    )
+}
+
+/**
+ * QR preview inside the Scan & Pay card (parity with React [QrCameraScanner]): starts when [active] and
+ * permission granted; resets decode latch when [scanResetKey] changes.
+ */
+@Composable
+internal fun FleetInlineQrScanner(
+    modifier: Modifier = Modifier,
+    active: Boolean,
+    scanResetKey: Any?,
+    onBarcodeRaw: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var granted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        granted = ok
+    }
+    LaunchedEffect(active) {
+        if (active && !granted) {
+            launcher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    val scanner = remember {
+        val opts = BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+        BarcodeScanning.getClient(opts)
+    }
+    val exec = remember { Executors.newSingleThreadExecutor() }
+    val decodedOnce = remember(scanResetKey) { AtomicBoolean(false) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            scanner.close()
+            exec.shutdownNow()
+        }
+    }
+
+    val previewView = remember(context) {
+        PreviewView(context).apply {
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
+    }
+
+    val cameraActive = active && granted
+    DisposableEffect(lifecycleOwner, cameraActive, scanResetKey, previewView) {
+        if (cameraActive) {
+            bindBarcodeScanner(
+                context,
+                previewView,
+                lifecycleOwner,
+                exec,
+                decodedOnce,
+                scanner,
+                onBarcodeRaw,
+            )
+        }
+        onDispose {
+            if (cameraActive) {
+                unbindAllCamera(context)
+            }
+        }
+    }
+
+    Box(
+        modifier.background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            active && !granted -> {
+                Text(
+                    text = "Camera permission is required to scan the POS QR code.",
+                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 13.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+            cameraActive -> {
+                AndroidView(
+                    factory = { previewView },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            else -> {
+                Icon(
+                    Icons.Filled.QrCode2,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.size(48.dp),
+                )
+            }
+        }
+    }
+}
+
+/** Fullscreen QR scanner — emits decoded URI/raw payload ([Fleetpay URI parsing](../../../../../fleet-pay-parse)). */
 @Composable
 internal fun FleetBarcodeScannerOverlay(onBarcodeRaw: (String) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
@@ -115,7 +230,7 @@ internal fun FleetBarcodeScannerOverlay(onBarcodeRaw: (String) -> Unit, onClose:
                 .background(Color.Black.copy(alpha = 0.55f))
                 .padding(16.dp),
         ) {
-            Text("Point camera at Fleetpay QR code", color = Color.White)
+            Text("Point camera at the QR on the POS screen", color = Color.White, fontSize = 12.sp)
         }
     }
 }

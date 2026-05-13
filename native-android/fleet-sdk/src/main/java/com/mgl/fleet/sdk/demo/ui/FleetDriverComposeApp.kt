@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +40,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Route
@@ -51,7 +54,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Snackbar
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +67,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
@@ -78,6 +81,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.mgl.fleet.sdk.FleetSdkErrorCodes
 import com.mgl.fleet.sdk.FleetSdkException
 import com.mgl.fleet.sdk.FleetSdkResult
@@ -132,10 +136,6 @@ private fun initialsOf(name: String): String {
     }
 }
 
-/** Parseable QR for Compose "Simulate Scan" when API/camera unavailable (offline demo only). */
-private const val SIMULATED_FLEETPAY_URI =
-    "fleetpay://pay?txn=SIMTXN01&mid=DEMOMID&tid=DEMOTID&am=67200&exp=9999999999&sign=demosign&mn=Demo%20CNG%20Station"
-
 private fun vehicleIdForActiveCard(
     bindingsList: List<DemoBinding>,
     activeCardIdx: Int,
@@ -145,7 +145,9 @@ private fun vehicleIdForActiveCard(
     return b.vehicleId.trim().takeIf { it.isNotEmpty() }
 }
 
-private val ApiBannerBottomNavClearance = 72.dp
+private val ApiBannerBottomNavClearance = 96.dp
+/** Space reserved above the fixed bottom nav dock so scroll content is not hidden under it. */
+private val FleetBottomDockReserve = 88.dp
 private val ApiBannerOnboardingFabClearance = 52.dp
 
 @Composable
@@ -155,25 +157,61 @@ private fun ApiErrorBanner(
     onDismiss: () -> Unit,
 ) {
     val msg = message?.trim()?.takeIf { it.isNotEmpty() } ?: return
-    Snackbar(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        containerColor = MaterialTheme.colorScheme.inverseSurface,
-        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-        actionContentColor = MaterialTheme.colorScheme.inversePrimary,
-        action = {
-            TextButton(
-                onClick = onDismiss,
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    "Dismiss",
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-        },
+    val maxScrollH =
+        kotlin.math.min(
+            (LocalConfiguration.current.screenHeightDp * 0.4f).toInt(),
+            220,
+        ).dp
+    val amber50 = Color(0xFFFFFBEB)
+    val amber200 = Color(0xFFFDE68A)
+    val amber700 = Color(0xFFB45309)
+    val amber900 = Color(0xFF78350F)
+    val amber950 = Color(0xFF451A03)
+    val bannerScroll = rememberScrollState()
+    Row(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .border(BorderStroke(1.dp, amber200), RoundedCornerShape(12.dp))
+                .background(amber50)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(msg, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Normal)
+        Icon(
+            Icons.Outlined.ErrorOutline,
+            contentDescription = null,
+            tint = amber700,
+            modifier = Modifier.size(18.dp),
+        )
+        Box(
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+                    .heightIn(max = maxScrollH),
+        ) {
+            Text(
+                msg,
+                modifier = Modifier.verticalScroll(bannerScroll),
+                color = amber950,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                fontWeight = FontWeight.Normal,
+            )
+        }
+        TextButton(
+            onClick = onDismiss,
+            modifier = Modifier.wrapContentWidth(Alignment.End),
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+        ) {
+            Text(
+                "Dismiss",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                color = amber900,
+            )
+        }
     }
 }
 
@@ -242,11 +280,23 @@ internal fun FleetDriverFlow(
         var recentLiveTx by remember { mutableStateOf<List<DemoTxn>>(emptyList()) }
         var apiTxnDetailRows by remember { mutableStateOf<List<DriverTxnRowParse>>(emptyList()) }
         var parsedScanQr by remember { mutableStateOf<FleetpayQrPayload?>(null) }
-        var showBarcodeScanner by remember { mutableStateOf(false) }
         var qrPayBusy by remember { mutableStateOf(false) }
         var lastQrPay by remember { mutableStateOf<QrPayResultJson?>(null) }
+        var loginOtpRefocusKey by remember { mutableIntStateOf(0) }
+        var inviteOtpRefocusKey by remember { mutableIntStateOf(0) }
 
         val pairingScope = rememberCoroutineScope()
+        val mainScrollState = rememberScrollState()
+
+        LaunchedEffect(mainTab) {
+            mainScrollState.scrollTo(0)
+        }
+
+        LaunchedEffect(apiBanner) {
+            if (apiBanner == null) return@LaunchedEffect
+            delay(5000)
+            apiBanner = null
+        }
 
         val bindings =
             remember(liveMode, apiHome, apiAssignments) {
@@ -339,12 +389,6 @@ internal fun FleetDriverFlow(
             }
         }
 
-        LaunchedEffect(apiBanner) {
-            if (apiBanner == null) return@LaunchedEffect
-            delay(5000)
-            apiBanner = null
-        }
-
         LaunchedEffect(liveMode, foScopedToken, onboardingStep) {
             if (!liveMode || foScopedToken == null || onboardingStep != "complete") return@LaunchedEffect
             val tok = foScopedToken!!
@@ -414,6 +458,7 @@ internal fun FleetDriverFlow(
                     apiBanner = ReactParityBanner.NO_ACTIVE_FLEET
                     otpPhaseToken = null
                     otpDigits.clearDigits()
+                    loginOtpRefocusKey++
                     return@LaunchedEffect
                 }
                 if (fos.size == 1) {
@@ -430,6 +475,7 @@ internal fun FleetDriverFlow(
                 otpError = ""
                 apiBanner = ReactParityBanner.forOtpFailure(e)
                 otpDigits.clearDigits()
+                loginOtpRefocusKey++
             } finally {
                 onboardingAction = null
             }
@@ -450,12 +496,16 @@ internal fun FleetDriverFlow(
                 }
             } else {
                 otpError = "Incorrect OTP. Try again."
+                otpDigits.clearDigits()
+                loginOtpRefocusKey++
             }
         }
 
         val assignmentOpen = mainOverlay == "assignment_notification"
         val pairingOpen = mainOverlay == "pairing_code"
         val acceptedOpen = mainOverlay == "assignment_accepted"
+        val mainShellDockVisible = !acceptedOpen && !assignmentOpen && !pairingOpen
+        val bottomDockContentPad = if (mainShellDockVisible) FleetBottomDockReserve else 0.dp
 
         BackHandler(enabled = onboardingStep == "complete") {
             when {
@@ -589,6 +639,7 @@ internal fun FleetDriverFlow(
                                     if (!validIndianMobile10(mobileNumber)) return@LoginScreen
                                     apiBanner = null
                                     otpDigits.clearDigits()
+                                    loginOtpRefocusKey++
                                     otpError = ""
                                     if (liveMode) {
                                         pairingScope.launch {
@@ -635,79 +686,96 @@ internal fun FleetDriverFlow(
                             )
 
                         "select_fo" -> {
-                            TextButton(onClick = { onboardingStep = "login_otp"; otpPhaseToken = null }) { Text("< Back") }
-                            Text("Choose fleet operator", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            Spacer(Modifier.height(16.dp))
-                            foOrganizationList
-                                .filter { it.foStatus == "ACTIVE" }
-                                .forEach { fo ->
-                                    Card(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 6.dp)
-                                            .clickable {
-                                                selectedFoCompanyId = fo.foCompanyId
-                                                fleetPinFoDisplay = fo.foName
-                                                foPinEntry = ""
-                                                onboardingStep = "fo_pin_login"
-                                            },
-                                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                                        border = BorderStroke(1.dp, Color.LightGray),
-                                    ) {
-                                        Column(Modifier.padding(16.dp)) {
-                                            Text(fo.foName, fontWeight = FontWeight.SemiBold)
-                                            Text("Fleet ID #${fo.foCompanyId}", fontSize = 11.sp, color = Color.Gray)
+                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+                                OnboardingBackRow(onClick = { onboardingStep = "login_otp"; otpPhaseToken = null })
+                                Spacer(Modifier.height(16.dp))
+                                Text("Choose fleet operator", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                Spacer(Modifier.height(16.dp))
+                                foOrganizationList
+                                    .filter { it.foStatus == "ACTIVE" }
+                                    .forEach { fo ->
+                                        Card(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 6.dp)
+                                                .clickable {
+                                                    selectedFoCompanyId = fo.foCompanyId
+                                                    fleetPinFoDisplay = fo.foName
+                                                    foPinEntry = ""
+                                                    onboardingStep = "fo_pin_login"
+                                                },
+                                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                                            border = BorderStroke(1.dp, Color.LightGray),
+                                        ) {
+                                            Column(Modifier.padding(16.dp)) {
+                                                Text(fo.foName, fontWeight = FontWeight.SemiBold)
+                                                Text("Fleet ID #${fo.foCompanyId}", fontSize = 11.sp, color = Color.Gray)
+                                            }
                                         }
                                     }
-                                }
+                            }
                         }
 
                         "fo_pin_login" -> {
-                            TextButton(
-                                onClick = {
-                                    foPinEntry = ""
-                                    val fos = foOrganizationList.filter { it.foStatus == "ACTIVE" }
-                                    if (fos.size > 1) onboardingStep = "select_fo" else {
-                                        onboardingStep = "login_otp"
-                                        otpPhaseToken = null
-                                    }
-                                },
-                            ) { Text("< Back") }
-                            Text("Fleet PIN", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                            Text("Enter your PIN for this Fleet Operator", fontSize = 13.sp, color = Color.Gray)
-                            Text(fleetPinFoDisplay.ifEmpty { "—" }, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                            PinDots(foPinEntry)
-                            Numpad(
-                                enabled = onboardingAction != "fo_unlock",
-                                onDigit = { d -> if ((onboardingAction == null || onboardingAction != "fo_unlock") && foPinEntry.length < 6) foPinEntry += d },
-                                onBackspace = { foPinEntry = foPinEntry.dropLast(1) },
-                            )
-                            Button(
-                                onClick = {
-                                    val selId = selectedFoCompanyId ?: return@Button
-                                    val phase = otpPhaseToken ?: return@Button
-                                    if (foPinEntry.length != 6) return@Button
-                                    pairingScope.launch {
-                                        onboardingAction = "fo_unlock"
-                                        try {
-                                            val tok =
-                                                liveApi.driverFoSelect(phase, selId, foPinEntry).getOrThrow()
-                                            foScopedToken = tok
+                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
+                                OnboardingBackRow(
+                                    onClick = {
+                                        foPinEntry = ""
+                                        val fos = foOrganizationList.filter { it.foStatus == "ACTIVE" }
+                                        if (fos.size > 1) onboardingStep = "select_fo" else {
+                                            onboardingStep = "login_otp"
                                             otpPhaseToken = null
-                                            foPinEntry = ""
-                                            apiBanner = null
-                                            onboardingStep = "complete"
-                                        } catch (e: Exception) {
-                                            apiBanner = ReactParityBanner.forPinFailure(e)
-                                        } finally {
-                                            onboardingAction = null
                                         }
-                                    }
-                                },
-                                enabled = foPinEntry.length == 6 && selectedFoCompanyId != null && onboardingAction != "fo_unlock",
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = ButtonDefaults.buttonColors(containerColor = Green700),
-                            ) { Text(if (onboardingAction == "fo_unlock") "Unlocking…" else "Unlock app") }
+                                    },
+                                )
+                                Spacer(Modifier.height(16.dp))
+                                Text("Fleet PIN", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                Text(
+                                    "Enter your PIN for this Fleet Operator",
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF6B7280),
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                                Text(
+                                    fleetPinFoDisplay.ifEmpty { "—" },
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 18.sp,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
+                                )
+                                PinDots(foPinEntry)
+                                Numpad(
+                                    enabled = onboardingAction != "fo_unlock",
+                                    onDigit = { d -> if ((onboardingAction == null || onboardingAction != "fo_unlock") && foPinEntry.length < 6) foPinEntry += d },
+                                    onBackspace = { foPinEntry = foPinEntry.dropLast(1) },
+                                )
+                                Button(
+                                    onClick = {
+                                        val selId = selectedFoCompanyId ?: return@Button
+                                        val phase = otpPhaseToken ?: return@Button
+                                        if (foPinEntry.length != 6) return@Button
+                                        pairingScope.launch {
+                                            onboardingAction = "fo_unlock"
+                                            try {
+                                                val tok =
+                                                    liveApi.driverFoSelect(phase, selId, foPinEntry).getOrThrow()
+                                                foScopedToken = tok
+                                                otpPhaseToken = null
+                                                foPinEntry = ""
+                                                apiBanner = null
+                                                onboardingStep = "complete"
+                                            } catch (e: Exception) {
+                                                apiBanner = ReactParityBanner.forPinFailure(e)
+                                                foPinEntry = ""
+                                            } finally {
+                                                onboardingAction = null
+                                            }
+                                        }
+                                    },
+                                    enabled = foPinEntry.length == 6 && selectedFoCompanyId != null && onboardingAction != "fo_unlock",
+                                    modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Green700),
+                                ) { Text(if (onboardingAction == "fo_unlock") "Unlocking…" else "Unlock app") }
+                            }
                         }
 
                         "login_otp" ->
@@ -716,6 +784,7 @@ internal fun FleetDriverFlow(
                                 otpDigits = otpDigits,
                                 otpError = otpError,
                                 otpCountdown = otpCountdown,
+                                otpRefocusAfterKey = loginOtpRefocusKey,
                                 isVerifying = onboardingAction == "login_verify_otp",
                                 isResending = onboardingAction == "login_resend_otp",
                                 onBack = { onboardingStep = "login" },
@@ -852,6 +921,7 @@ internal fun FleetDriverFlow(
                                     apiBanner = null
                                     if (!liveMode) {
                                         inviteOtpDigits.clearDigits()
+                                        inviteOtpRefocusKey++
                                         otpCountdown = 30
                                         onboardingStep = "1d"
                                     } else {
@@ -867,6 +937,7 @@ internal fun FleetDriverFlow(
                                                         val ref = liveApi.driverInviteMobileSendOtp(mobileNumber).getOrThrow()
                                                         inviteOtpRefNumber = ref
                                                         inviteOtpDigits.clearDigits()
+                                                        inviteOtpRefocusKey++
                                                         otpCountdown = 60
                                                         onboardingStep = "1d"
                                                     }
@@ -886,6 +957,7 @@ internal fun FleetDriverFlow(
                                 mobile = mobileNumber,
                                 otpDigits = inviteOtpDigits,
                                 otpCountdown = otpCountdown,
+                                otpRefocusAfterKey = inviteOtpRefocusKey,
                                 isVerifying = onboardingAction == "invite_verify_otp",
                                 isResending = onboardingAction == "invite_resend_otp",
                                 onBack = { onboardingStep = "1c" },
@@ -897,6 +969,7 @@ internal fun FleetDriverFlow(
                                                 val ref = liveApi.driverInviteMobileSendOtp(mobileNumber).getOrThrow()
                                                 inviteOtpRefNumber = ref
                                                 inviteOtpDigits.clearDigits()
+                                                inviteOtpRefocusKey++
                                                 otpCountdown = 60
                                                 apiBanner = null
                                             } catch (e: Exception) {
@@ -929,7 +1002,9 @@ internal fun FleetDriverFlow(
                                                 apiBanner = null
                                                 onboardingStep = "1b"
                                             } catch (e: Exception) {
-                                                apiBanner = ReactParityBanner.forPinFailure(e)
+                                                apiBanner = ReactParityBanner.forOtpFailure(e)
+                                                inviteOtpDigits.clearDigits()
+                                                inviteOtpRefocusKey++
                                             } finally {
                                                 onboardingAction = null
                                             }
@@ -994,6 +1069,7 @@ internal fun FleetDriverFlow(
                                                 onboardingStep = "complete"
                                             } catch (e: Exception) {
                                                 apiBanner = ReactParityBanner.forPinFailure(e)
+                                                nuPinConfirm = ""
                                             } finally {
                                                 onboardingAction = null
                                             }
@@ -1187,54 +1263,68 @@ internal fun FleetDriverFlow(
                     }
 
                     else -> {
-                    if (!sessionIdle && sessionPhase != "idle") {
-                        FuelingBanner()
-                    }
-                    Column(Modifier.weight(1f)) {
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .padding(bottom = bottomDockContentPad),
+                    ) {
                         MainHeader(driverName = driver.name, initials = driver.initials)
                         successToast?.let { t ->
                             Box(Modifier.fillMaxWidth().background(Green600).padding(12.dp)) { Text(t, color = Color.White, fontSize = 13.sp) }
                         }
                         val scrollBg =
                             if (mainTab == "card" || mainTab == "assignments") Color(0xFFECEFF1) else Color.White
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .verticalScroll(rememberScrollState())
-                                .background(scrollBg),
-                        ) {
-                            when (mainTab) {
-                                "card" ->
-                                    CardTab(
-                                        fleetPinFoDisplay = fleetPinFoDisplay,
-                                        apiHome = apiHome,
-                                        activeCards = activeCards,
-                                        activeCard = activeCard,
-                                        onCardChange = { activeCard = it },
-                                        pendingCount = pendingCount,
-                                        onOpenAssignments = { mainTab = "assignments" },
-                                        onOpenTransactions = { mainTab = "transactions" },
-                                        onScanTab = { mainTab = "scan" },
-                                        recentTransactions = if (liveMode) recentLiveTx else FleetReactMock.transactions,
-                                    )
+                        if (mainTab == "transactions") {
+                            TransactionsTab(
+                                modifier = Modifier.weight(1f).fillMaxWidth(),
+                                filter = txnFilter,
+                                onFilter = { txnFilter = it },
+                                rows =
+                                    if (liveMode) {
+                                        apiTxnDetailRows
+                                    } else {
+                                        FleetReactMock.transactions.map { demoTxnToDetailRow(it) }
+                                    },
+                            )
+                        } else {
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .verticalScroll(mainScrollState)
+                                    .background(scrollBg),
+                            ) {
+                                when (mainTab) {
+                                    "card" ->
+                                        CardTab(
+                                            fleetPinFoDisplay = fleetPinFoDisplay,
+                                            apiHome = apiHome,
+                                            activeCards = activeCards,
+                                            activeCard = activeCard,
+                                            onCardChange = { activeCard = it },
+                                            pendingCount = pendingCount,
+                                            onOpenAssignments = { mainTab = "assignments" },
+                                            onOpenTransactions = { mainTab = "transactions" },
+                                            onScanTab = { mainTab = "scan" },
+                                            recentTransactions = if (liveMode) recentLiveTx else FleetReactMock.transactions,
+                                        )
 
-                                "scan" ->
-                                    ScanTab(
-                                        bindings = bindings,
-                                        selected = selectedScan,
-                                        onSelect = { selectedScan = it },
-                                        phase = sessionPhase,
-                                        sessionPin = sessionPin,
-                                        onSessionDigit = { sessionPin = (sessionPin + it).take(6) },
-                                        onSessionBs = { sessionPin = sessionPin.dropLast(1) },
-                                        sessionOtpDigits = sessionOtpDigits,
-                                        onCameraScan = {
-                                            if (selectedScan == null) {
-                                                apiBanner = ReactParityBanner.SELECT_VEHICLE_FIRST
-                                            } else {
-                                                apiBanner = null
-                                                if (!liveMode) {
-                                                    val p = parseFleetpayPayUri(SIMULATED_FLEETPAY_URI)
+                                    "scan" ->
+                                        ScanTab(
+                                            bindings = bindings,
+                                            selected = selectedScan,
+                                            onSelect = { selectedScan = it },
+                                            phase = sessionPhase,
+                                            sessionPin = sessionPin,
+                                            onSessionDigit = { sessionPin = (sessionPin + it).take(6) },
+                                            onSessionBs = { sessionPin = sessionPin.dropLast(1) },
+                                            sessionOtpDigits = sessionOtpDigits,
+                                            onFleetpayQrScanned = { raw ->
+                                                val sel = selectedScan
+                                                if (sel == null) {
+                                                    apiBanner = ReactParityBanner.SELECT_VEHICLE_FIRST
+                                                } else {
+                                                    apiBanner = null
+                                                    val p = parseFleetpayPayUri(raw.trim())
                                                     if (p == null) {
                                                         apiBanner = ReactParityBanner.INVALID_FLEETPAY_QR
                                                     } else {
@@ -1242,222 +1332,201 @@ internal fun FleetDriverFlow(
                                                         sessionIdle = false
                                                         sessionPhase = "confirmation"
                                                     }
-                                                } else {
-                                                    showBarcodeScanner = true
                                                 }
-                                            }
-                                        },
-                                        onCloseConfirm = {
-                                            sessionPhase = "idle"
-                                            sessionIdle = true
-                                            sessionPin = ""
-                                            scanSessionOtpCountdown = 0
-                                            parsedScanQr = null
-                                            lastQrPay = null
-                                        },
-                                        onContinueToPin = {
-                                            sessionPhase = "pin_confirm"
-                                            sessionPin = ""
-                                        },
-                                        onBackFromPinConfirm = {
-                                            sessionPhase = "confirmation"
-                                            sessionPin = ""
-                                        },
-                                        onVerifyPinForSession = {
-                                            if (liveMode) {
-                                                val tok = foScopedToken
-                                                val veh = selectedScan
-                                                val qr = parsedScanQr
-                                                if (tok != null && veh != null && qr != null && sessionPin.length == 6) {
-                                                    pairingScope.launch {
-                                                    qrPayBusy = true
-                                                    try {
-                                                        val vrnNorm = normVrnPublic(veh.vrn).replace(" ", "")
-                                                        val pay =
-                                                            liveApi.driverQrPay(
-                                                                tok,
-                                                                qr.txnId,
-                                                                vrnNorm,
-                                                                sessionPin,
-                                                                qr.mid,
-                                                                qr.terminalId,
-                                                                qr.amountPaise,
-                                                                qr.expiryEpoch,
-                                                                qr.sign,
-                                                            ).getOrThrow()
-                                                        lastQrPay = pay
-                                                        sessionPin = ""
-                                                        sessionPhase = "complete"
-                                                        val h = liveApi.driverGetHome(tok).getOrNull()
-                                                        if (h != null) apiHome = h
-                                                        val vid =
-                                                            vehicleIdForActiveCard(bindings, activeCard)
-                                                                ?: veh.vehicleId.takeIf { it.isNotBlank() }
-                                                        if (!vid.isNullOrBlank()) {
-                                                            liveApi.driverGetTransactions(tok, vid, 0).onSuccess { pg ->
-                                                                apiTxnDetailRows = pg.rows
-                                                                recentLiveTx =
-                                                                    pg.rows.map { row ->
-                                                                        DemoTxn(
-                                                                            id = row.serverTxnId,
-                                                                            station = row.status.ifEmpty { "Fueling" },
-                                                                            vrn = row.vehicleRegNo,
-                                                                            amount =
-                                                                                kotlin.math.abs(row.amountINR)
-                                                                                    .toLong(),
-                                                                            date = row.createdOn,
-                                                                            type =
-                                                                                if (row.status.uppercase()
-                                                                                        .contains(
-                                                                                            "CREDIT",
-                                                                                        )
-                                                                                ) {
-                                                                                    "Credit"
-                                                                                } else {
-                                                                                    "Fueling"
-                                                                                },
-                                                                            quantity = "",
-                                                                            status = row.status,
-                                                                        )
-                                                                    }
-                                                            }
-                                                        }
-                                                    } catch (e: Exception) {
-                                                        apiBanner = ReactParityBanner.forPinFailure(e)
-                                                        sessionPin = ""
-                                                    } finally {
-                                                        qrPayBusy = false
-                                                    }
-                                                    }
-                                                }
-                                            } else {
-                                                if (sessionPin == (if (nuPin.length == 6) nuPin else driver.pin)) {
-                                                    sessionPhase = "otp_entry"
-                                                    sessionPin = ""
-                                                    scanSessionOtpCountdown = 60
-                                                } else sessionPin = ""
-                                            }
-                                        },
-                                        onVerifySessionOtp = {
-                                            if (sessionOtpDigits.joinToString("").length == 6) {
-                                                sessionPhase = "authorized"
-                                                scanSessionOtpCountdown = 0
-                                            }
-                                        },
-                                        onFuelingComplete = { sessionPhase = "complete" },
-                                        onSessionDone = {
-                                            sessionPhase = "idle"
-                                            sessionIdle = true
-                                            sessionOtpDigits.clearDigits()
-                                            scanSessionOtpCountdown = 0
-                                            mainTab = "card"
-                                            selectedScan = null
-                                            parsedScanQr = null
-                                            lastQrPay = null
-                                        },
-                                        scannedLoginMobileDigits =
-                                            mobileNumber.filter { it.isDigit() }.take(10),
-                                        maskedMobileFromProfile =
-                                            apiProfile?.maskedMobile?.trim()?.takeIf { it.isNotEmpty() },
-                                        onBackFromOtpEntry = { sessionPhase = "pin_confirm" },
-                                        parsedQr = parsedScanQr,
-                                        liveMode = liveMode,
-                                        qrPayBusy = qrPayBusy,
-                                        lastPay = lastQrPay,
-                                        scanSessionOtpCountdown = scanSessionOtpCountdown,
-                                        onResendScanSessionOtp = {
-                                            if (scanSessionOtpCountdown == 0) scanSessionOtpCountdown = 60
-                                        },
-                                        onGoToMyVehicles = { mainTab = "assignments" },
-                                        receiptDriverName = if (liveMode) driver.name else null,
-                                    )
-
-                                "assignments" ->
-                                    AssignmentsTab(
-                                        bindings = bindings,
-                                        onOpenScan = { b ->
-                                            selectedScan = b
-                                            sessionPhase = "idle"
-                                            sessionIdle = true
-                                            sessionPin = ""
-                                            sessionOtpDigits.clearDigits()
-                                            scanSessionOtpCountdown = 0
-                                            parsedScanQr = null
-                                            lastQrPay = null
-                                            mainTab = "scan"
-                                        },
-                                        onOpenTransactions = { b ->
-                                            val idx = activeCards.indexOfFirst { it.id == b.id }
-                                            if (idx >= 0) activeCard = idx
-                                            mainTab = "transactions"
-                                        },
-                                        onAcceptPending = { b ->
-                                            assignmentPick = b
-                                            mainOverlay = "assignment_notification"
-                                        },
-                                        onEnterRepairPairing = { b ->
-                                            assignmentPick = b
-                                            pairingCodeEntry = ""
-                                            pairingError = ""
-                                            pairingAttempts = 0
-                                            pairingSuccess = false
-                                            mainOverlay = "pairing_code"
-                                        },
-                                    )
-
-                                "transactions" ->
-                                    TransactionsTab(
-                                        filter = txnFilter,
-                                        onFilter = { txnFilter = it },
-                                        rows =
-                                            if (liveMode) {
-                                                apiTxnDetailRows
-                                            } else {
-                                                FleetReactMock.transactions.map { demoTxnToDetailRow(it) }
                                             },
-                                    )
+                                            onCloseConfirm = {
+                                                sessionPhase = "idle"
+                                                sessionIdle = true
+                                                sessionPin = ""
+                                                scanSessionOtpCountdown = 0
+                                                parsedScanQr = null
+                                                lastQrPay = null
+                                            },
+                                            onContinueToPin = {
+                                                sessionPhase = "pin_confirm"
+                                                sessionPin = ""
+                                            },
+                                            onBackFromPinConfirm = {
+                                                sessionPhase = "confirmation"
+                                                sessionPin = ""
+                                            },
+                                            onVerifyPinForSession = {
+                                                if (liveMode) {
+                                                    val tok = foScopedToken
+                                                    val veh = selectedScan
+                                                    val qr = parsedScanQr
+                                                    if (tok != null && veh != null && qr != null && sessionPin.length == 6) {
+                                                        pairingScope.launch {
+                                                        qrPayBusy = true
+                                                        try {
+                                                            val vrnNorm = normVrnPublic(veh.vrn).replace(" ", "")
+                                                            val pay =
+                                                                liveApi.driverQrPay(
+                                                                    tok,
+                                                                    qr.txnId,
+                                                                    vrnNorm,
+                                                                    sessionPin,
+                                                                    qr.mid,
+                                                                    qr.terminalId,
+                                                                    qr.amountPaise,
+                                                                    qr.expiryEpoch,
+                                                                    qr.sign,
+                                                                ).getOrThrow()
+                                                            lastQrPay = pay
+                                                            sessionPin = ""
+                                                            sessionPhase = "complete"
+                                                            val h = liveApi.driverGetHome(tok).getOrNull()
+                                                            if (h != null) apiHome = h
+                                                            val vid =
+                                                                vehicleIdForActiveCard(bindings, activeCard)
+                                                                    ?: veh.vehicleId.takeIf { it.isNotBlank() }
+                                                            if (!vid.isNullOrBlank()) {
+                                                                liveApi.driverGetTransactions(tok, vid, 0).onSuccess { pg ->
+                                                                    apiTxnDetailRows = pg.rows
+                                                                    recentLiveTx =
+                                                                        pg.rows.map { row ->
+                                                                            DemoTxn(
+                                                                                id = row.serverTxnId,
+                                                                                station = row.status.ifEmpty { "Fueling" },
+                                                                                vrn = row.vehicleRegNo,
+                                                                                amount =
+                                                                                    kotlin.math.abs(row.amountINR)
+                                                                                        .toLong(),
+                                                                                date = row.createdOn,
+                                                                                type =
+                                                                                    if (row.status.uppercase()
+                                                                                            .contains(
+                                                                                                "CREDIT",
+                                                                                            )
+                                                                                    ) {
+                                                                                        "Credit"
+                                                                                    } else {
+                                                                                        "Fueling"
+                                                                                    },
+                                                                                quantity = "",
+                                                                                status = row.status,
+                                                                            )
+                                                                        }
+                                                                }
+                                                            }
+                                                        } catch (e: Exception) {
+                                                            apiBanner = ReactParityBanner.forPinFailure(e)
+                                                            sessionPin = ""
+                                                        } finally {
+                                                            qrPayBusy = false
+                                                        }
+                                                        }
+                                                    }
+                                                } else {
+                                                    if (sessionPin == (if (nuPin.length == 6) nuPin else driver.pin)) {
+                                                        sessionPhase = "otp_entry"
+                                                        sessionPin = ""
+                                                        scanSessionOtpCountdown = 60
+                                                    } else sessionPin = ""
+                                                }
+                                            },
+                                            onVerifySessionOtp = {
+                                                if (sessionOtpDigits.joinToString("").length == 6) {
+                                                    sessionPhase = "authorized"
+                                                    scanSessionOtpCountdown = 0
+                                                }
+                                            },
+                                            onFuelingComplete = { sessionPhase = "complete" },
+                                            onSessionDone = {
+                                                sessionPhase = "idle"
+                                                sessionIdle = true
+                                                sessionOtpDigits.clearDigits()
+                                                scanSessionOtpCountdown = 0
+                                                mainTab = "card"
+                                                selectedScan = null
+                                                parsedScanQr = null
+                                                lastQrPay = null
+                                            },
+                                            scannedLoginMobileDigits =
+                                                mobileNumber.filter { it.isDigit() }.take(10),
+                                            maskedMobileFromProfile =
+                                                apiProfile?.maskedMobile?.trim()?.takeIf { it.isNotEmpty() },
+                                            onBackFromOtpEntry = { sessionPhase = "pin_confirm" },
+                                            parsedQr = parsedScanQr,
+                                            liveMode = liveMode,
+                                            qrPayBusy = qrPayBusy,
+                                            lastPay = lastQrPay,
+                                            scanSessionOtpCountdown = scanSessionOtpCountdown,
+                                            onResendScanSessionOtp = {
+                                                if (scanSessionOtpCountdown == 0) scanSessionOtpCountdown = 60
+                                            },
+                                            onGoToMyVehicles = { mainTab = "assignments" },
+                                            receiptDriverName = if (liveMode) driver.name else null,
+                                        )
 
-                                "profile" -> {
-                                    val prof = apiProfile
-                                    val profileSubtitle =
-                                        when {
-                                            liveMode && prof != null ->
-                                                "Driver · FO ${prof.foStatus?.trim().orEmpty()}"
-                                            fleetPinFoDisplay.isNotBlank() -> "Driver · $fleetPinFoDisplay"
-                                            else -> "Driver"
-                                        }
-                                    ProfileTab(
-                                        driverDisplayName = driver.name,
-                                        initials = driver.initials,
-                                        subtitle = profileSubtitle,
-                                        maskedMobile = driver.maskedMobile,
-                                        registeredDisplay = profileRegisteredFromAssignments(apiAssignments),
-                                        fleetOperatorDisplay =
-                                            fleetPinFoDisplay.ifBlank { apiHome?.foName.orEmpty() }.ifBlank { "—" },
-                                        driverId = prof?.driverId?.takeIf { it.isNotBlank() } ?: "—",
-                                        licenceLine = prof?.dlNumber?.trim()?.takeIf { it.isNotEmpty() } ?: "—",
-                                        apiAssignments = apiAssignments,
-                                        onLogout = {
-                                            onFinished(
-                                                FleetSdkResult.Success(
-                                                    event = "FLEET_FLOW_COMPLETED",
-                                                    payload = mapOf("reason" to "logout"),
-                                                ),
-                                            )
-                                        },
-                                    )
+                                    "assignments" ->
+                                        AssignmentsTab(
+                                            bindings = bindings,
+                                            onOpenScan = { b ->
+                                                selectedScan = b
+                                                sessionPhase = "idle"
+                                                sessionIdle = true
+                                                sessionPin = ""
+                                                sessionOtpDigits.clearDigits()
+                                                scanSessionOtpCountdown = 0
+                                                parsedScanQr = null
+                                                lastQrPay = null
+                                                mainTab = "scan"
+                                            },
+                                            onOpenTransactions = { b ->
+                                                val idx = activeCards.indexOfFirst { it.id == b.id }
+                                                if (idx >= 0) activeCard = idx
+                                                mainTab = "transactions"
+                                            },
+                                            onAcceptPending = { b ->
+                                                assignmentPick = b
+                                                mainOverlay = "assignment_notification"
+                                            },
+                                            onEnterRepairPairing = { b ->
+                                                assignmentPick = b
+                                                pairingCodeEntry = ""
+                                                pairingError = ""
+                                                pairingAttempts = 0
+                                                pairingSuccess = false
+                                                mainOverlay = "pairing_code"
+                                            },
+                                        )
+
+                                    "profile" -> {
+                                        val prof = apiProfile
+                                        val profileSubtitle =
+                                            when {
+                                                liveMode && prof != null ->
+                                                    "Driver · FO ${prof.foStatus?.trim().orEmpty()}"
+                                                fleetPinFoDisplay.isNotBlank() -> "Driver · $fleetPinFoDisplay"
+                                                else -> "Driver"
+                                            }
+                                        ProfileTab(
+                                            driverDisplayName = driver.name,
+                                            initials = driver.initials,
+                                            subtitle = profileSubtitle,
+                                            maskedMobile = driver.maskedMobile,
+                                            registeredDisplay = profileRegisteredFromAssignments(apiAssignments),
+                                            fleetOperatorDisplay =
+                                                fleetPinFoDisplay.ifBlank { apiHome?.foName.orEmpty() }.ifBlank { "—" },
+                                            driverId = prof?.driverId?.takeIf { it.isNotBlank() } ?: "—",
+                                            licenceLine = prof?.dlNumber?.trim()?.takeIf { it.isNotEmpty() } ?: "—",
+                                            apiAssignments = apiAssignments,
+                                            onLogout = {
+                                                onFinished(
+                                                    FleetSdkResult.Success(
+                                                        event = "FLEET_FLOW_COMPLETED",
+                                                        payload = mapOf("reason" to "logout"),
+                                                    ),
+                                                )
+                                            },
+                                        )
+                                    }
+
+                                    else -> Unit
                                 }
                             }
                         }
-                    val bottomSel =
-                        if (mainTab == "card" || mainTab == "scan" ||
-                            mainTab == "assignments" || mainTab == "profile"
-                        ) {
-                            mainTab
-                        } else {
-                            null
-                        }
-                    BottomNav(bottomSel, onTab = { mainTab = it })
                     }
                 }
             }
@@ -1469,32 +1538,39 @@ internal fun FleetDriverFlow(
                 modifier =
                     Modifier
                         .align(Alignment.BottomCenter)
+                        .zIndex(50f)
                         .fillMaxWidth()
                         .windowInsetsPadding(WindowInsets.navigationBars)
                         .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp + ApiBannerBottomNavClearance),
+                        .padding(
+                            bottom =
+                                12.dp + ApiBannerBottomNavClearance +
+                                    if (mainShellDockVisible) FleetBottomDockReserve else 0.dp,
+                        ),
             )
-
-            if (showBarcodeScanner) {
-                FleetBarcodeScannerOverlay(
-                    onBarcodeRaw = { raw ->
-                        showBarcodeScanner = false
-                        val sel = selectedScan
-                        if (sel == null) {
-                            apiBanner = ReactParityBanner.SELECT_VEHICLE_FIRST
-                            return@FleetBarcodeScannerOverlay
-                        }
-                        val p = parseFleetpayPayUri(raw.trim())
-                        if (p == null) {
-                            apiBanner = ReactParityBanner.INVALID_FLEETPAY_QR
-                        } else {
-                            apiBanner = null
-                            parsedScanQr = p
-                            sessionIdle = false
-                            sessionPhase = "confirmation"
-                        }
+            if (mainShellDockVisible) {
+                val dockSel =
+                    if (mainTab == "card" || mainTab == "scan" ||
+                        mainTab == "assignments" || mainTab == "profile"
+                    ) {
+                        mainTab
+                    } else {
+                        null
+                    }
+                BottomNav(
+                    current = dockSel,
+                    onTab = { id ->
+                        mainOverlay = "none"
+                        assignmentPick = null
+                        showDeclineConfirm = false
+                        showPairingHelp = false
+                        mainTab = id
                     },
-                    onClose = { showBarcodeScanner = false },
+                    modifier =
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .zIndex(100f),
                 )
             }
             }

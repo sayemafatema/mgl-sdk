@@ -59,3 +59,77 @@ abstract final class FleetReactTheme {
     );
   }
 }
+
+/// Fixed amber API error strip matching `app/page.tsx` (`apiBanner` alert).
+class FleetReactApiBanner extends StatelessWidget {
+  const FleetReactApiBanner({
+    super.key,
+    required this.message,
+    required this.onDismiss,
+  });
+
+  final String message;
+  final VoidCallback onDismiss;
+
+  static const Color _amber50 = Color(0xfffffbeb);
+  static const Color _amber200 = Color(0xfffde68a);
+  static const Color _amber700 = Color(0xffb45309);
+  static const Color _amber900 = Color(0xff78350f);
+  static const Color _amber950 = Color(0xff451a03);
+
+  @override
+  Widget build(BuildContext context) {
+    final screenH = MediaQuery.sizeOf(context).height;
+    final maxH = (screenH * 0.4).clamp(80.0, 220.0);
+    return Material(
+      color: _amber50,
+      elevation: 4,
+      shadowColor: Colors.black26,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: _amber200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.error_outline, size: 18, color: _amber700),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: maxH),
+                child: SingleChildScrollView(
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      fontSize: FleetReactTheme.caption,
+                      height: 1.35,
+                      color: _amber950,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: onDismiss,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: _amber900,
+              ),
+              child: const Text(
+                'Dismiss',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: FleetReactTheme.caption,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
