@@ -66,6 +66,8 @@ struct DriverProfileParsed: Equatable {
     var driverId: String
     var name: String
     var maskedMobile: String?
+    var dlNumber: String?
+    var foStatus: String?
 }
 
 struct QrPayResultParsed: Equatable {
@@ -216,10 +218,17 @@ enum DriverFleetJSON {
     }
 
     static func parseProfile(_ o: [String: Any]) -> DriverProfileParsed {
-        DriverProfileParsed(
+        let dl =
+            stringOrNil(o["dlNumber"])
+            ?? stringOrNil(o["dl_number"])
+            ?? stringOrNil(o["licenceNumber"])
+            ?? stringOrNil(o["licenseNumber"])
+        return DriverProfileParsed(
             driverId: (o["driverId"] as? String) ?? "",
             name: (o["name"] as? String) ?? "",
             maskedMobile: stringOrNil(o["maskedMobile"]),
+            dlNumber: dl,
+            foStatus: stringOrNil(o["foStatus"]),
         )
     }
 

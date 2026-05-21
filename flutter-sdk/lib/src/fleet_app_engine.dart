@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'driver_app_http.dart';
 import 'fleet_bindings_mapper.dart';
 import 'fleet_config.dart';
+import 'fleet_driver_validation.dart';
+import 'fleet_sdk_payload.dart';
 import 'fleet_demo_data.dart';
 import 'fleet_live_models.dart';
 import 'fleetpay_qr.dart';
@@ -71,6 +73,26 @@ class FleetAppSnapshot {
     this.parsedScanQr,
     required this.qrPayBusy,
     this.lastQrPay,
+    required this.foPinSubStep,
+    required this.forgotFleetPinPhase,
+    required this.forgotFleetPinFirst,
+    required this.forgotFleetPinSecond,
+    required this.forgotFleetPinError,
+    required this.profilePinModalOpen,
+    required this.profileChangePinPhase,
+    required this.profileChangePinFirst,
+    required this.profileChangePinSecond,
+    required this.profileChangePinError,
+    required this.profilePinChanging,
+    required this.persistedFoCompanyId,
+    this.overlayAssignmentId,
+    required this.profileFoName,
+    required this.profileDlNumber,
+    required this.profileRegistered,
+    required this.pairingSuccess,
+    this.declineConfirmBindingId,
+    required this.loginOtpRefocusKey,
+    required this.inviteOtpRefocusKey,
   });
 
   final String authStep;
@@ -124,6 +146,31 @@ class FleetAppSnapshot {
   final ParsedFleetpayQr? parsedScanQr;
   final bool qrPayBusy;
   final QrPayResultLive? lastQrPay;
+  final String foPinSubStep;
+  final String forgotFleetPinPhase;
+  final String forgotFleetPinFirst;
+  final String forgotFleetPinSecond;
+  final String forgotFleetPinError;
+  final bool profilePinModalOpen;
+  final String profileChangePinPhase;
+  final String profileChangePinFirst;
+  final String profileChangePinSecond;
+  final String profileChangePinError;
+  final bool profilePinChanging;
+  final int? persistedFoCompanyId;
+  final String? overlayAssignmentId;
+  final String profileFoName;
+  final String profileDlNumber;
+  final String profileRegistered;
+  final bool pairingSuccess;
+  final String? declineConfirmBindingId;
+  final int loginOtpRefocusKey;
+  final int inviteOtpRefocusKey;
+
+  bool get canForgotFleetPin =>
+      useLiveDriverApp &&
+      selectedFoCompanyId != null &&
+      (otpPhaseToken?.isNotEmpty ?? false);
 
   FleetAppSnapshot copy({
     Object? authStep = _kUnset,
@@ -175,6 +222,26 @@ class FleetAppSnapshot {
     Object? parsedScanQr = _kUnset,
     Object? qrPayBusy = _kUnset,
     Object? lastQrPay = _kUnset,
+    Object? foPinSubStep = _kUnset,
+    Object? forgotFleetPinPhase = _kUnset,
+    Object? forgotFleetPinFirst = _kUnset,
+    Object? forgotFleetPinSecond = _kUnset,
+    Object? forgotFleetPinError = _kUnset,
+    Object? profilePinModalOpen = _kUnset,
+    Object? profileChangePinPhase = _kUnset,
+    Object? profileChangePinFirst = _kUnset,
+    Object? profileChangePinSecond = _kUnset,
+    Object? profileChangePinError = _kUnset,
+    Object? profilePinChanging = _kUnset,
+    Object? persistedFoCompanyId = _kUnset,
+    Object? overlayAssignmentId = _kUnset,
+    Object? profileFoName = _kUnset,
+    Object? profileDlNumber = _kUnset,
+    Object? profileRegistered = _kUnset,
+    Object? pairingSuccess = _kUnset,
+    Object? declineConfirmBindingId = _kUnset,
+    Object? loginOtpRefocusKey = _kUnset,
+    Object? inviteOtpRefocusKey = _kUnset,
   }) {
     T pick<T>(Object? v, T cur) =>
         identical(v, _kUnset) ? cur : v as T;
@@ -245,12 +312,42 @@ class FleetAppSnapshot {
       lastQrPay: identical(lastQrPay, _kUnset)
           ? this.lastQrPay
           : lastQrPay as QrPayResultLive?,
+      foPinSubStep: pick(foPinSubStep, this.foPinSubStep),
+      forgotFleetPinPhase: pick(forgotFleetPinPhase, this.forgotFleetPinPhase),
+      forgotFleetPinFirst: pick(forgotFleetPinFirst, this.forgotFleetPinFirst),
+      forgotFleetPinSecond: pick(forgotFleetPinSecond, this.forgotFleetPinSecond),
+      forgotFleetPinError: pick(forgotFleetPinError, this.forgotFleetPinError),
+      profilePinModalOpen: pick(profilePinModalOpen, this.profilePinModalOpen),
+      profileChangePinPhase: pick(profileChangePinPhase, this.profileChangePinPhase),
+      profileChangePinFirst: pick(profileChangePinFirst, this.profileChangePinFirst),
+      profileChangePinSecond: pick(profileChangePinSecond, this.profileChangePinSecond),
+      profileChangePinError: pick(profileChangePinError, this.profileChangePinError),
+      profilePinChanging: pick(profilePinChanging, this.profilePinChanging),
+      persistedFoCompanyId:
+          pick(persistedFoCompanyId, this.persistedFoCompanyId),
+      overlayAssignmentId: identical(overlayAssignmentId, _kUnset)
+          ? this.overlayAssignmentId
+          : overlayAssignmentId as String?,
+      profileFoName: pick(profileFoName, this.profileFoName),
+      profileDlNumber: pick(profileDlNumber, this.profileDlNumber),
+      profileRegistered: pick(profileRegistered, this.profileRegistered),
+      pairingSuccess: pick(pairingSuccess, this.pairingSuccess),
+      declineConfirmBindingId: identical(declineConfirmBindingId, _kUnset)
+          ? this.declineConfirmBindingId
+          : declineConfirmBindingId as String?,
+      loginOtpRefocusKey: pick(loginOtpRefocusKey, this.loginOtpRefocusKey),
+      inviteOtpRefocusKey: pick(inviteOtpRefocusKey, this.inviteOtpRefocusKey),
     );
   }
 
-  factory FleetAppSnapshot.initial({bool useLive = false}) {
+  factory FleetAppSnapshot.initial({
+    bool useLive = false,
+    int? persistedFoCompanyId,
+    String? authStep,
+    String? foScopedToken,
+  }) {
     return FleetAppSnapshot(
-      authStep: 'login',
+      authStep: authStep ?? 'login',
       profile: mockFleetProfile,
       mobileNumber: '',
       otpDigitsLogin: _cloneOtpSlots(),
@@ -286,7 +383,7 @@ class FleetAppSnapshot {
       scanOtpCountdown: 0,
       apiBanner: null,
       otpPhaseToken: null,
-      foScopedToken: null,
+      foScopedToken: foScopedToken,
       foOrganizations: [],
       selectedFoCompanyId: null,
       inviteOtpRef: null,
@@ -299,6 +396,26 @@ class FleetAppSnapshot {
       parsedScanQr: null,
       qrPayBusy: false,
       lastQrPay: null,
+      foPinSubStep: 'enter',
+      forgotFleetPinPhase: 'first',
+      forgotFleetPinFirst: '',
+      forgotFleetPinSecond: '',
+      forgotFleetPinError: '',
+      profilePinModalOpen: false,
+      profileChangePinPhase: 'first',
+      profileChangePinFirst: '',
+      profileChangePinSecond: '',
+      profileChangePinError: '',
+      profilePinChanging: false,
+      persistedFoCompanyId: persistedFoCompanyId,
+      overlayAssignmentId: null,
+      profileFoName: '',
+      profileDlNumber: '',
+      profileRegistered: '',
+      pairingSuccess: false,
+      declineConfirmBindingId: null,
+      loginOtpRefocusKey: 0,
+      inviteOtpRefocusKey: 0,
     );
   }
 }
@@ -306,15 +423,31 @@ class FleetAppSnapshot {
 class FleetAppEngine extends ChangeNotifier {
   FleetAppEngine({FleetConfig? config})
       : _config = config ?? const FleetConfig(),
-        _s = FleetAppSnapshot.initial(
-          useLive: _inferLive(config ?? const FleetConfig()),
-        ) {
+        _s = _initialSnapshot(config ?? const FleetConfig()) {
     if (_live) {
       _http = DriverAppHttp(apiBaseUrl: _config.apiBaseUrl.trim());
       _countdownTimer =
           Timer.periodic(const Duration(seconds: 1), (_) => _tickCountdown());
+      if (_s.authStep == 'complete' && (_s.foScopedToken?.isNotEmpty ?? false)) {
+        Future.microtask(refreshLiveFleetData);
+      }
     }
   }
+
+  static FleetAppSnapshot _initialSnapshot(FleetConfig config) {
+    final live = _inferLive(config);
+    final token = !config.useMock ? config.authToken?.trim() : null;
+    final warm = token != null && token.isNotEmpty;
+    return FleetAppSnapshot.initial(
+      useLive: live,
+      persistedFoCompanyId: config.foCompanyId,
+      authStep: warm ? 'complete' : null,
+      foScopedToken: warm ? token : null,
+    );
+  }
+
+  bool get showLoginMobileFormatError =>
+      _s.mobileNumber.isNotEmpty && !validIndianMobile10(_s.mobileNumber);
 
   static bool _inferLive(FleetConfig c) =>
       !c.useMock && c.apiBaseUrl.trim().isNotEmpty;
@@ -329,6 +462,17 @@ class FleetAppEngine extends ChangeNotifier {
   final List<Timer> _timers = [];
 
   FleetAppSnapshot getSnapshot() => _s;
+
+  int? get _effectiveFoCompanyId =>
+      _s.selectedFoCompanyId ?? _s.persistedFoCompanyId ?? _config.foCompanyId;
+
+  FleetBinding? _bindingById(String? id) {
+    if (id == null) return null;
+    for (final b in _s.bindings) {
+      if (b.id == id) return b;
+    }
+    return null;
+  }
 
   void _tickCountdown() {
     final o = _s.otpCountdown;
@@ -362,8 +506,42 @@ class FleetAppEngine extends ChangeNotifier {
   }
 
   void _emit(FleetAppSnapshot next) {
-    _s = next;
+    var n = next;
+    if (n.apiBanner != null) {
+      n = n.copy(successToast: null);
+    } else if (n.successToast != null) {
+      n = n.copy(apiBanner: null);
+    }
+    final prevBanner = _s.apiBanner;
+    final prevToast = _s.successToast;
+    _s = n;
     notifyListeners();
+    if (n.apiBanner != null && n.apiBanner != prevBanner) {
+      _later(const Duration(seconds: 5), () {
+        if (_s.apiBanner == n.apiBanner) dismissApiBanner();
+      });
+    }
+    if (n.successToast != null && n.successToast != prevToast) {
+      _later(const Duration(seconds: 5), () {
+        if (_s.successToast == n.successToast) {
+          _emit(_s.copy(successToast: null));
+        }
+      });
+    }
+  }
+
+  static const userCancelledPayload = FleetSdkSuccessPayload(
+    event: 'USER_CANCELLED',
+    payload: {'code': '1003', 'message': 'Back closed flow.'},
+  );
+
+  static const logoutPayload = FleetSdkSuccessPayload(
+    event: 'FLEET_FLOW_COMPLETED',
+    payload: {'reason': 'logout'},
+  );
+
+  void _notifyFlowComplete(FleetSdkSuccessPayload payload) {
+    _config.onFlowComplete?.call(payload);
   }
 
   void skipToMainApp() {
@@ -397,7 +575,7 @@ class FleetAppEngine extends ChangeNotifier {
   }
 
   Future<void> loginSendOtp() async {
-    if (_s.mobileNumber.length != 10) return;
+    if (!validIndianMobile10(_s.mobileNumber)) return;
     if (!_live) {
       _emit(_s.copy(
         authStep: 'login_otp',
@@ -473,21 +651,32 @@ class FleetAppEngine extends ChangeNotifier {
   void verifyLoginOtp() {
     final entered = _s.otpDigitsLogin.join();
     if (entered != _demoOtp) {
-      _emit(_s.copy(otpErrorLogin: 'Incorrect OTP. Try again.'));
-      _later(const Duration(milliseconds: 1200), () {
-        _emit(_s.copy(
-          otpDigitsLogin: _cloneOtpSlots(),
-          otpErrorLogin: '',
-        ));
-      });
+      _emit(_s.copy(
+        otpErrorLogin: 'Incorrect OTP. Try again.',
+        otpDigitsLogin: _cloneOtpSlots(),
+        loginOtpRefocusKey: _s.loginOtpRefocusKey + 1,
+      ));
+      return;
+    }
+    if (!_s.isNewUser) {
+      _emit(_s.copy(
+        authStep: 'complete',
+        loginPin: '',
+        loginPinError: '',
+        otpErrorLogin: '',
+        otpCountdown: 0,
+        otpDigitsLogin: _cloneOtpSlots(),
+      ));
       return;
     }
     _emit(_s.copy(
-      authStep: 'fo_pin_login',
-      loginPin: '',
-      loginPinError: '',
+      authStep: 'set_pin',
+      newPin: '',
+      pinConfirm: '',
+      pinError: '',
       otpErrorLogin: '',
       otpCountdown: 0,
+      otpDigitsLogin: _cloneOtpSlots(),
     ));
   }
 
@@ -534,6 +723,7 @@ class FleetAppEngine extends ChangeNotifier {
     } catch (e) {
       _emit(_s.copy(
         otpDigitsLogin: _cloneOtpSlots(),
+        loginOtpRefocusKey: _s.loginOtpRefocusKey + 1,
         apiBanner: ReactParityStrings.forGenericFailure(e),
         onboardingBusy: false,
       ));
@@ -584,6 +774,7 @@ class FleetAppEngine extends ChangeNotifier {
         authStep: 'complete',
         loginPin: '',
         fleetPinFoDisplay: foDisp,
+        persistedFoCompanyId: id,
         onboardingBusy: false,
       ));
       await refreshLiveFleetData();
@@ -597,15 +788,18 @@ class FleetAppEngine extends ChangeNotifier {
   }
 
   void loginPinAppend(String digit) {
-    if (_s.disableLoginNumpad || _s.loginPin.length >= 6) return;
-    final next = _s.loginPin + digit;
-    _emit(_s.copy(loginPin: next, loginPinError: ''));
-    if (next.length == 6) {
-      if (_live && _s.authStep == 'fo_pin_login') {
-        Future.microtask(submitFoUnlock);
-      } else {
-        _submitLoginPin(next);
-      }
+    if (_s.disableLoginNumpad || _s.onboardingBusy || _s.loginPin.length >= 6) {
+      return;
+    }
+    _emit(_s.copy(loginPin: _s.loginPin + digit, loginPinError: ''));
+  }
+
+  Future<void> unlockApp() async {
+    if (_s.loginPin.length != 6 || _s.onboardingBusy) return;
+    if (_live) {
+      await submitFoUnlock();
+    } else {
+      _submitLoginPin(_s.loginPin);
     }
   }
 
@@ -638,11 +832,233 @@ class FleetAppEngine extends ChangeNotifier {
 
   void goToForgotPin() {
     _emit(_s.copy(
-      authStep: 'forgot_pin',
-      inviteOtp: '',
-      otpDigitsLogin: _cloneOtpSlots(),
+      foPinSubStep: 'forgot',
+      forgotFleetPinPhase: 'first',
+      forgotFleetPinFirst: '',
+      forgotFleetPinSecond: '',
+      forgotFleetPinError: '',
+      loginPin: '',
+      loginPinError: '',
     ));
   }
+
+  void cancelForgotPin() {
+    _emit(_s.copy(
+      foPinSubStep: 'enter',
+      forgotFleetPinPhase: 'first',
+      forgotFleetPinFirst: '',
+      forgotFleetPinSecond: '',
+      forgotFleetPinError: '',
+      loginPin: '',
+    ));
+  }
+
+  void forgotFleetPinAppend(String digit) {
+    if (_s.forgotFleetPinPhase == 'first') {
+      if (_s.forgotFleetPinFirst.length >= 6) return;
+      _emit(_s.copy(
+        forgotFleetPinFirst: _s.forgotFleetPinFirst + digit,
+        forgotFleetPinError: '',
+      ));
+    } else {
+      if (_s.forgotFleetPinSecond.length >= 6) return;
+      _emit(_s.copy(
+        forgotFleetPinSecond: _s.forgotFleetPinSecond + digit,
+        forgotFleetPinError: '',
+      ));
+    }
+  }
+
+  void forgotFleetPinBackspace() {
+    if (_s.forgotFleetPinPhase == 'first') {
+      if (_s.forgotFleetPinFirst.isEmpty) return;
+      _emit(_s.copy(
+        forgotFleetPinFirst:
+            _s.forgotFleetPinFirst.substring(0, _s.forgotFleetPinFirst.length - 1),
+      ));
+    } else {
+      if (_s.forgotFleetPinSecond.isEmpty) return;
+      _emit(_s.copy(
+        forgotFleetPinSecond: _s.forgotFleetPinSecond
+            .substring(0, _s.forgotFleetPinSecond.length - 1),
+      ));
+    }
+  }
+
+  Future<void> submitForgotFleetPinStep() async {
+    if (_s.foPinSubStep != 'forgot') return;
+    if (_s.forgotFleetPinPhase == 'first') {
+      if (_s.forgotFleetPinFirst.length != 6) return;
+      _emit(_s.copy(
+        forgotFleetPinPhase: 'second',
+        forgotFleetPinSecond: '',
+        forgotFleetPinError: '',
+      ));
+      return;
+    }
+    if (_s.forgotFleetPinSecond.length != 6) return;
+    if (_s.forgotFleetPinSecond != _s.forgotFleetPinFirst) {
+      _emit(_s.copy(
+        forgotFleetPinError: ReactParityStrings.pinsDidntMatchConfirm,
+        forgotFleetPinSecond: '',
+      ));
+      return;
+    }
+    final foId = _effectiveFoCompanyId;
+    if (_live && _http != null && foId != null) {
+      final phase = _s.otpPhaseToken;
+      if (phase == null || phase.isEmpty) {
+        _emit(_s.copy(apiBanner: ReactParityStrings.inviteIncompleteMobile));
+        return;
+      }
+      _emit(_s.copy(onboardingBusy: true, forgotFleetPinError: ''));
+      try {
+        await _http!.driverPinReset(
+          bearerPartial: phase,
+          foCompanyId: foId,
+          newPin: _s.forgotFleetPinSecond,
+        );
+        _emit(_s.copy(
+          authStep: 'login',
+          foPinSubStep: 'enter',
+          otpPhaseToken: null,
+          foScopedToken: null,
+          foOrganizations: [],
+          selectedFoCompanyId: null,
+          persistedFoCompanyId: null,
+          fleetPinFoDisplay: '',
+          loginPin: '',
+          mobileNumber: _s.mobileNumber,
+          forgotFleetPinPhase: 'first',
+          forgotFleetPinFirst: '',
+          forgotFleetPinSecond: '',
+          successToast:
+              'PIN changed successfully. Tap Send OTP and sign in with your new PIN.',
+          onboardingBusy: false,
+        ));
+      } catch (e) {
+        _emit(_s.copy(
+          forgotFleetPinSecond: '',
+          apiBanner: ReactParityStrings.forPinFailure(e),
+          onboardingBusy: false,
+        ));
+      }
+      return;
+    }
+    _emit(_s.copy(
+      foPinSubStep: 'enter',
+      forgotFleetPinPhase: 'first',
+      forgotFleetPinFirst: '',
+      forgotFleetPinSecond: '',
+      successToast: 'PIN updated successfully',
+    ));
+  }
+
+  void openProfileChangePin() {
+    _emit(_s.copy(
+      profilePinModalOpen: true,
+      profileChangePinPhase: 'first',
+      profileChangePinFirst: '',
+      profileChangePinSecond: '',
+      profileChangePinError: '',
+      apiBanner: null,
+    ));
+  }
+
+  void closeProfileChangePin() {
+    _emit(_s.copy(
+      profilePinModalOpen: false,
+      profileChangePinPhase: 'first',
+      profileChangePinFirst: '',
+      profileChangePinSecond: '',
+      profileChangePinError: '',
+    ));
+  }
+
+  void profileChangePinAppend(String digit) {
+    if (_s.profileChangePinPhase == 'first') {
+      if (_s.profileChangePinFirst.length >= 6) return;
+      _emit(_s.copy(
+        profileChangePinFirst: _s.profileChangePinFirst + digit,
+        profileChangePinError: '',
+      ));
+    } else {
+      if (_s.profileChangePinSecond.length >= 6) return;
+      _emit(_s.copy(
+        profileChangePinSecond: _s.profileChangePinSecond + digit,
+        profileChangePinError: '',
+      ));
+    }
+  }
+
+  void profileChangePinBackspace() {
+    if (_s.profileChangePinPhase == 'first') {
+      if (_s.profileChangePinFirst.isEmpty) return;
+      _emit(_s.copy(
+        profileChangePinFirst: _s.profileChangePinFirst
+            .substring(0, _s.profileChangePinFirst.length - 1),
+      ));
+    } else {
+      if (_s.profileChangePinSecond.isEmpty) return;
+      _emit(_s.copy(
+        profileChangePinSecond: _s.profileChangePinSecond
+            .substring(0, _s.profileChangePinSecond.length - 1),
+      ));
+    }
+  }
+
+  Future<void> submitProfileChangePinStep() async {
+    if (!_s.profilePinModalOpen) return;
+    if (_s.profileChangePinPhase == 'first') {
+      if (_s.profileChangePinFirst.length != 6) return;
+      _emit(_s.copy(
+        profileChangePinPhase: 'second',
+        profileChangePinSecond: '',
+        profileChangePinError: '',
+      ));
+      return;
+    }
+    if (_s.profileChangePinSecond.length != 6) return;
+    if (_s.profileChangePinSecond != _s.profileChangePinFirst) {
+      _emit(_s.copy(
+        profileChangePinError: ReactParityStrings.pinsDidntMatchConfirm,
+        profileChangePinSecond: '',
+        profileChangePinPhase: 'first',
+        profileChangePinFirst: '',
+      ));
+      return;
+    }
+    final tok = _s.foScopedToken;
+    final foId = _effectiveFoCompanyId;
+    if (_live && _http != null && tok != null && foId != null) {
+      _emit(_s.copy(profilePinChanging: true, profileChangePinError: ''));
+      try {
+        await _http!.driverPinReset(
+          bearerPartial: tok,
+          foCompanyId: foId,
+          newPin: _s.profileChangePinSecond,
+        );
+        closeProfileChangePin();
+        _emit(_s.copy(
+          successToast: 'PIN updated successfully',
+          profilePinChanging: false,
+        ));
+      } catch (e) {
+        _emit(_s.copy(
+          profileChangePinSecond: '',
+          profileChangePinError: ReactParityStrings.forPinFailure(e),
+          profilePinChanging: false,
+        ));
+      }
+      return;
+    }
+    closeProfileChangePin();
+    _emit(_s.copy(successToast: 'PIN updated successfully'));
+  }
+
+  bool canChangeProfilePin() =>
+      _s.authStep == 'complete' &&
+      (!_live || (_s.foScopedToken != null && _effectiveFoCompanyId != null));
 
   void forgotPinSendOtp() {
     _emit(_s.copy(authStep: 'forgot_otp', inviteOtp: ''));
@@ -753,13 +1169,17 @@ class FleetAppEngine extends ChangeNotifier {
         foOrganizations: [],
       ));
     } else if (step == 'fo_pin_login') {
+      if (_s.foPinSubStep == 'forgot') {
+        cancelForgotPin();
+        return;
+      }
       _emit(_s.copy(
         loginPin: '',
         authStep: _s.foOrganizations.length > 1 ? 'select_fo' : 'login_otp',
         otpPhaseToken: _s.foOrganizations.length > 1 ? _s.otpPhaseToken : null,
       ));
     } else if (step == '1b') {
-      _emit(_s.copy(authStep: '1d'));
+      _emit(_s.copy(authStep: _live ? '1d' : 'login'));
     } else if (step == '1c') {
       _emit(_s.copy(authStep: 'login'));
     } else if (step == '1d') {
@@ -772,7 +1192,7 @@ class FleetAppEngine extends ChangeNotifier {
   }
 
   Future<void> inviteSendOtpFromMobileScreen() async {
-    if (_s.mobileNumber.length != 10) return;
+    if (!validIndianMobile10(_s.mobileNumber)) return;
     if (!_live) {
       inviteSendOtp();
       return;
@@ -820,10 +1240,12 @@ class FleetAppEngine extends ChangeNotifier {
 
   void goInviteSignup() {
     _emit(_s.copy(
-      authStep: '1c',
-      mobileNumber: '',
+      authStep: _live ? '1c' : '1b',
+      mobileNumber: _live ? '' : _s.mobileNumber,
       inviteOtp: '',
       inviteCode: '',
+      inviteOtpRef: null,
+      inviteMobileVerificationToken: null,
       apiBanner: null,
     ));
   }
@@ -865,6 +1287,8 @@ class FleetAppEngine extends ChangeNotifier {
         invitePreviewDriver: v.driverName,
         invitePreviewFo: v.foName,
         fleetPinFoDisplay: v.foName.trim(),
+        persistedFoCompanyId:
+            v.foCompanyId > 0 ? v.foCompanyId : _s.persistedFoCompanyId,
         authStep: '1e',
         invitePin: '',
         invitePinConfirm: '',
@@ -1004,6 +1428,7 @@ class FleetAppEngine extends ChangeNotifier {
         invitePin: '',
         invitePinConfirm: '',
         fleetPinFoDisplay: foDisp.isNotEmpty ? foDisp : _s.fleetPinFoDisplay,
+        persistedFoCompanyId: _s.persistedFoCompanyId ?? _effectiveFoCompanyId,
         onboardingBusy: false,
       ));
       await refreshLiveFleetData();
@@ -1034,11 +1459,185 @@ class FleetAppEngine extends ChangeNotifier {
   }
 
   void setMainOverlay(String o) {
-    _emit(_s.copy(mainOverlay: o));
+    _emit(_s.copy(
+      mainOverlay: o,
+      overlayAssignmentId: o == 'home' ? null : _s.overlayAssignmentId,
+      pairingSuccess: o == 'pairing_code' ? _s.pairingSuccess : false,
+    ));
+  }
+
+  /// Android/iOS `BackHandler` parity. Returns `true` if back was consumed.
+  bool handleBack() {
+    if (_s.authStep != 'complete') {
+      if (_s.authStep == 'login') return false;
+      authBack();
+      return true;
+    }
+    if (_s.profilePinModalOpen) {
+      closeProfileChangePin();
+      return true;
+    }
+    if (_s.declineConfirmBindingId != null) {
+      cancelDeclineConfirm();
+      return true;
+    }
+    if (_s.mainOverlay == 'assignment_accepted') {
+      _emit(_s.copy(mainOverlay: 'home', overlayAssignmentId: null));
+      return true;
+    }
+    if (_s.mainOverlay == 'pairing_code') {
+      pairingBackFromOverlay();
+      return true;
+    }
+    if (_s.mainOverlay == 'assignment_notification') {
+      _emit(_s.copy(mainOverlay: 'home', overlayAssignmentId: null));
+      return true;
+    }
+    if (_s.sessionState != 'idle') {
+      switch (_s.sessionState) {
+        case 'confirmation':
+          scanCancelConfirmation();
+          return true;
+        case 'pin_confirm':
+          scanBackFromPin();
+          return true;
+        case 'otp_entry':
+          scanBackFromOtpEntry();
+          return true;
+        case 'authorized':
+          return true;
+        case 'complete':
+          scanDismissSessionComplete();
+          return true;
+        default:
+          return true;
+      }
+    }
+    if (_s.activeTab != 'card') {
+      _emit(_s.copy(activeTab: 'card'));
+      return true;
+    }
+    return false;
+  }
+
+  void requestDeclineConfirm(String? bindingId) {
+    _emit(_s.copy(declineConfirmBindingId: bindingId ?? _s.overlayAssignmentId));
+  }
+
+  void cancelDeclineConfirm() {
+    _emit(_s.copy(declineConfirmBindingId: null));
+  }
+
+  void confirmDecline() {
+    final id = _s.declineConfirmBindingId;
+    if (_s.mainOverlay == 'assignment_notification') {
+      _emit(_s.copy(
+        mainOverlay: 'home',
+        overlayAssignmentId: null,
+        declineConfirmBindingId: null,
+        successToast: 'Assignment declined',
+      ));
+      return;
+    }
+    if (id != null && !_live) {
+      final next = _s.bindings.where((b) => b.id != id).toList();
+      _emit(_s.copy(
+        bindings: next.isEmpty ? _cloneBindings() : next,
+        declineConfirmBindingId: null,
+        successToast: 'Assignment declined',
+      ));
+      return;
+    }
+    _emit(_s.copy(
+      mainOverlay: 'home',
+      overlayAssignmentId: null,
+      declineConfirmBindingId: null,
+    ));
+  }
+
+  void pairingBackFromOverlay() {
+    if (_s.overlayAssignmentId != null) {
+      _emit(_s.copy(
+        mainOverlay: 'assignment_notification',
+        pairingDigits: _cloneOtpSlots(),
+        pairingError: '',
+        pairingSuccess: false,
+        pairingAttempts: 0,
+      ));
+    } else {
+      _emit(_s.copy(
+        mainOverlay: 'home',
+        pairingDigits: _cloneOtpSlots(),
+        pairingError: '',
+        pairingSuccess: false,
+      ));
+    }
+  }
+
+  void _completePairingSuccess() {
+    final fromAssignment = _s.overlayAssignmentId != null;
+    final assignId = _s.overlayAssignmentId;
+    var bindings = _s.bindings;
+    if (!_live && assignId != null) {
+      bindings = bindings
+          .map((b) => b.id == assignId
+              ? b.copyWith(
+                  paired: true,
+                  state: 'ACTIVE',
+                  scanPayStatus: 'always_available',
+                )
+              : b)
+          .toList();
+    }
+    _emit(_s.copy(
+      pairingSuccess: false,
+      pairingDigits: _cloneOtpSlots(),
+      pairingAttempts: 0,
+      pairingError: '',
+      bindings: bindings,
+      mainOverlay: fromAssignment ? 'assignment_accepted' : 'home',
+      activeTab: fromAssignment ? _s.activeTab : 'assignments',
+      onboardingBusy: false,
+    ));
+    if (_live) Future.microtask(refreshLiveFleetData);
+  }
+
+  void openAssignmentForBinding(String bindingId) {
+    _emit(_s.copy(
+      mainOverlay: 'assignment_notification',
+      overlayAssignmentId: bindingId,
+      activeTab: 'card',
+    ));
   }
 
   void openAssignmentDemo() {
-    _emit(_s.copy(mainOverlay: 'assignment_notification', activeTab: 'card'));
+    final b = assignmentDemoBinding();
+    openAssignmentForBinding(b.id);
+  }
+
+  void acceptAssignmentOverlay() {
+    final b = assignmentOverlayBinding();
+    final needsPair =
+        b.state == 'PENDING_ACCEPTANCE' || b.scanPayStatus == 'locked_unpaired';
+    if (needsPair) {
+      _emit(_s.copy(
+        mainOverlay: 'pairing_code',
+        pairingDigits: _cloneOtpSlots(),
+        pairingError: '',
+        overlayAssignmentId: b.id,
+      ));
+    } else {
+      acceptAssignmentDemo();
+    }
+  }
+
+  void openPairingForBinding(String bindingId) {
+    _emit(_s.copy(
+      mainOverlay: 'pairing_code',
+      overlayAssignmentId: bindingId,
+      pairingDigits: _cloneOtpSlots(),
+      pairingError: '',
+    ));
   }
 
   void acceptAssignmentDemo() {
@@ -1067,20 +1666,13 @@ class FleetAppEngine extends ChangeNotifier {
 
   Future<void> submitPairingCode() async {
     final code = _s.pairingDigits.join();
-    if (code.length != 6) return;
+    if (code.length != 6 || _s.pairingSuccess) return;
     if (_live && _http != null && _s.foScopedToken != null) {
       _emit(_s.copy(onboardingBusy: true, pairingError: ''));
       try {
         await _http!.driverAcceptPairing(_s.foScopedToken!, code);
-        await refreshLiveFleetData();
-        _emit(_s.copy(
-          mainOverlay: 'home',
-          pairingError: '',
-          activeTab: 'assignments',
-          pairingDigits: _cloneOtpSlots(),
-          pairingAttempts: 0,
-          onboardingBusy: false,
-        ));
+        _emit(_s.copy(pairingSuccess: true, onboardingBusy: false, pairingError: ''));
+        _later(const Duration(milliseconds: 900), _completePairingSuccess);
       } catch (e) {
         final attempts = _s.pairingAttempts + 1;
         _emit(_s.copy(
@@ -1103,11 +1695,8 @@ class FleetAppEngine extends ChangeNotifier {
       ));
       return;
     }
-    _emit(_s.copy(
-      mainOverlay: 'home',
-      pairingError: '',
-      activeTab: 'assignments',
-    ));
+    _emit(_s.copy(pairingSuccess: true, pairingError: ''));
+    _later(const Duration(milliseconds: 900), _completePairingSuccess);
   }
 
   void setActiveCardIndex(int i) {
@@ -1161,11 +1750,20 @@ class FleetAppEngine extends ChangeNotifier {
         .length;
   }
 
+  FleetBinding assignmentOverlayBinding() {
+    final picked = _bindingById(_s.overlayAssignmentId);
+    if (picked != null) return picked;
+    return assignmentDemoBinding();
+  }
+
   FleetBinding assignmentDemoBinding() {
     for (final b in _s.bindings) {
       if (b.state == 'PENDING_ACCEPTANCE') return b;
     }
-    return _s.bindings.length > 3 ? _s.bindings[3] : _s.bindings.first;
+    for (final b in _s.bindings) {
+      if (!b.paired && b.state == 'ACTIVE') return b;
+    }
+    return _s.bindings.isNotEmpty ? _s.bindings.first : mockBindings.first;
   }
 
   void scanPickBinding(String id) {
@@ -1342,8 +1940,50 @@ class FleetAppEngine extends ChangeNotifier {
   }
 
   void logout() {
+    _notifyFlowComplete(logoutPayload);
     _cancelTimers();
-    _emit(FleetAppSnapshot.initial(useLive: _s.useLiveDriverApp));
+    _emit(_initialSnapshot(_config));
+  }
+
+  void toggleDemoUserMode() {
+    _emit(_s.copy(isNewUser: !_s.isNewUser));
+  }
+
+  void openScanForBinding(String bindingId) {
+    _emit(_s.copy(
+      selectedScanBindingId: bindingId,
+      activeTab: 'scan',
+      mainOverlay: 'home',
+      sessionState: 'idle',
+      sessionPin: '',
+      sessionOtp: '',
+      parsedScanQr: null,
+      lastQrPay: null,
+      scanOtpCountdown: 0,
+    ));
+  }
+
+  void openTransactionsForBinding(String bindingId) {
+    final cards = activeCards();
+    var idx = -1;
+    for (var i = 0; i < cards.length; i++) {
+      if (cards[i].id == bindingId) {
+        idx = i;
+        break;
+      }
+    }
+    if (idx < 0) {
+      for (var i = 0; i < _s.bindings.length; i++) {
+        if (_s.bindings[i].id == bindingId) {
+          _emit(_s.copy(activeTab: 'transactions'));
+          if (_live) Future.microtask(refreshLiveTransactions);
+          return;
+        }
+      }
+      return;
+    }
+    _emit(_s.copy(activeCardIndex: idx, activeTab: 'transactions'));
+    if (_live) Future.microtask(refreshLiveTransactions);
   }
 
   Future<void> refreshLiveFleetData() async {
@@ -1355,11 +1995,29 @@ class FleetAppEngine extends ChangeNotifier {
       final home = await http.driverGetHome(tok);
       final prof = await http.driverGetProfile(tok);
       final rows = await http.driverGetAssignments(tok);
-      final mapped = mapAssignmentsToFleetBindings(home, rows);
+      var mapped = mapAssignmentsToFleetBindings(home, rows);
+      try {
+        final bal = await http.driverGetBalance(tok);
+        final vid = home?.vehicleId;
+        if (vid != null && vid.isNotEmpty && bal.isFinite) {
+          mapped = mapped
+              .map((b) => b.vehicleId == vid
+                  ? b.copyWith(balance: bal.round(), cardBalance: bal.round())
+                  : b)
+              .toList();
+        }
+      } catch (_) {}
+      final mappedFinal = mapped;
       final profile = mapLiveProfile(prof, _s.mobileNumber);
+      final foName = home?.foName?.trim() ?? '';
+      final dl = prof.dlNumber?.trim() ?? '';
+      final reg = rows.isNotEmpty ? 'Yes' : (prof.foStatus?.trim().isNotEmpty == true ? prof.foStatus! : 'Yes');
       _emit(_s.copy(
-        bindings: mapped,
+        bindings: mappedFinal,
         profile: profile,
+        profileFoName: foName.isNotEmpty ? foName : _s.fleetPinFoDisplay,
+        profileDlNumber: dl.isNotEmpty ? dl : '—',
+        profileRegistered: reg,
       ));
       await refreshLiveTransactions();
     } catch (e) {

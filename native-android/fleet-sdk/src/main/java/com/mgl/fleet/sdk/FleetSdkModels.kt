@@ -5,6 +5,8 @@ data class FleetSdkOptions(
     val apiBaseUrl: String,
     val authToken: String? = null,
     val useMock: Boolean = true,
+    /** When opening the flow already FO-authenticated (`authToken` set), pass this so Profile → Change PIN can call `pin/reset`. */
+    val foCompanyId: Long? = null,
 )
 
 /** Optional per-session overrides for native presentation. */

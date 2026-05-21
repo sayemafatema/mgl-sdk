@@ -18,4 +18,5 @@ Pod::Spec.new do |s|
 
   # Paths are relative to this podspec directory (local :path or monorepo git checkout).
   s.source_files     = 'Sources/MGLFleetSDK/**/*.swift'
+  s.resource_bundles = { 'MGLFleetSDK' => ['Sources/MGLFleetSDK/Resources/*'] }
 end

@@ -1,28 +1,16 @@
 # `mgl_fleet_sdk`
 
-**Native Fleet SDK for Flutter** — Material UI only; same REST contract as **[OpenAPI](../docs/openapi/fleet-api.yaml)**.
+Pure **Flutter** driver SDK — one call (`FleetNativeSdk.root` / `present`) mounts the full login → shell → scan flow.
 
-Integration is **initialization-only**: wrap **`FleetNativeSdk.root(config)`** or call **`FleetNativeSdk.present(...)`**.
+**Integration guide:** [`docs/FLUTTER_SDK_INTEGRATION_GUIDE.md`](../docs/FLUTTER_SDK_INTEGRATION_GUIDE.md)
 
----
-
-## Initialization
-
-### 1 — Dependency
+## Quick start
 
 ```yaml
 dependencies:
   mgl_fleet_sdk:
-    path: ../mgl-sdk/flutter-sdk  # adjust relative to your app
+    path: ../mgl-sdk/flutter-sdk
 ```
-
-```bash
-flutter pub get
-```
-
-### 2 — Start the SDK
-
-**Full screen** (typical demo / fleet-only build):
 
 ```dart
 import 'package:flutter/material.dart';
@@ -32,8 +20,8 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     FleetNativeSdk.root(
-      FleetConfig(
-        apiBaseUrl: 'https://your-api.example',
+      const FleetConfig(
+        apiBaseUrl: 'https://api-fleet-uat.enkash.in',
         useMock: true,
       ),
     ),
@@ -41,41 +29,7 @@ void main() {
 }
 ```
 
-**From your existing app**:
-
-```dart
-await FleetNativeSdk.present(
-  context,
-  FleetConfig(apiBaseUrl: baseUrl, useMock: false),
-);
-```
-
-That’s it — no manual composition of login / OTP / shell screens.
-
----
-
-## **`FleetConfig`**
-
-| Field | Meaning |
-|-------|---------|
-| **`apiBaseUrl`** | Fleet REST base URL |
-| **`useMock`** | **`true`** = in-memory demo (**no backend**) |
-| **`authToken`** | Optional Bearer when **`useMock: false`** |
-
----
-
-## Equivalence
-
-| API | Role |
-|-----|------|
-| **`FleetNativeSdk.root`** | Preferred native SDK entry |
-| **`FleetSdkApp`** | Same widget; kept for backwards compatibility |
-
----
-
-## Example app (this repo)
-
-From **`mgl-sdk`** root:
+## Example
 
 ```bash
 cd flutter-sdk/example
@@ -83,15 +37,6 @@ flutter pub get
 flutter run
 ```
 
----
+Mock OTP/PIN: `123456`. Pairing demo: `123456`, `789012`. Invite: `ABC123`, `XYZ789`.
 
-## Requirements
-
-- Flutter **3.x**, **`environment.sdk: '>=3.0.0 <4.0.0'`** in this package.
-
----
-
-## More detail
-
-- **[`docs/FLUTTER_SDK_INTEGRATION_GUIDE.md`](../docs/FLUTTER_SDK_INTEGRATION_GUIDE.md)** — E2E checklist, devices, publishing.
-- **[`flutter-integration/README.md`](../flutter-integration/README.md)** — REST-only / custom UI appendix.
+Optional native Compose/SwiftUI bridge: [`plugins/flutter-fleet/mgl_fleet_native_sdk`](../plugins/flutter-fleet/mgl_fleet_native_sdk/) (not required for this package).

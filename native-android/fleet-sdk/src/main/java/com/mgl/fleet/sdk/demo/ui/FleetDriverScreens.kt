@@ -2833,6 +2833,8 @@ internal fun ProfileTab(
     licenceLine: String,
     apiAssignments: List<DriverAssignmentJson>,
     onLogout: () -> Unit,
+    showChangeFleetPinAction: Boolean = false,
+    onChangeFleetPin: () -> Unit = {},
 ) {
     Column(Modifier.background(Color.White).padding(16.dp).padding(bottom = 32.dp)) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -2875,6 +2877,36 @@ internal fun ProfileTab(
                 ProfileRow("Driver ID", driverId)
                 HorizontalDivider(color = Color(0xFFE5E7EB))
                 ProfileRow("Licence Number", licenceLine)
+            }
+        }
+        if (showChangeFleetPinAction) {
+            Card(
+                Modifier.fillMaxWidth().padding(top = 16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = BorderStroke(1.dp, ReactCardBorder),
+            ) {
+                Column {
+                    Text(
+                        "Security",
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        fontWeight = FontWeight.SemiBold,
+                        color = ReactTextPrimary,
+                    )
+                    HorizontalDivider(color = Color(0xFFE5E7EB))
+                    TextButton(
+                        onClick = onChangeFleetPin,
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp),
+                    ) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Change PIN", fontSize = 14.sp, fontWeight = FontWeight.Medium, color = ReactTextPrimary)
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color(0xFFD1D5DB), modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
             }
         }
         val showApiVehicles = apiAssignments.isNotEmpty()

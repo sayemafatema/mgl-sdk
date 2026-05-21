@@ -2,17 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'fleet_app_engine.dart';
+import 'fleet_assignments_tab.dart';
 import 'fleet_demo_data.dart';
+import 'fleet_sdk_payload.dart';
+import 'fleet_inline_qr_scanner.dart';
+import 'fleet_compose_ui.dart';
+import 'fleet_driver_validation.dart';
 import 'fleet_qr_scan_screen.dart';
 import 'fleet_react_theme.dart';
+import 'fleet_scan_receipt.dart';
 import 'fleetpay_qr.dart';
 import 'react_parity_strings.dart';
 
 /// Full-screen flow matching Angular `FleetFlowHostComponent` / TS `FleetAppEngine`.
 class FleetFlowScreen extends StatefulWidget {
-  const FleetFlowScreen({super.key, required this.engine});
+  const FleetFlowScreen({
+    super.key,
+    required this.engine,
+    this.onFlowComplete,
+  });
 
   final FleetAppEngine engine;
+  final void Function(FleetSdkSuccessPayload payload)? onFlowComplete;
 
   @override
   State<FleetFlowScreen> createState() => _FleetFlowScreenState();
@@ -21,6 +32,7 @@ class FleetFlowScreen extends StatefulWidget {
 class _FleetFlowScreenState extends State<FleetFlowScreen> {
   late final TextEditingController _mobileCtrl = TextEditingController();
   late final TextEditingController _inviteCodeCtrl = TextEditingController();
+  bool _showDevMenu = false;
 
   @override
   void initState() {
@@ -56,16 +68,57 @@ class _FleetFlowScreenState extends State<FleetFlowScreen> {
     setState(() {});
   }
 
-  static const _otpSlots = [0, 1, 2, 3, 4, 5];
-
   @override
   Widget build(BuildContext context) {
     final s = widget.engine.getSnapshot();
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final handled = widget.engine.handleBack();
+        if (!handled && context.mounted) {
+          widget.onFlowComplete?.call(FleetAppEngine.userCancelledPayload);
+          Navigator.of(context).maybePop(FleetAppEngine.userCancelledPayload);
+        }
+      },
+      child: Scaffold(
       backgroundColor: FleetReactTheme.gray100,
       body: SafeArea(
         child: Stack(
         children: [
+          if (_showDevMenu)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(8),
+                color: const Color(0xff111827),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        setState(() => _showDevMenu = false);
+                        widget.engine.skipToMainApp();
+                      },
+                      child: const Text('Skip to Main App',
+                          style: TextStyle(color: Colors.white, fontSize: 12)),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        widget.engine.toggleDemoUserMode();
+                        setState(() => _showDevMenu = false);
+                      },
+                      child: Text(
+                        s.isNewUser ? 'Mode: new user ✓' : 'Mode: returning user ✓',
+                        style: const TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           Positioned.fill(
             child: ColoredBox(
               color: FleetReactTheme.gray100,
@@ -77,10 +130,13 @@ class _FleetFlowScreenState extends State<FleetFlowScreen> {
                         s: s,
                         mobileCtrl: _mobileCtrl,
                         inviteCodeCtrl: _inviteCodeCtrl,
-                        otpSlots: _otpSlots,
                       ),
                     )
-                  : _MainPane(engine: widget.engine, s: s),
+                  : _MainPane(
+                      engine: widget.engine,
+                      s: s,
+                      onFlowComplete: widget.onFlowComplete,
+                    ),
             ),
           ),
           if (s.authStep != 'complete' && s.apiBanner != null)
@@ -93,20 +149,27 @@ class _FleetFlowScreenState extends State<FleetFlowScreen> {
                 onDismiss: widget.engine.dismissApiBanner,
               ),
             ),
-          Positioned(
-            bottom: 8,
-            right: 8,
-            child: TextButton(
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.white,
-                side: const BorderSide(color: Color(0xffcbd5e1)),
+          if (s.authStep != 'complete')
+            Positioned(
+              bottom: 8,
+              right: 8,
+              child: Material(
+                color: const Color(0xfff3f4f6),
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => setState(() => _showDevMenu = !_showDevMenu),
+                  child: const SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: Center(child: Text('⋮', style: TextStyle(fontSize: 16))),
+                  ),
+                ),
               ),
-              onPressed: widget.engine.skipToMainApp,
-              child: const Text('Skip to main (dev)', style: TextStyle(fontSize: 11)),
             ),
-          ),
         ],
         ),
+      ),
       ),
     );
   }
@@ -118,14 +181,12 @@ class _AuthPane extends StatelessWidget {
     required this.s,
     required this.mobileCtrl,
     required this.inviteCodeCtrl,
-    required this.otpSlots,
   });
 
   final FleetAppEngine engine;
   final FleetAppSnapshot s;
   final TextEditingController mobileCtrl;
   final TextEditingController inviteCodeCtrl;
-  final List<int> otpSlots;
 
   @override
   Widget build(BuildContext context) {
@@ -138,6 +199,11 @@ class _AuthPane extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(bottom: 8),
               child: LinearProgressIndicator(minHeight: 2, color: FleetReactTheme.green700),
+            ),
+          if (s.successToast != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: FleetReactSuccessBanner(message: s.successToast!),
             ),
           _authBody(context),
         ],
@@ -155,10 +221,6 @@ class _AuthPane extends StatelessWidget {
         return _pinLogin(context);
       case 'select_fo':
         return _selectFo(context);
-      case 'forgot_pin':
-        return _forgotPin(context);
-      case 'forgot_otp':
-        return _forgotOtp(context);
       case 'set_pin':
         return _setPin(context);
       case 'confirm_pin':
@@ -181,66 +243,49 @@ class _AuthPane extends StatelessWidget {
   }
 
   Widget _login(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _logoBlock(big: true),
-        const Text('Mobile number', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xffd1d5db)),
-                borderRadius: BorderRadius.circular(12),
-                color: const Color(0xfff9fafb),
-              ),
-              child: const Text('+91', style: TextStyle(fontWeight: FontWeight.w600)),
+    return FleetAuthCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const FleetBrandHeader(),
+          const SizedBox(height: 24),
+          const Text('Mobile number',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12, color: FleetReactTheme.textPrimary)),
+          const SizedBox(height: 8),
+          FleetMobileInputRow(
+            controller: mobileCtrl,
+            onChanged: engine.setMobileNumber,
+            errorText: engine.showLoginMobileFormatError
+                ? 'Enter a valid 10-digit Indian mobile number (starts with 6–9).'
+                : null,
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: validIndianMobile10(s.mobileNumber) && !s.onboardingBusy
+                ? engine.loginSendOtp
+                : null,
+            style: FleetReactTheme.filledSendOtp(
+              enabled: validIndianMobile10(s.mobileNumber) && !s.onboardingBusy,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                keyboardType: TextInputType.phone,
-                maxLength: 10,
-                decoration: _inpDec('10-digit mobile'),
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                controller: mobileCtrl,
-                onChanged: engine.setMobileNumber,
-              ),
+            child: Text(s.onboardingBusy ? 'Sending…' : 'Send OTP'),
+          ),
+          const SizedBox(height: 16),
+          const Text('or', textAlign: TextAlign.center, style: TextStyle(color: FleetReactTheme.placeholder)),
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: engine.goInviteSignup,
+            child: const Text('New user? I have an invite code'),
+          ),
+          if (!s.useLiveDriverApp) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Demo OTP: 123456 · Dev ⋮ toggles new/returning user',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
             ),
           ],
-        ),
-        const SizedBox(height: 12),
-        FilledButton(
-          onPressed: s.mobileNumber.length == 10
-              ? () {
-                  engine.loginSendOtp();
-                }
-              : null,
-          style: FilledButton.styleFrom(
-            backgroundColor: FleetReactTheme.primaryCta,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(FleetReactTheme.radiusLg),
-            ),
-          ),
-          child: const Text('Send OTP'),
-        ),
-        const SizedBox(height: 16),
-        const Text('or', textAlign: TextAlign.center, style: TextStyle(color: Color(0xff94a3b8))),
-        const SizedBox(height: 16),
-        OutlinedButton(
-          onPressed: engine.goInviteSignup,
-          child: const Text('New user? I have an invite code'),
-        ),
-        const SizedBox(height: 16),
-        if (!s.useLiveDriverApp)
-          Text(
-            'Demo OTP after login: 123456 · PIN: 123456',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -254,27 +299,19 @@ class _AuthPane extends StatelessWidget {
           style: TextStyle(fontSize: FleetReactTheme.title, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: FleetReactTheme.blue50,
-            border: Border.all(color: FleetReactTheme.blue200),
-            borderRadius: BorderRadius.circular(FleetReactTheme.radiusMd),
-          ),
-          child: Text(
-            s.useLiveDriverApp
-                ? 'OTP sent to your mobile. Enter the code from SMS.'
-                : 'OTP sent (demo — enter 123456)',
-            style: const TextStyle(
-              fontSize: FleetReactTheme.body,
-              color: FleetReactTheme.blue900,
-            ),
-          ),
+        FleetOtpInfoBanner(
+          message: s.useLiveDriverApp
+              ? 'OTP sent to your mobile. Enter the code from SMS.'
+              : 'OTP sent (demo — enter 123456)',
         ),
         const SizedBox(height: 12),
-        _OtpRow(key: ValueKey(s.authStep), onDigit: engine.setLoginOtpDigit),
+        FleetOtpFields(
+          key: ValueKey('login-otp-${s.loginOtpRefocusKey}'),
+          refocusKey: s.loginOtpRefocusKey,
+          onDigit: engine.setLoginOtpDigit,
+        ),
         if (s.otpErrorLogin.isNotEmpty)
-          Text(s.otpErrorLogin, style: const TextStyle(color: Color(0xffb91c1c))),
+          Text(s.otpErrorLogin, style: const TextStyle(color: FleetReactTheme.red600)),
         const SizedBox(height: 8),
         if (s.otpCountdown > 0)
           Text(
@@ -292,26 +329,77 @@ class _AuthPane extends StatelessWidget {
   }
 
   Widget _pinLogin(BuildContext context) {
+    if (s.foPinSubStep == 'forgot') {
+      final phase = s.forgotFleetPinPhase;
+      final filled = phase == 'first' ? s.forgotFleetPinFirst.length : s.forgotFleetPinSecond.length;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(onPressed: engine.cancelForgotPin, child: const Text('← Back')),
+          ),
+          const Text('Reset fleet PIN', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Text(
+            phase == 'first' ? 'Enter new PIN' : 'Confirm new PIN',
+            style: const TextStyle(color: FleetReactTheme.textMuted),
+          ),
+          const SizedBox(height: 8),
+          FleetPinDots(filled: filled, bad: s.forgotFleetPinError.isNotEmpty),
+          if (s.forgotFleetPinError.isNotEmpty)
+            Text(s.forgotFleetPinError, style: const TextStyle(color: FleetReactTheme.red600)),
+          FleetNumpad(
+            disabled: s.onboardingBusy,
+            onDigit: engine.forgotFleetPinAppend,
+            onBackspace: engine.forgotFleetPinBackspace,
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: filled == 6 && !s.onboardingBusy ? engine.submitForgotFleetPinStep : null,
+            style: FilledButton.styleFrom(backgroundColor: FleetReactTheme.green700),
+            child: Text(
+              s.onboardingBusy
+                  ? 'Resetting…'
+                  : (phase == 'first' ? 'Confirm PIN' : 'Reset PIN'),
+            ),
+          ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _logoBlock(big: false),
+        const FleetBrandHeader(compact: true),
         Text(s.profile.name, textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        if (s.fleetPinFoDisplay.isNotEmpty)
+          Text(s.fleetPinFoDisplay, textAlign: TextAlign.center, style: const TextStyle(color: FleetReactTheme.textMuted)),
         const SizedBox(height: 12),
         Text(
           s.useLiveDriverApp ? 'Fleet PIN' : 'Enter PIN (demo 123456)',
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
-        _pinDots(s.loginPin.length, bad: s.loginPinError.isNotEmpty),
+        FleetPinDots(filled: s.loginPin.length, bad: s.loginPinError.isNotEmpty),
         if (s.loginPinError.isNotEmpty)
-          Text(s.loginPinError, style: const TextStyle(color: Color(0xffb91c1c))),
-        _NumPad(
-          disabled: s.disableLoginNumpad,
+          Text(s.loginPinError, style: const TextStyle(color: FleetReactTheme.red600)),
+        FleetNumpad(
+          disabled: s.disableLoginNumpad || s.onboardingBusy,
           onDigit: engine.loginPinAppend,
           onBackspace: engine.loginPinBackspace,
         ),
-        TextButton(onPressed: engine.goToForgotPin, child: const Text('Forgot PIN?')),
+        const SizedBox(height: 12),
+        FilledButton(
+          onPressed: s.loginPin.length == 6 && !s.onboardingBusy ? engine.unlockApp : null,
+          style: FleetReactTheme.filledGreen700(
+            enabled: s.loginPin.length == 6 && !s.onboardingBusy,
+          ),
+          child: Text(s.onboardingBusy ? 'Unlocking…' : 'Unlock app'),
+        ),
+        TextButton(
+          onPressed: s.canForgotFleetPin ? engine.goToForgotPin : null,
+          child: const Text('Forgot PIN?'),
+        ),
       ],
     );
   }
@@ -364,56 +452,17 @@ class _AuthPane extends StatelessWidget {
     );
   }
 
-  Widget _forgotPin(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextButton(onPressed: engine.authBack, child: const Text('← Back')),
-        const Text('Reset PIN', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-        Text('We\'ll verify ${s.profile.maskedMobile}', style: const TextStyle(color: Color(0xff64748b))),
-        const SizedBox(height: 16),
-        FilledButton(
-          onPressed: engine.forgotPinSendOtp,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
-          child: const Text('Send OTP'),
-        ),
-      ],
-    );
-  }
-
-  Widget _forgotOtp(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextButton(onPressed: engine.authBack, child: const Text('← Back')),
-        const Text('Verify mobile'),
-        const SizedBox(height: 12),
-        _OtpRow(key: const ValueKey('forgot_otp'), onDigit: engine.setForgotOtpDigit),
-        const SizedBox(height: 12),
-        FilledButton(
-          onPressed: s.inviteOtp.length == 6 ? engine.verifyForgotOtp : null,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
-          child: const Text('Verify'),
-        ),
-      ],
-    );
-  }
-
   Widget _setPin(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text('Create PIN'),
-        const Text('6 digits', style: TextStyle(color: Color(0xff64748b))),
-        _pinDots(s.newPin.length, bad: false),
-        _NumPad(
-          disabled: false,
-          onDigit: engine.newPinAppend,
-          onBackspace: engine.newPinBackspace,
-        ),
+        const Text('6 digits', style: TextStyle(color: FleetReactTheme.textMuted)),
+        FleetPinDots(filled: s.newPin.length),
+        FleetNumpad(onDigit: engine.newPinAppend, onBackspace: engine.newPinBackspace),
         FilledButton(
           onPressed: s.newPin.length == 6 ? engine.goConfirmNewPin : null,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+          style: FleetReactTheme.filledGreen700(enabled: s.newPin.length == 6),
           child: const Text('Next'),
         ),
       ],
@@ -425,16 +474,12 @@ class _AuthPane extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text('Confirm PIN'),
-        if (s.pinError.isNotEmpty) Text(s.pinError, style: const TextStyle(color: Color(0xffb91c1c))),
-        _pinDots(s.pinConfirm.length, bad: false),
-        _NumPad(
-          disabled: false,
-          onDigit: engine.confirmPinAppend,
-          onBackspace: engine.confirmPinBackspace,
-        ),
+        if (s.pinError.isNotEmpty) Text(s.pinError, style: const TextStyle(color: FleetReactTheme.red600)),
+        FleetPinDots(filled: s.pinConfirm.length),
+        FleetNumpad(onDigit: engine.confirmPinAppend, onBackspace: engine.confirmPinBackspace),
         FilledButton(
           onPressed: s.pinConfirm.length == 6 ? engine.submitConfirmPin : null,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+          style: FleetReactTheme.filledGreen700(enabled: s.pinConfirm.length == 6),
           child: const Text('Confirm'),
         ),
       ],
@@ -449,7 +494,7 @@ class _AuthPane extends StatelessWidget {
         const SizedBox(height: 16),
         FilledButton(
           onPressed: engine.registeredContinueHome,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+          style: FleetReactTheme.filledGreen700(),
           child: const Text('Continue to Home'),
         ),
       ],
@@ -501,36 +546,23 @@ class _AuthPane extends StatelessWidget {
       children: [
         TextButton(onPressed: engine.authBack, child: const Text('← Back')),
         const Text('Mobile verification'),
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xffd1d5db)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text('+91'),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                keyboardType: TextInputType.phone,
-                maxLength: 10,
-                decoration: _inpDec(''),
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                controller: mobileCtrl,
-                onChanged: engine.setMobileNumber,
-              ),
-            ),
-          ],
+        const SizedBox(height: 8),
+        FleetMobileInputRow(
+          controller: mobileCtrl,
+          onChanged: engine.setMobileNumber,
+          errorText: engine.showLoginMobileFormatError
+              ? 'Enter a valid 10-digit Indian mobile number (starts with 6–9).'
+              : null,
         ),
         const SizedBox(height: 12),
         FilledButton(
-          onPressed: s.mobileNumber.length == 10
-              ? () => engine.inviteSendOtpFromMobileScreen()
+          onPressed: validIndianMobile10(s.mobileNumber) && !s.onboardingBusy
+              ? engine.inviteSendOtpFromMobileScreen
               : null,
-          style: FilledButton.styleFrom(backgroundColor: FleetReactTheme.green700),
-          child: const Text('Send OTP'),
+          style: FleetReactTheme.filledGreen700(
+            enabled: validIndianMobile10(s.mobileNumber) && !s.onboardingBusy,
+          ),
+          child: Text(s.onboardingBusy ? 'Sending…' : 'Send OTP'),
         ),
       ],
     );
@@ -543,20 +575,16 @@ class _AuthPane extends StatelessWidget {
         TextButton(onPressed: engine.authBack, child: const Text('← Back')),
         const Text('Verify OTP', style: TextStyle(fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: FleetReactTheme.blue50,
-            border: Border.all(color: FleetReactTheme.blue200),
-            borderRadius: BorderRadius.circular(FleetReactTheme.radiusMd),
-          ),
-          child: Text(
-            'OTP sent to +91 …${s.mobileNumber.length >= 4 ? s.mobileNumber.substring(s.mobileNumber.length - 4).padLeft(10, '•') : s.mobileNumber}',
-            style: const TextStyle(fontSize: FleetReactTheme.body, color: FleetReactTheme.blue900),
-          ),
+        FleetOtpInfoBanner(
+          message:
+              'OTP sent to +91 …${s.mobileNumber.length >= 4 ? s.mobileNumber.substring(s.mobileNumber.length - 4).padLeft(10, '•') : s.mobileNumber}',
         ),
         const SizedBox(height: 12),
-        _OtpRow(key: ValueKey(s.authStep), onDigit: engine.setInviteOtpDigit),
+        FleetOtpFields(
+          key: ValueKey('invite-otp-${s.inviteOtpRefocusKey}'),
+          refocusKey: s.inviteOtpRefocusKey,
+          onDigit: engine.setInviteOtpDigit,
+        ),
         const SizedBox(height: 8),
         if (!s.useLiveDriverApp)
           const Text('Auto-advances on 123456', style: TextStyle(fontSize: 11)),
@@ -598,15 +626,11 @@ class _AuthPane extends StatelessWidget {
             ),
           ),
         const Text('Create app PIN'),
-        _pinDots(s.invitePin.length, bad: false),
-        _NumPad(
-          disabled: false,
-          onDigit: engine.invitePinAppend,
-          onBackspace: engine.invitePinBackspace,
-        ),
+        FleetPinDots(filled: s.invitePin.length),
+        FleetNumpad(onDigit: engine.invitePinAppend, onBackspace: engine.invitePinBackspace),
         FilledButton(
           onPressed: s.invitePin.length == 6 ? engine.invitePinNext : null,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+          style: FleetReactTheme.filledGreen700(enabled: s.invitePin.length == 6),
           child: const Text('Next'),
         ),
       ],
@@ -618,44 +642,17 @@ class _AuthPane extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text('Confirm PIN'),
-        if (s.pinError.isNotEmpty) Text(s.pinError, style: const TextStyle(color: Color(0xffb91c1c))),
-        _pinDots(s.invitePinConfirm.length, bad: false),
-        _NumPad(
-          disabled: false,
+        if (s.pinError.isNotEmpty) Text(s.pinError, style: const TextStyle(color: FleetReactTheme.red600)),
+        FleetPinDots(filled: s.invitePinConfirm.length),
+        FleetNumpad(
           onDigit: engine.invitePinConfirmAppend,
           onBackspace: engine.invitePinConfirmBackspace,
         ),
         FilledButton(
           onPressed: s.invitePinConfirm.length == 6 ? engine.inviteConfirmSubmit : null,
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+          style: FleetReactTheme.filledGreen700(enabled: s.invitePinConfirm.length == 6),
           child: const Text('Finish signup'),
         ),
-      ],
-    );
-  }
-
-  Widget _logoBlock({required bool big}) {
-    return Column(
-      children: [
-        Container(
-          width: big ? 72 : 48,
-          height: big ? 72 : 48,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: const LinearGradient(colors: [Color(0xff059669), Color(0xff2563eb)]),
-          ),
-          child: Text(
-            'MGL',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: big ? 18 : 14),
-          ),
-        ),
-        const SizedBox(height: 8),
-        if (big) ...[
-          const Text('MGL Fleet Connect', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          Text('Driver App', style: TextStyle(color: Colors.grey.shade600)),
-        ] else
-          Text('Welcome back', style: TextStyle(color: Colors.grey.shade600)),
       ],
     );
   }
@@ -665,136 +662,18 @@ class _AuthPane extends StatelessWidget {
         counterText: '',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       );
-
-  Widget _pinDots(int filled, {required bool bad}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: otpSlots.map((i) {
-        final on = filled > i;
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 5),
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: on ? (bad ? const Color(0xffdc2626) : const Color(0xff047857)) : Colors.transparent,
-            border: Border.all(color: bad && on ? const Color(0xffdc2626) : const Color(0xffd1d5db), width: 2),
-          ),
-        );
-      }).toList(),
-    );
-  }
-}
-
-class _NumPad extends StatelessWidget {
-  const _NumPad({
-    required this.disabled,
-    required this.onDigit,
-    required this.onBackspace,
-  });
-
-  final bool disabled;
-  final void Function(String d) onDigit;
-  final VoidCallback onBackspace;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final n in [1, 2, 3, 4, 5, 6, 7, 8, 9])
-            SizedBox(
-              width: 72,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: disabled ? null : () => onDigit('$n'),
-                child: Text('$n'),
-              ),
-            ),
-          SizedBox(
-            width: 148,
-            height: 48,
-            child: ElevatedButton(onPressed: disabled ? null : onBackspace, child: const Text('⌫')),
-          ),
-          SizedBox(
-            width: 72,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: disabled ? null : () => onDigit('0'),
-              child: const Text('0'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OtpRow extends StatefulWidget {
-  const _OtpRow({super.key, required this.onDigit});
-
-  final void Function(int index, String digit) onDigit;
-
-  @override
-  State<_OtpRow> createState() => _OtpRowState();
-}
-
-class _OtpRowState extends State<_OtpRow> {
-  late final List<TextEditingController> _c = List.generate(6, (_) => TextEditingController());
-  late final List<FocusNode> _f = List.generate(6, (_) => FocusNode());
-
-  @override
-  void dispose() {
-    for (final x in _c) {
-      x.dispose();
-    }
-    for (final x in _f) {
-      x.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(6, (i) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 3),
-          child: SizedBox(
-            width: 40,
-            child: TextField(
-              controller: _c[i],
-              focusNode: _f[i],
-              maxLength: 1,
-              keyboardType: TextInputType.number,
-              textAlign: TextAlign.center,
-              decoration: const InputDecoration(counterText: '', border: OutlineInputBorder()),
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              onChanged: (v) {
-                widget.onDigit(i, v);
-                _c[i].clear();
-                if (v.isNotEmpty && i < 5) {
-                  _f[i + 1].requestFocus();
-                }
-              },
-            ),
-          ),
-        );
-      }),
-    );
-  }
 }
 
 class _MainPane extends StatefulWidget {
-  const _MainPane({required this.engine, required this.s});
+  const _MainPane({
+    required this.engine,
+    required this.s,
+    this.onFlowComplete,
+  });
 
   final FleetAppEngine engine;
   final FleetAppSnapshot s;
+  final void Function(FleetSdkSuccessPayload payload)? onFlowComplete;
 
   @override
   State<_MainPane> createState() => _MainPaneState();
@@ -802,6 +681,7 @@ class _MainPane extends StatefulWidget {
 
 class _MainPaneState extends State<_MainPane> {
   String _txnFilter = 'all';
+  bool _showPairingHelp = false;
 
   FleetAppEngine get engine => widget.engine;
   FleetAppSnapshot get s => widget.s;
@@ -809,12 +689,138 @@ class _MainPaneState extends State<_MainPane> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Column(
+      child: Stack(
         children: [
-          Expanded(
-            child: s.mainOverlay != 'home' ? _overlay(context) : _home(context),
+          Column(
+            children: [
+              Expanded(
+                child: s.mainOverlay != 'home' ? _overlay(context) : _home(context),
+              ),
+            ],
           ),
+          if (s.profilePinModalOpen) _profileChangePinModal(context),
+          if (s.declineConfirmBindingId != null) _declineConfirmDialog(context),
+          if (_showPairingHelp) _pairingHelpSheet(context),
         ],
+      ),
+    );
+  }
+
+  Widget _pairingHelpSheet(BuildContext context) {
+    return Material(
+      color: Colors.black54,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Material(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Pairing code help',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => setState(() => _showPairingHelp = false),
+                    ),
+                  ],
+                ),
+                const Text(
+                  'Ask your Fleet Operator to share the 6-digit pairing code for this assignment.',
+                  style: TextStyle(fontSize: 14, color: Color(0xff374151)),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'They can find it in the MGL Fleet portal under Driver Management.',
+                  style: TextStyle(fontSize: 14, color: Color(0xff374151)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _declineConfirmDialog(BuildContext context) {
+    return Material(
+      color: Colors.black54,
+      child: Center(
+        child: AlertDialog(
+          title: const Text('Decline this assignment?'),
+          content: const Text('Your Fleet Operator will be notified.'),
+          actions: [
+            TextButton(onPressed: engine.cancelDeclineConfirm, child: const Text('Cancel')),
+            TextButton(
+              onPressed: engine.confirmDecline,
+              child: const Text('Yes, decline', style: TextStyle(color: Color(0xffdc2626))),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _profileChangePinModal(BuildContext context) {
+    final phase = s.profileChangePinPhase;
+    final filled =
+        phase == 'first' ? s.profileChangePinFirst.length : s.profileChangePinSecond.length;
+    return Material(
+      color: Colors.black54,
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text('Change fleet PIN',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                      ),
+                      IconButton(
+                        onPressed: engine.closeProfileChangePin,
+                        icon: const Icon(Icons.close),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    phase == 'first' ? 'Enter new PIN' : 'Confirm new PIN',
+                    style: const TextStyle(color: Color(0xff64748b)),
+                  ),
+                  const SizedBox(height: 8),
+                  FleetPinDots(filled: filled, bad: s.profileChangePinError.isNotEmpty),
+                  if (s.profileChangePinError.isNotEmpty)
+                    Text(s.profileChangePinError,
+                        style: const TextStyle(color: Color(0xffb91c1c))),
+                  FleetNumpad(
+                    disabled: s.profilePinChanging,
+                    onDigit: engine.profileChangePinAppend,
+                    onBackspace: engine.profileChangePinBackspace,
+                  ),
+                  FilledButton(
+                    onPressed: filled == 6 && !s.profilePinChanging
+                        ? engine.submitProfileChangePinStep
+                        : null,
+                    style: FilledButton.styleFrom(backgroundColor: FleetReactTheme.green700),
+                    child: Text(s.profilePinChanging ? 'Saving…' : (phase == 'first' ? 'Next' : 'Save PIN')),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -822,65 +828,180 @@ class _MainPaneState extends State<_MainPane> {
   Widget _overlay(BuildContext context) {
     switch (s.mainOverlay) {
       case 'assignment_notification':
-        return Container(
-          padding: const EdgeInsets.all(16),
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xff0f766e), Colors.white],
-              stops: [0, 0.35],
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              TextButton(onPressed: () => engine.setMainOverlay('home'), child: const Text('←', style: TextStyle(color: Colors.white))),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const Text('New assignment'),
-                      Text(engine.assignmentDemoBinding().vrn, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-                      Text(engine.assignmentDemoBinding().fo),
-                      FilledButton(
-                        onPressed: engine.acceptAssignmentDemo,
-                        style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
-                        child: const Text('Review & accept'),
-                      ),
-                    ],
-                  ),
-                ),
+        final a = engine.assignmentOverlayBinding();
+        return Column(
+          children: [
+            AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => engine.setMainOverlay('home'),
               ),
-            ],
-          ),
+              title: const Text('New assignment'),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Card(
+                    color: const Color(0xfffffbeb),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Pairing required',
+                              style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xff78350f))),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Enter the 6-digit code from your Fleet Operator to activate fueling.',
+                            style: TextStyle(fontSize: 13, color: Color(0xff78350f)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(a.vrn,
+                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+                  Text(a.fo, style: const TextStyle(color: Color(0xff64748b))),
+                  if (a.assignedBy != null && a.assignedBy!.isNotEmpty)
+                    Text('Assigned by ${a.assignedBy}', style: const TextStyle(fontSize: 12, color: Color(0xff94a3b8))),
+                  const SizedBox(height: 24),
+                  FilledButton(
+                    onPressed: engine.acceptAssignmentOverlay,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: FleetReactTheme.green700,
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    child: const Text('Accept & Pair'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () => engine.requestDeclineConfirm(a.id),
+                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    child: const Text('Decline', style: TextStyle(color: Color(0xffdc2626))),
+                  ),
+                ],
+              ),
+            ),
+          ],
         );
       case 'pairing_code':
-        return Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Enter pairing code'),
-              const Text('Demo valid codes include 123456, 789012'),
-              _OtpRow(key: ValueKey('pair-${s.pairingAttempts}'), onDigit: engine.setPairingDigit),
-              if (s.pairingError.isNotEmpty) Text(s.pairingError, style: const TextStyle(color: Color(0xffb91c1c))),
-              FilledButton(onPressed: () => engine.submitPairingCode(), child: const Text('Pair')),
-              TextButton(onPressed: () => engine.setMainOverlay('home'), child: const Text('Cancel')),
-            ],
-          ),
+        if (s.pairingAttempts >= 3) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'Too many attempts',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                const SizedBox(height: 8),
+                const Text('Please try again later or contact your fleet operator.'),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () => engine.setMainOverlay('home'),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          );
+        }
+        final assign = engine.assignmentOverlayBinding();
+        return Column(
+          children: [
+            AppBar(
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: engine.pairingBackFromOverlay,
+              ),
+              title: const Text('Enter pairing code'),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Card(
+                    color: FleetReactTheme.gray100,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(assign.vrn,
+                              style: const TextStyle(
+                                  fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 18)),
+                          Text(assign.fo, style: const TextStyle(fontSize: 12, color: Color(0xff64748b))),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Enter the 6-digit code your Fleet Operator shared with you',
+                    style: TextStyle(color: Color(0xff64748b), fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  if (s.pairingSuccess) ...[
+                    const Icon(Icons.check_circle, color: FleetReactTheme.green700, size: 48),
+                    const Text('Pairing successful!',
+                        style: TextStyle(fontWeight: FontWeight.bold, color: FleetReactTheme.green700)),
+                    const Text('Activating your assignment…',
+                        style: TextStyle(color: Color(0xff64748b), fontSize: 13)),
+                  ] else ...[
+                    FleetOtpFields(
+                      key: ValueKey('pair-${s.pairingAttempts}'),
+                      refocusKey: s.pairingAttempts,
+                      onDigit: engine.setPairingDigit,
+                    ),
+                    if (s.pairingError.isNotEmpty)
+                      Text(s.pairingError, style: const TextStyle(color: Color(0xffb91c1c))),
+                    if (!s.useLiveDriverApp)
+                      const Text('Demo: 123456, 789012',
+                          style: TextStyle(fontSize: 11, color: Color(0xff94a3b8))),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: s.onboardingBusy || s.pairingDigits.join().length != 6
+                          ? null
+                          : engine.submitPairingCode,
+                      style: FilledButton.styleFrom(backgroundColor: FleetReactTheme.green700),
+                      child: Text(s.onboardingBusy ? 'Verifying…' : 'Verify & Activate'),
+                    ),
+                    TextButton(
+                      onPressed: () => setState(() => _showPairingHelp = true),
+                      child: const Text('Haven\'t received your code?',
+                          style: TextStyle(color: FleetReactTheme.green700)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
         );
       case 'assignment_accepted':
+        final a = engine.assignmentOverlayBinding();
         return Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('Assignment activated', style: TextStyle(color: Color(0xff047857), fontSize: 20)),
-              Text(engine.assignmentDemoBinding().vrn, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-              FilledButton(onPressed: engine.dismissAssignmentFlow, child: const Text('Go to Assignments')),
+              const Icon(Icons.check_circle, color: FleetReactTheme.green700, size: 80),
+              const SizedBox(height: 16),
+              const Text('Assignment activated!',
+                  style: TextStyle(
+                      color: Color(0xff047857), fontSize: 24, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(a.vrn,
+                  style: const TextStyle(
+                      fontSize: 22, fontWeight: FontWeight.bold, fontFamily: 'monospace')),
+              Text(a.fo, style: const TextStyle(color: Color(0xff64748b))),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: engine.dismissAssignmentFlow,
+                style: FilledButton.styleFrom(backgroundColor: FleetReactTheme.green700),
+                child: const Text('Go to My Assignments'),
+              ),
             ],
           ),
         );
@@ -890,115 +1011,49 @@ class _MainPaneState extends State<_MainPane> {
   }
 
   Widget _home(BuildContext context) {
-    const navTabs = ['card', 'scan', 'assignments', 'profile'];
     final onTransactions = s.activeTab == 'transactions';
-    final selIdx = onTransactions ? -1 : navTabs.indexOf(s.activeTab);
 
     return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-          color: const Color(0xff1a3020),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(_indiaGreeting(),
-                      style: const TextStyle(color: Color(0xffc8e6c9), fontSize: 14)),
-                  const SizedBox(height: 4),
-                  Text(s.profile.name, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                ],
-              ),
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: const Color(0xff2d4a36),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white24),
-                ),
-                alignment: Alignment.center,
-                child: Text(s.profile.initials, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ),
-            ],
-          ),
+        FleetMainHeader(
+          greeting: fleetIndiaGreeting(),
+          driverName: s.profile.name,
+          initials: s.profile.initials,
         ),
-        if (s.successToast != null)
-          Container(
-            width: double.infinity,
-            color: const Color(0xff059669),
-            padding: const EdgeInsets.all(12),
-            child: Text(s.successToast!, style: const TextStyle(color: Colors.white, fontSize: 13)),
+        if (s.apiBanner != null)
+          FleetReactApiBanner(
+            message: s.apiBanner!,
+            onDismiss: engine.dismissApiBanner,
           ),
-        Padding(
-          padding: const EdgeInsets.all(8),
-          child: Wrap(
-            spacing: 8,
-            children: [
-              OutlinedButton(onPressed: engine.openAssignmentDemo, child: const Text('Demo: assignment push')),
-              OutlinedButton(onPressed: engine.openPairingDemo, child: const Text('Demo: pairing')),
-            ],
+        if (s.successToast != null) FleetReactSuccessBanner(message: s.successToast!),
+        if (!s.useLiveDriverApp)
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                OutlinedButton(
+                    onPressed: engine.openAssignmentDemo,
+                    child: const Text('Demo: assignment push')),
+                OutlinedButton(
+                    onPressed: engine.openPairingDemo, child: const Text('Demo: pairing')),
+              ],
+            ),
           ),
-        ),
         Expanded(
           child: ColoredBox(
-            color: (s.activeTab == 'card' || s.activeTab == 'assignments') ? const Color(0xffeceff1) : Colors.white,
+            color: (s.activeTab == 'card' || s.activeTab == 'assignments')
+                ? FleetReactTheme.tabShellBg
+                : Colors.white,
             child: _tabBody(context),
           ),
         ),
-        Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Color(0xffe5e7eb))),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(
-            children: [
-              _navItem(0, selIdx, Icons.home_outlined, 'Home', 'card'),
-              _navItem(1, selIdx, Icons.qr_code_2, 'Scan & Pay', 'scan'),
-              _navItem(2, selIdx, Icons.local_shipping_outlined, 'My Vehicles', 'assignments'),
-              _navItem(3, selIdx, Icons.person_outline, 'Profile', 'profile'),
-            ],
-          ),
+        FleetBottomNav(
+          currentTab: onTransactions ? '' : s.activeTab,
+          onTab: engine.setTab,
         ),
       ],
     );
-  }
-
-  Widget _navItem(int index, int selIdx, IconData icon, String label, String tab) {
-    final on = selIdx == index;
-    final c = on ? const Color(0xff047857) : const Color(0xff6b7280);
-    return Expanded(
-      child: InkWell(
-        onTap: () => engine.setTab(tab),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: c, size: 24),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 10, fontWeight: on ? FontWeight.w600 : FontWeight.normal, color: c, height: 1.1),
-                maxLines: 2,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _indiaGreeting() {
-    final ist = DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30));
-    final h = ist.hour;
-    if (h >= 5 && h < 12) return 'Good Morning';
-    if (h >= 12 && h < 17) return 'Good Afternoon';
-    return 'Good Evening';
   }
 
   Widget _tabBody(BuildContext context) {
@@ -1008,7 +1063,7 @@ class _MainPaneState extends State<_MainPane> {
       case 'scan':
         return _tabScan(context);
       case 'assignments':
-        return _tabAssignments(context);
+        return FleetAssignmentsTab(engine: engine, snapshot: s);
       case 'transactions':
         return _tabTxns(context);
       case 'profile':
@@ -1056,7 +1111,7 @@ class _MainPaneState extends State<_MainPane> {
     final cards = engine.activeCards();
     final noV = cards.isEmpty;
     final noTx = s.transactions.isEmpty;
-    final scanGreen = const Color(0xff43a047);
+    final scanGreen = FleetReactTheme.primaryCta;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -1418,6 +1473,13 @@ class _MainPaneState extends State<_MainPane> {
       );
     }
     if (s.sessionState == 'confirmation' && sel != null) {
+      final qr = s.parsedScanQr;
+      final station = qr?.merchantName?.trim().isNotEmpty == true
+          ? qr!.merchantName!
+          : (s.useLiveDriverApp ? '—' : 'MGL Hind CNG Filling Station');
+      final midLine = qr?.mid?.trim().isNotEmpty == true
+          ? 'MID ${qr!.mid}'
+          : (s.useLiveDriverApp ? '—' : 'Andheri, Mumbai');
       return ListView(
         padding: const EdgeInsets.all(FleetReactTheme.spacePage),
         children: [
@@ -1429,16 +1491,37 @@ class _MainPaneState extends State<_MainPane> {
               IconButton(onPressed: engine.scanCancelConfirmation, icon: const Icon(Icons.close)),
             ],
           ),
-          Text(
-            s.parsedScanQr?.merchantName?.trim().isNotEmpty == true
-                ? s.parsedScanQr!.merchantName!
-                : 'Fuel station',
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: FleetReactTheme.body),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '${sel.vrn} · ₹${s.parsedScanQr != null ? paiseToInrDisplay(s.parsedScanQr!.amountPaise) : '—'}',
-            style: const TextStyle(color: FleetReactTheme.textMuted),
+          const SizedBox(height: 16),
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: Color(0xffe5e7eb)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.location_on, color: Color(0xff15803d)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(station,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 16)),
+                        const SizedBox(height: 4),
+                        Text(midLine, style: const TextStyle(color: FleetReactTheme.textMuted)),
+                        const SizedBox(height: 12),
+                        Text('${sel.vrn} · ₹${qr != null ? paiseToInrDisplay(qr.amountPaise) : '—'}',
+                            style: const TextStyle(fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           FilledButton(
@@ -1473,28 +1556,28 @@ class _MainPaneState extends State<_MainPane> {
           const Text('Enter your PIN to confirm',
               style: TextStyle(color: FleetReactTheme.textMuted)),
           const SizedBox(height: 8),
-          TextField(
-            obscureText: true,
-            maxLength: 6,
-            decoration: const InputDecoration(labelText: 'PIN', counterText: ''),
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            onChanged: engine.setSessionPin,
+          FleetPinDots(filled: s.sessionPin.length),
+          FleetNumpad(
+            disabled: s.qrPayBusy,
+            onDigit: (d) {
+              final next = '${s.sessionPin}$d';
+              if (next.length <= 6) {
+                engine.setSessionPin(next);
+                if (next.length == 6) engine.scanVerifyPin();
+              }
+            },
+            onBackspace: () {
+              if (s.sessionPin.isNotEmpty) {
+                engine.setSessionPin(
+                    s.sessionPin.substring(0, s.sessionPin.length - 1));
+              }
+            },
           ),
-          const SizedBox(height: 12),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: FleetReactTheme.green700,
-              shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(FleetReactTheme.radiusLg),
-              ),
+          if (s.qrPayBusy)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: LinearProgressIndicator(color: FleetReactTheme.green700),
             ),
-            onPressed: s.qrPayBusy
-                ? null
-                : (s.sessionPin.length == 6 ? engine.scanVerifyPin : null),
-            child: Text(s.qrPayBusy ? 'Processing…' : 'Verify PIN'),
-          ),
         ],
       );
     }
@@ -1572,44 +1655,47 @@ class _MainPaneState extends State<_MainPane> {
       );
     }
     if (s.sessionState == 'authorized' && sel != null) {
+      final amt = s.parsedScanQr != null
+          ? paiseToInrDisplay(s.parsedScanQr!.amountPaise)
+          : (s.lastQrPay?.amountINR != null ? '₹${s.lastQrPay!.amountINR}' : '—');
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text('Fueling authorized', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          const Icon(Icons.local_gas_station, size: 48, color: FleetReactTheme.green700),
+          const SizedBox(height: 12),
+          const Text('Fueling authorized',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
           const SizedBox(height: 8),
-          Text('Vehicle ${sel.vrn}', style: const TextStyle(color: Color(0xff718096))),
+          Text(sel.vrn, style: const TextStyle(fontFamily: 'monospace', fontSize: 18, fontWeight: FontWeight.w600)),
+          Text('Amount $amt', style: const TextStyle(color: Color(0xff64748b))),
           const SizedBox(height: 24),
-          const Center(child: CircularProgressIndicator()),
+          const Center(child: CircularProgressIndicator(color: FleetReactTheme.green700)),
+          const SizedBox(height: 8),
+          const Text('Completing transaction…', textAlign: TextAlign.center),
         ],
       );
     }
     if (s.sessionState == 'complete') {
       final pay = s.lastQrPay;
-      final failed = pay?.payFailed == true;
+      if (pay != null) {
+        return FleetScanReceiptView(
+          pay: pay,
+          vrn: pay.vehicleRegNo?.trim().isNotEmpty == true
+              ? pay.vehicleRegNo!
+              : (sel?.vrn ?? '—'),
+          driverName: s.profile.name,
+          onDone: engine.scanDismissSessionComplete,
+        );
+      }
       return ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Icon(
-            failed ? Icons.error_outline : Icons.check_circle,
-            color: failed ? const Color(0xffdc2626) : const Color(0xff16a34a),
-            size: 48,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            pay != null
-                ? (failed ? 'Transaction failed' : 'Fueling complete')
-                : 'Payment complete',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
-          const SizedBox(height: 8),
-          if (pay?.amountINR != null)
-            Text('Amount ₹${pay!.amountINR!.toStringAsFixed(2)}',
-                style: TextStyle(color: failed ? const Color(0xffdc2626) : const Color(0xff15803d), fontWeight: FontWeight.w600)),
-          Text(sel != null ? 'Vehicle ${sel.vrn}' : '', style: const TextStyle(color: Color(0xff718096))),
+          const Icon(Icons.check_circle, color: FleetReactTheme.green700, size: 48),
+          const Text('Payment complete', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
           const SizedBox(height: 24),
           FilledButton(
             onPressed: engine.scanDismissSessionComplete,
-            style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
+            style: FilledButton.styleFrom(backgroundColor: FleetReactTheme.green700),
             child: const Text('Done'),
           ),
         ],
@@ -1631,23 +1717,42 @@ class _MainPaneState extends State<_MainPane> {
         ),
         const SizedBox(height: 8),
         Text('Fueling: ${(sel ?? avail.first).vrn}', style: const TextStyle(fontWeight: FontWeight.w600)),
-        Container(
-          margin: const EdgeInsets.symmetric(vertical: 12),
+        if (sel != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Available balance', style: TextStyle(color: FleetReactTheme.textMuted)),
+              Text(
+                '₹${sel.balance ?? 0}',
+                style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xff15803d)),
+              ),
+            ],
+          ),
+        ],
+        const SizedBox(height: 12),
+        SizedBox(
           height: 220,
-          decoration: BoxDecoration(color: const Color(0xff111827), borderRadius: BorderRadius.circular(16)),
-          child: const Center(child: Icon(Icons.qr_code_2, size: 72, color: Colors.white54)),
+          child: FleetInlineQrScanner(
+            active: s.sessionState == 'idle',
+            scanResetKey: '${sel?.id ?? ''}|${s.sessionState}',
+            onBarcodeRaw: engine.applyFleetpayQrRaw,
+          ),
         ),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: const Color(0xff047857)),
-          onPressed: () {
-            if (s.useLiveDriverApp) {
-              engine.scanSimulateDemoQr();
-            } else {
-              engine.scanBeginConfirmation();
-            }
-          },
-          child: Text(s.useLiveDriverApp ? 'Simulate fleetpay scan' : 'Simulate Scan'),
+        const SizedBox(height: 8),
+        const Text(
+          'Point camera at the QR on the POS screen',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 12, color: FleetReactTheme.textMuted),
         ),
+        if (!s.useLiveDriverApp) ...[
+          const SizedBox(height: 12),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: FleetReactTheme.green700),
+            onPressed: engine.scanBeginConfirmation,
+            child: const Text('Simulate Scan'),
+          ),
+        ],
         const SizedBox(height: 8),
         OutlinedButton(
           onPressed: () async {
@@ -1657,30 +1762,9 @@ class _MainPaneState extends State<_MainPane> {
             if (!context.mounted || raw == null) return;
             engine.applyFleetpayQrRaw(raw);
           },
-          child: const Text('Scan QR with camera'),
+          child: const Text('Open full-screen scanner'),
         ),
       ],
-    );
-  }
-
-  Widget _tabAssignments(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(12),
-      children: s.bindings.map((b) {
-        return Card(
-          child: ListTile(
-            title: Text(b.vrn, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold)),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(b.fo),
-                Text(b.state),
-                if (b.scanPayStatus == 'locked_unpaired') const Text('Pair to unlock'),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
     );
   }
 
@@ -1783,16 +1867,35 @@ class _MainPaneState extends State<_MainPane> {
               const Divider(height: 1),
               _profileRow('Mobile', s.profile.maskedMobile),
               const Divider(height: 1),
-              _profileRow('Registered', '—'),
+              _profileRow(
+                'Registered',
+                s.profileRegistered.isNotEmpty ? s.profileRegistered : (s.profile.registered ? 'Yes' : '—'),
+              ),
               const Divider(height: 1),
-              _profileRow('Fleet Operator', '—'),
+              _profileRow(
+                'Fleet Operator',
+                s.profileFoName.isNotEmpty ? s.profileFoName : (s.fleetPinFoDisplay.isNotEmpty ? s.fleetPinFoDisplay : '—'),
+              ),
               const Divider(height: 1),
               _profileRow('Driver ID', s.profile.id),
               const Divider(height: 1),
-              _profileRow('Licence Number', '—'),
+              _profileRow('Licence Number', s.profileDlNumber.isNotEmpty ? s.profileDlNumber : '—'),
             ],
           ),
         ),
+        if (engine.canChangeProfilePin()) ...[
+          const SizedBox(height: 16),
+          OutlinedButton(
+            onPressed: engine.openProfileChangePin,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: FleetReactTheme.green700,
+              side: const BorderSide(color: FleetReactTheme.green700),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            child: const Text('Change fleet PIN', style: TextStyle(fontWeight: FontWeight.w600)),
+          ),
+        ],
         const SizedBox(height: 24),
         OutlinedButton(
           style: OutlinedButton.styleFrom(

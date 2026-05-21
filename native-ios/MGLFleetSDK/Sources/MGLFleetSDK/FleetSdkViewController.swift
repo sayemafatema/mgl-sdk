@@ -2,9 +2,22 @@ import SwiftUI
 import UIKit
 
 final class FleetSdkViewController: UIViewController {
+    private var nativeBackHandler: (() -> Bool)?
+    private var edgeBackGesture: UIScreenEdgePanGestureRecognizer?
+    private var completionHandled = false
+
+    func registerNativeBackHandler(_ handler: @escaping () -> Bool) {
+        nativeBackHandler = handler
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+
+        let edge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleNativeBackGesture))
+        edge.edges = .left
+        view.addGestureRecognizer(edge)
+        edgeBackGesture = edge
 
         FleetPresentationBridge.emit(
             name: "FLOW_STARTED",
@@ -36,7 +49,30 @@ final class FleetSdkViewController: UIViewController {
         child.didMove(toParent: self)
     }
 
+    @objc private func handleNativeBackGesture() {
+        _ = nativeBackHandler?()
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        [
+            UIKeyCommand(
+                input: UIKeyCommand.inputEscape,
+                modifierFlags: [],
+                action: #selector(handleNativeBackGesture),
+            ),
+        ]
+    }
+
+    override var canBecomeFirstResponder: Bool { true }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        becomeFirstResponder()
+    }
+
     private func finish(with result: FleetSdkResult) {
+        guard !completionHandled else { return }
+        completionHandled = true
         let completion = FleetPresentationBridge.pendingCompletion
         FleetPresentationBridge.pendingCompletion = nil
         FleetPresentationBridge.pendingSession = nil

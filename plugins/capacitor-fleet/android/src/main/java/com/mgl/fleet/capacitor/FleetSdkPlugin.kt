@@ -83,12 +83,14 @@ class FleetSdkPlugin : Plugin() {
         }
         val useMock = initObj.getBoolean("useMock", true) ?: true
         val authToken = initObj.getString("authToken")
+        val foCompanyId = initObj.optionalFoCompanyId()
         FleetSdk.initialize(
             bridge.activity.applicationContext,
             FleetSdkOptions(
                 apiBaseUrl = trimmed,
                 authToken = authToken,
                 useMock = useMock,
+                foCompanyId = foCompanyId,
             ),
         )
         Log.i(TAG, "FleetSdk.initialize ok, apiBaseUrl length=${trimmed.length}")
@@ -103,12 +105,14 @@ class FleetSdkPlugin : Plugin() {
         }
         val useMock = call.getBoolean("useMock", true) ?: true
         val authToken = call.getString("authToken")
+        val foCompanyId = call.data.optionalFoCompanyId()
         FleetSdk.initialize(
             bridge.activity.applicationContext,
             FleetSdkOptions(
                 apiBaseUrl = apiBaseUrl,
                 authToken = authToken,
                 useMock = useMock,
+                foCompanyId = foCompanyId,
             ),
         )
         return true
@@ -219,5 +223,24 @@ class FleetSdkPlugin : Plugin() {
 
     private companion object {
         private const val TAG = "MGLFleetSdk"
+    }
+}
+
+private fun JSObject.optionalFoCompanyId(): Long? {
+    return try {
+        if (!has("foCompanyId")) return null
+        val r = opt("foCompanyId")
+        when {
+            r == null || r === JSONObject.NULL -> null
+            r is Int -> r.toLong()
+            r is Long -> r
+            r is Double -> r.toLong()
+            r is Float -> r.toLong()
+            r is Number -> r.toLong()
+            r is String -> r.trim().toLongOrNull()
+            else -> null
+        }
+    } catch (_: Exception) {
+        null
     }
 }

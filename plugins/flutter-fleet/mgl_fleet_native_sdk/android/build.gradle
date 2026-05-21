@@ -30,5 +30,10 @@ android {
 }
 
 dependencies {
+    // Prefer monorepo :fleet-sdk when host settings.gradle includes it (see README).
+    if (findProject(':fleet-sdk') != null) {
+        implementation project(':fleet-sdk')
+    } else {
         implementation 'com.mgl.sdk:fleet-android:0.3.0'
+    }
 }

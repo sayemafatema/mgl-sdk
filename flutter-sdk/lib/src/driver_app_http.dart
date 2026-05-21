@@ -101,6 +101,26 @@ class DriverAppHttp {
     return tok;
   }
 
+  Future<String> driverPinReset({
+    required String bearerPartial,
+    required int foCompanyId,
+    required String newPin,
+  }) async {
+    final uri = Uri.parse('$_base/api/v0/driver-app/auth/pin/reset');
+    final res = await http.post(
+      uri,
+      headers: _jsonHeaders(bearer: bearerPartial),
+      body: json.encode({'foCompanyId': foCompanyId, 'newPin': newPin}),
+    );
+    final body = _parseBody(res);
+    if (!res.ok) throw Exception(_errMsg(body) ?? 'HTTP ${res.statusCode}');
+    final peeled = peelFleetEnvelope(body);
+    final data = unwrapDriverBody(peeled);
+    if (data is String) return data;
+    if (data == null) return '';
+    return data.toString();
+  }
+
   Future<String> driverInviteMobileSendOtp(String mobile) async {
     final uri = Uri.parse('$_base/api/v0/driver-app/auth/mobile/send-otp');
     final res = await http.post(
@@ -178,6 +198,26 @@ class DriverAppHttp {
     final tok = oauthAccessFromAny(unwrapDriverBody(peeled));
     if (tok == null || tok.isEmpty) throw Exception('Missing access token');
     return tok;
+  }
+
+  Future<double> driverGetBalance(String token) async {
+    final uri = Uri.parse('$_base/api/v0/driver-app/balance');
+    final res = await http.get(uri, headers: _jsonHeaders(bearer: token));
+    final body = _parseBody(res);
+    if (!res.ok) throw Exception(_errMsg(body) ?? 'HTTP ${res.statusCode}');
+    if (body is num) return body.toDouble();
+    final peeled = peelFleetEnvelope(body);
+    final inner = unwrapDriverBody(peeled);
+    if (inner is num) return inner.toDouble();
+    if (inner is String) {
+      final v = double.tryParse(inner.trim().replaceAll('"', ''));
+      if (v != null) return v;
+    }
+    if (inner != null) {
+      final v = double.tryParse(inner.toString().trim().replaceAll('"', ''));
+      if (v != null) return v;
+    }
+    throw Exception('Unexpected balance response');
   }
 
   Future<DriverHomeJson?> driverGetHome(String token) async {

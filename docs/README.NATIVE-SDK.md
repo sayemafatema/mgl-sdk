@@ -91,7 +91,8 @@ Android must resolve **`com.mgl.sdk:fleet-android`** from **Maven Central** (pub
 
 ## 4. Flutter (`mgl_fleet_native_sdk`)
 
-Package path: [`plugins/flutter-fleet/mgl_fleet_native_sdk/`](../plugins/flutter-fleet/mgl_fleet_native_sdk/).
+Package path: [`plugins/flutter-fleet/mgl_fleet_native_sdk/`](../plugins/flutter-fleet/mgl_fleet_native_sdk/).  
+Full guide: [`plugins/flutter-fleet/mgl_fleet_native_sdk/README.md`](../plugins/flutter-fleet/mgl_fleet_native_sdk/README.md).
 
 ```yaml
 dependencies:
@@ -100,12 +101,24 @@ dependencies:
 ```
 
 ```dart
-await MglFleetNativeSdk.initialize(apiBaseUrl: 'https://api.example.com', useMock: true);
-final map = await MglFleetNativeSdk.presentFleetFlow(correlationId: 'job-9');
+import 'package:mgl_fleet_native_sdk/mgl_fleet_native_sdk.dart';
+
+// Recommended: init + present in one native bridge call
+final result = await MglFleetNativeSdk.openMglFleetNativeFlow(
+  initialize: FleetSdkInitializeOptions(
+    apiBaseUrl: 'https://api.example.com',
+    useMock: true,
+    authToken: bearer,       // optional
+    foCompanyId: 12345,      // Profile → Change PIN when bearer-only
+  ),
+  present: FleetSdkPresentOptions(correlationId: 'job-9'),
+);
 ```
 
-Android: **`mavenCentral()`** must resolve **`fleet-android`** once published (§1). Add **`mavenLocal()`** only while testing unpublished `.aar`.  
-iOS: add **`MGLFleetSDK`** as an SPM dependency on **`Runner`** (same as §2); the plugin activates native calls automatically.
+**Android:** `MainActivity` must extend **`FlutterFragmentActivity`**. For latest native UI from this repo, include `:fleet-sdk` in host `settings.gradle` (see plugin README). Otherwise **`com.mgl.sdk:fleet-android`** from Maven Central / Local (§1).  
+**iOS:** **`MGLFleetSDK`** on Runner (SPM or CocoaPods); monorepo path dependency auto-links via plugin podspec. Add **`NSCameraUsageDescription`** for scan QR.
+
+All driver flows (OTP, forgot/change PIN, invite, scan, receipt share) run in **native UI** — same as Capacitor §3.
 
 ---
 

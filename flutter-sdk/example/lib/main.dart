@@ -3,12 +3,10 @@ import 'package:mgl_fleet_sdk/mgl_fleet_sdk.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(
-    FleetNativeSdk.root(
-      const FleetConfig(
-        apiBaseUrl: 'http://localhost',
-        useMock: true,
-      ),
-    ),
+  const config = FleetConfig(
+    apiBaseUrl: 'http://localhost',
+    useMock: true,
   );
+  FleetNativeSdk.initialize(config);
+  runApp(FleetNativeSdk.root(config));
 }

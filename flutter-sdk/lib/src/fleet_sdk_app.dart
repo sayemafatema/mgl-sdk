@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
+import 'fleet_app_engine.dart';
 import 'fleet_config.dart';
 import 'fleet_flow_screen.dart';
 import 'fleet_react_theme.dart';
 import 'fleet_repository.dart';
 import 'fleet_scope.dart';
-import 'fleet_app_engine.dart';
+import 'fleet_sdk_holder.dart';
 
-/// Single integration point: login/signup → driver shell (parity with Angular host).
+/// Full-window fleet driver flow (pure Flutter).
 class FleetSdkApp extends StatefulWidget {
   const FleetSdkApp({super.key, required this.config});
 
@@ -18,8 +19,19 @@ class FleetSdkApp extends StatefulWidget {
 }
 
 class _FleetSdkAppState extends State<FleetSdkApp> {
-  late final FleetRepository _repository = FleetRepository(widget.config);
   late final FleetAppEngine _engine = FleetAppEngine(config: widget.config);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final cid = widget.config.correlationId;
+      FleetSdkHolder.emit(
+        'FLOW_STARTED',
+        cid != null ? {'correlationId': cid} : null,
+      );
+    });
+  }
 
   @override
   void dispose() {
@@ -29,12 +41,16 @@ class _FleetSdkAppState extends State<FleetSdkApp> {
 
   @override
   Widget build(BuildContext context) {
-    return FleetScope(
-      repository: _repository,
-      child: MaterialApp(
-        title: 'MGL Fleet Connect',
-        theme: FleetReactTheme.materialTheme(),
-        home: FleetFlowScreen(engine: _engine),
+    final repository = FleetRepository(widget.config);
+    return MaterialApp(
+      title: 'MGL Fleet',
+      theme: FleetReactTheme.materialTheme(),
+      home: FleetScope(
+        repository: repository,
+        child: FleetFlowScreen(
+          engine: _engine,
+          onFlowComplete: widget.config.onFlowComplete,
+        ),
       ),
     );
   }

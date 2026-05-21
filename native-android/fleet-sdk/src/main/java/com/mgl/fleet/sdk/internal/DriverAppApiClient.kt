@@ -152,6 +152,24 @@ internal class DriverAppApiClient(
                 ?: throw DriverApiException("Missing fleet token")
         }
 
+    suspend fun driverPinReset(
+        bearerPartial: String,
+        foCompanyId: Long,
+        newPin: String,
+    ): Result<String> =
+        runCatchingSuspend {
+            val body = JSONObject(mapOf("foCompanyId" to foCompanyId, "newPin" to newPin))
+            val data = unwrapDriverBodyJson(postJsonRaw("/api/v0/driver-app/auth/pin/reset", body, bearer = bearerPartial))
+            when (data) {
+                is String -> data.trim('"')
+                null -> ""
+                else ->
+                    data.toString().trim().removeSurrounding("\"").ifEmpty {
+                        throw DriverApiException("Unexpected pin-reset response")
+                    }
+            }
+        }
+
     suspend fun driverGetHome(token: String): Result<DriverHomeJson> =
         runCatchingSuspend { parseHome(requireJsonObject(unwrapDriverBodyJson(getRaw("/api/v0/driver-app/home", token)))) }
 

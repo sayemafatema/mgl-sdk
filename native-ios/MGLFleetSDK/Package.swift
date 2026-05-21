@@ -13,7 +13,7 @@ let package = Package(
         .target(
             name: "MGLFleetSDK",
             path: "Sources/MGLFleetSDK",
-            resources: [],
+            resources: [.process("Resources")],
             linkerSettings: []
         ),
         .testTarget(

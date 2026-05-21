@@ -82,6 +82,35 @@ class FleetBinding {
   final String? repairReason;
   final String? vehicleId;
 
+  FleetBinding copyWith({num? balance, num? cardBalance, bool? paired, String? state, String? scanPayStatus}) =>
+      FleetBinding(
+        id: id,
+        vrn: vrn,
+        fo: fo,
+        authMode: authMode,
+        state: state ?? this.state,
+        paired: paired ?? this.paired,
+        scanPayStatus: scanPayStatus ?? this.scanPayStatus,
+        balance: balance ?? this.balance,
+        cardBalance: cardBalance ?? this.cardBalance,
+        incentiveBalance: incentiveBalance,
+        spendLimit: spendLimit,
+        shiftDays: shiftDays,
+        shiftStart: shiftStart,
+        shiftEnd: shiftEnd,
+        shiftEndsIn: shiftEndsIn,
+        tripDate: tripDate,
+        tripStart: tripStart,
+        tripEnd: tripEnd,
+        tripEndsIn: tripEndsIn,
+        origin: origin,
+        destination: destination,
+        assignedBy: assignedBy,
+        validPairingCode: validPairingCode,
+        repairReason: repairReason,
+        vehicleId: vehicleId,
+      );
+
   FleetBinding copy() => FleetBinding(
         id: id,
         vrn: vrn,

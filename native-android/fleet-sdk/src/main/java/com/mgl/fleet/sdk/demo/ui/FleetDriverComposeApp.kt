@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -37,7 +38,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.ErrorOutline
@@ -51,9 +52,10 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -151,10 +153,11 @@ private val FleetBottomDockReserve = 88.dp
 private val ApiBannerOnboardingFabClearance = 52.dp
 
 @Composable
-private fun ApiErrorBanner(
+private fun ApiFeedbackBanner(
     message: String?,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit,
+    isSuccess: Boolean,
 ) {
     val msg = message?.trim()?.takeIf { it.isNotEmpty() } ?: return
     val maxScrollH =
@@ -162,28 +165,43 @@ private fun ApiErrorBanner(
             (LocalConfiguration.current.screenHeightDp * 0.4f).toInt(),
             220,
         ).dp
-    val amber50 = Color(0xFFFFFBEB)
-    val amber200 = Color(0xFFFDE68A)
-    val amber700 = Color(0xFFB45309)
-    val amber900 = Color(0xFF78350F)
-    val amber950 = Color(0xFF451A03)
+    val borderCol: Color
+    val bgCol: Color
+    val iconTint: Color
+    val textCol: Color
+    val dismissCol: Color
+    val iconComposable: @Composable () -> Unit
+    if (isSuccess) {
+        borderCol = Color(0xFFBBF7D0)
+        bgCol = Color(0xFFF0FDF4)
+        iconTint = Color(0xFF15803D)
+        textCol = Color(0xFF14532D)
+        dismissCol = Color(0xFF166534)
+        iconComposable = {
+            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
+        }
+    } else {
+        borderCol = Color(0xFFFDE68A)
+        bgCol = Color(0xFFFFFBEB)
+        iconTint = Color(0xFFB45309)
+        textCol = Color(0xFF451A03)
+        dismissCol = Color(0xFF78350F)
+        iconComposable = {
+            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
+        }
+    }
     val bannerScroll = rememberScrollState()
     Row(
         modifier =
             modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .border(BorderStroke(1.dp, amber200), RoundedCornerShape(12.dp))
-                .background(amber50)
+                .border(BorderStroke(1.dp, borderCol), RoundedCornerShape(12.dp))
+                .background(bgCol)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            Icons.Outlined.ErrorOutline,
-            contentDescription = null,
-            tint = amber700,
-            modifier = Modifier.size(18.dp),
-        )
+        iconComposable()
         Box(
             modifier =
                 Modifier
@@ -194,7 +212,7 @@ private fun ApiErrorBanner(
             Text(
                 msg,
                 modifier = Modifier.verticalScroll(bannerScroll),
-                color = amber950,
+                color = textCol,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
                 fontWeight = FontWeight.Normal,
@@ -209,7 +227,7 @@ private fun ApiErrorBanner(
                 "Dismiss",
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
-                color = amber900,
+                color = dismissCol,
             )
         }
     }
@@ -257,7 +275,7 @@ internal fun FleetDriverFlow(
         var pairingCodeEntry by remember { mutableStateOf("") }
         var pairingError by remember { mutableStateOf("") }
         var showDeclineConfirm by remember { mutableStateOf(false) }
-        var successToast by remember { mutableStateOf<String?>(null) }
+        var successBanner by remember { mutableStateOf<String?>(null) }
         var pairingAttempts by remember { mutableIntStateOf(0) }
         var pairingSuccess by remember { mutableStateOf(false) }
         var showPairingHelp by remember { mutableStateOf(false) }
@@ -269,6 +287,21 @@ internal fun FleetDriverFlow(
         var foOrganizationList by remember { mutableStateOf<List<FoListEntry>>(emptyList()) }
         var selectedFoCompanyId by remember { mutableStateOf<Long?>(null) }
         var foPinEntry by remember { mutableStateOf("") }
+        var persistedFoCompanyId by remember { mutableStateOf(if (!opts.useMock) opts.foCompanyId else null) }
+
+        /** `enter`: unlock PIN · `forgot`: POST pin/reset with OTP-phase token (`app/page.tsx`). */
+        var foPinSubStep by remember { mutableStateOf("enter") }
+        var forgotFleetPinPhase by remember { mutableStateOf("first") }
+        var forgotFleetPinFirst by remember { mutableStateOf("") }
+        var forgotFleetPinSecond by remember { mutableStateOf("") }
+        var forgotFleetPinError by remember { mutableStateOf("") }
+
+        var profilePinModalOpen by remember { mutableStateOf(false) }
+        var profileChangePinPhase by remember { mutableStateOf("first") }
+        var profileChangePinFirst by remember { mutableStateOf("") }
+        var profileChangePinSecond by remember { mutableStateOf("") }
+        var profileChangePinError by remember { mutableStateOf("") }
+        var profilePinChanging by remember { mutableStateOf(false) }
         var fleetPinFoDisplay by remember { mutableStateOf("") }
         var inviteOtpRefNumber by remember { mutableStateOf<String?>(null) }
         var inviteMobileVerificationToken by remember { mutableStateOf<String?>(null) }
@@ -287,6 +320,10 @@ internal fun FleetDriverFlow(
 
         val pairingScope = rememberCoroutineScope()
         val mainScrollState = rememberScrollState()
+        val profilePinScrollState = rememberScrollState()
+
+        /** FO company id after native FO select/unlock or `FleetSdkOptions.foCompanyId` when bearer-only. */
+        val effectiveFoCompanyIdForPin = selectedFoCompanyId ?: persistedFoCompanyId
 
         LaunchedEffect(mainTab) {
             mainScrollState.scrollTo(0)
@@ -294,8 +331,16 @@ internal fun FleetDriverFlow(
 
         LaunchedEffect(apiBanner) {
             if (apiBanner == null) return@LaunchedEffect
+            successBanner = null
             delay(5000)
             apiBanner = null
+        }
+
+        LaunchedEffect(successBanner) {
+            if (successBanner == null) return@LaunchedEffect
+            apiBanner = null
+            delay(5000)
+            successBanner = null
         }
 
         val bindings =
@@ -386,6 +431,27 @@ internal fun FleetDriverFlow(
             if (scanSessionOtpCountdown > 0) {
                 delay(1000)
                 scanSessionOtpCountdown--
+            }
+        }
+
+        LaunchedEffect(onboardingStep) {
+            if (onboardingStep == "fo_pin_login") {
+                foPinSubStep = "enter"
+                forgotFleetPinPhase = "first"
+                forgotFleetPinFirst = ""
+                forgotFleetPinSecond = ""
+                forgotFleetPinError = ""
+                foPinEntry = ""
+            }
+        }
+
+        LaunchedEffect(profilePinModalOpen) {
+            if (profilePinModalOpen) {
+                profileChangePinPhase = "first"
+                profileChangePinFirst = ""
+                profileChangePinSecond = ""
+                profileChangePinError = ""
+                profilePinChanging = false
             }
         }
 
@@ -582,6 +648,15 @@ internal fun FleetDriverFlow(
                 }
 
                 "fo_pin_login" -> {
+                    if (foPinSubStep == "forgot") {
+                        foPinSubStep = "enter"
+                        forgotFleetPinPhase = "first"
+                        forgotFleetPinFirst = ""
+                        forgotFleetPinSecond = ""
+                        forgotFleetPinError = ""
+                        foPinEntry = ""
+                        return@BackHandler
+                    }
                     foPinEntry = ""
                     val fos = foOrganizationList.filter { it.foStatus == "ACTIVE" }
                     if (fos.size > 1) {
@@ -720,61 +795,238 @@ internal fun FleetDriverFlow(
                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
                                 OnboardingBackRow(
                                     onClick = {
-                                        foPinEntry = ""
-                                        val fos = foOrganizationList.filter { it.foStatus == "ACTIVE" }
-                                        if (fos.size > 1) onboardingStep = "select_fo" else {
-                                            onboardingStep = "login_otp"
-                                            otpPhaseToken = null
+                                        apiBanner = null
+                                        if (foPinSubStep == "forgot") {
+                                            foPinSubStep = "enter"
+                                            forgotFleetPinPhase = "first"
+                                            forgotFleetPinFirst = ""
+                                            forgotFleetPinSecond = ""
+                                            forgotFleetPinError = ""
+                                            foPinEntry = ""
+                                        } else {
+                                            foPinEntry = ""
+                                            val fos = foOrganizationList.filter { it.foStatus == "ACTIVE" }
+                                            if (fos.size > 1) onboardingStep = "select_fo" else {
+                                                onboardingStep = "login_otp"
+                                                otpPhaseToken = null
+                                            }
                                         }
                                     },
                                 )
                                 Spacer(Modifier.height(16.dp))
-                                Text("Fleet PIN", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                                Text(
-                                    "Enter your PIN for this Fleet Operator",
-                                    fontSize = 14.sp,
-                                    color = Color(0xFF6B7280),
-                                    modifier = Modifier.padding(top = 8.dp),
-                                )
-                                Text(
-                                    fleetPinFoDisplay.ifEmpty { "—" },
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 18.sp,
-                                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
-                                )
-                                PinDots(foPinEntry)
-                                Numpad(
-                                    enabled = onboardingAction != "fo_unlock",
-                                    onDigit = { d -> if ((onboardingAction == null || onboardingAction != "fo_unlock") && foPinEntry.length < 6) foPinEntry += d },
-                                    onBackspace = { foPinEntry = foPinEntry.dropLast(1) },
-                                )
-                                Button(
-                                    onClick = {
-                                        val selId = selectedFoCompanyId ?: return@Button
-                                        val phase = otpPhaseToken ?: return@Button
-                                        if (foPinEntry.length != 6) return@Button
-                                        pairingScope.launch {
-                                            onboardingAction = "fo_unlock"
-                                            try {
-                                                val tok =
-                                                    liveApi.driverFoSelect(phase, selId, foPinEntry).getOrThrow()
-                                                foScopedToken = tok
-                                                otpPhaseToken = null
-                                                foPinEntry = ""
+
+                                when (foPinSubStep) {
+                                    "enter" -> {
+                                        Text("Enter Fleet PIN", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                                        Text(
+                                            "Enter your 6-digit PIN for this fleet.",
+                                            fontSize = 14.sp,
+                                            color = Color(0xFF6B7280),
+                                            modifier = Modifier.padding(top = 8.dp),
+                                        )
+                                        Text(
+                                            fleetPinFoDisplay.ifEmpty { "—" },
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 18.sp,
+                                            modifier = Modifier.padding(top = 8.dp, bottom = 24.dp),
+                                        )
+                                        PinDots(foPinEntry)
+                                        val unlockBusy = onboardingAction == "fo_unlock"
+                                        Numpad(
+                                            enabled = !unlockBusy,
+                                            onDigit = { d ->
+                                                if (!unlockBusy && foPinEntry.length < 6) foPinEntry += d
+                                            },
+                                            onBackspace = {
+                                                foPinEntry = foPinEntry.dropLast(1)
+                                            },
+                                        )
+                                        Button(
+                                            onClick = {
+                                                val selId = selectedFoCompanyId ?: return@Button
+                                                val phase = otpPhaseToken ?: return@Button
+                                                if (foPinEntry.length != 6) return@Button
+                                                pairingScope.launch {
+                                                    onboardingAction = "fo_unlock"
+                                                    try {
+                                                        val tok =
+                                                            liveApi.driverFoSelect(phase, selId, foPinEntry).getOrThrow()
+                                                        foScopedToken = tok
+                                                        persistedFoCompanyId = selId
+                                                        otpPhaseToken = null
+                                                        foPinEntry = ""
+                                                        apiBanner = null
+                                                        onboardingStep = "complete"
+                                                    } catch (e: Exception) {
+                                                        apiBanner = ReactParityBanner.forPinFailure(e)
+                                                        foPinEntry = ""
+                                                    } finally {
+                                                        onboardingAction = null
+                                                    }
+                                                }
+                                            },
+                                            enabled =
+                                                foPinEntry.length == 6 && selectedFoCompanyId != null && !unlockBusy,
+                                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Green700),
+                                        ) {
+                                            Text(if (unlockBusy) "Unlocking…" else "Unlock app")
+                                        }
+                                        TextButton(
+                                            onClick = {
                                                 apiBanner = null
-                                                onboardingStep = "complete"
-                                            } catch (e: Exception) {
-                                                apiBanner = ReactParityBanner.forPinFailure(e)
-                                                foPinEntry = ""
-                                            } finally {
-                                                onboardingAction = null
+                                                forgotFleetPinError = ""
+                                                forgotFleetPinPhase = "first"
+                                                forgotFleetPinFirst = ""
+                                                forgotFleetPinSecond = ""
+                                                foPinSubStep = "forgot"
+                                            },
+                                            enabled = liveMode && selectedFoCompanyId != null && otpPhaseToken != null,
+                                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                        ) {
+                                            Text("Forgot PIN?", color = Green700, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                                        }
+                                    }
+
+                                    else -> {
+                                        Text(
+                                            if (forgotFleetPinPhase == "first") {
+                                                "Enter New PIN"
+                                            } else {
+                                                "Confirm New PIN"
+                                            },
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 20.sp,
+                                        )
+                                        Text(
+                                            if (forgotFleetPinPhase == "first") {
+                                                "Choose a new 6-digit fleet PIN."
+                                            } else {
+                                                "Re-enter your new PIN. After reset you will verify OTP again with this PIN."
+                                            },
+                                            fontSize = 14.sp,
+                                            color = Color(0xFF6B7280),
+                                            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+                                        )
+                                        PinDots(if (forgotFleetPinPhase == "first") forgotFleetPinFirst else forgotFleetPinSecond)
+                                        val resetBusy = onboardingAction == "forgot_pin_reset"
+                                        Numpad(
+                                            enabled = !resetBusy,
+                                            onDigit = { digit ->
+                                                if (resetBusy) return@Numpad
+                                                if (forgotFleetPinPhase == "first") {
+                                                    forgotFleetPinFirst =
+                                                        if (forgotFleetPinFirst.length >= 6) forgotFleetPinFirst else forgotFleetPinFirst + digit
+                                                } else {
+                                                    forgotFleetPinSecond =
+                                                        if (forgotFleetPinSecond.length >= 6) forgotFleetPinSecond else forgotFleetPinSecond + digit
+                                                }
+                                                forgotFleetPinError = ""
+                                            },
+                                            onBackspace = {
+                                                if (forgotFleetPinPhase == "first") {
+                                                    forgotFleetPinFirst = forgotFleetPinFirst.dropLast(1)
+                                                } else {
+                                                    forgotFleetPinSecond = forgotFleetPinSecond.dropLast(1)
+                                                }
+                                            },
+                                        )
+                                        if (forgotFleetPinError.isNotEmpty()) {
+                                            Text(
+                                                forgotFleetPinError,
+                                                color = Color.Red,
+                                                fontSize = 12.sp,
+                                                modifier = Modifier.padding(top = 12.dp),
+                                            )
+                                        }
+                                        val canSubmitForgotStep =
+                                            selectedFoCompanyId != null &&
+                                                otpPhaseToken != null &&
+                                                !resetBusy &&
+                                                liveMode &&
+                                                (
+                                                    if (forgotFleetPinPhase == "first") {
+                                                        forgotFleetPinFirst.length == 6
+                                                    } else {
+                                                        forgotFleetPinSecond.length == 6
+                                                    }
+                                                )
+                                        val onForgotPrimary: () -> Unit = forgotClick@{
+                                            apiBanner = null
+                                            forgotFleetPinError = ""
+                                            if (forgotFleetPinPhase == "first") {
+                                                if (forgotFleetPinFirst.length != 6) return@forgotClick
+                                                forgotFleetPinPhase = "second"
+                                                forgotFleetPinSecond = ""
+                                            } else {
+                                                if (forgotFleetPinSecond.length != 6) return@forgotClick
+                                                if (forgotFleetPinSecond != forgotFleetPinFirst) {
+                                                    forgotFleetPinError = ReactParityBanner.PINS_DONT_MATCH_CONFIRM
+                                                    forgotFleetPinSecond = ""
+                                                    return@forgotClick
+                                                }
+                                                val selId = selectedFoCompanyId ?: return@forgotClick
+                                                val phase = otpPhaseToken ?: return@forgotClick
+                                                pairingScope.launch {
+                                                    onboardingAction = "forgot_pin_reset"
+                                                    try {
+                                                        liveApi.driverPinReset(phase, selId, forgotFleetPinSecond).getOrThrow()
+                                                        otpPhaseToken = null
+                                                        foScopedToken = null
+                                                        foOrganizationList = emptyList()
+                                                        selectedFoCompanyId = null
+                                                        persistedFoCompanyId = null
+                                                        fleetPinFoDisplay = ""
+                                                        foPinEntry = ""
+                                                        forgotFleetPinPhase = "first"
+                                                        forgotFleetPinFirst = ""
+                                                        forgotFleetPinSecond = ""
+                                                        foPinSubStep = "enter"
+                                                        onboardingStep = "login"
+                                                        successBanner =
+                                                            "PIN changed successfully. Tap Send OTP and sign in with your new PIN."
+                                                    } catch (e: Exception) {
+                                                        apiBanner = ReactParityBanner.forPinFailure(e)
+                                                        forgotFleetPinSecond = ""
+                                                    } finally {
+                                                        onboardingAction = null
+                                                    }
+                                                }
                                             }
                                         }
-                                    },
-                                    enabled = foPinEntry.length == 6 && selectedFoCompanyId != null && onboardingAction != "fo_unlock",
-                                    modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Green700),
-                                ) { Text(if (onboardingAction == "fo_unlock") "Unlocking…" else "Unlock app") }
+
+                                        val btnLabel =
+                                            when {
+                                                resetBusy -> "Resetting…"
+                                                forgotFleetPinPhase == "first" -> "Confirm PIN"
+                                                else -> "Reset PIN"
+                                            }
+                                        if (forgotFleetPinPhase == "first") {
+                                            OutlinedButton(
+                                                onClick = onForgotPrimary,
+                                                enabled = canSubmitForgotStep,
+                                                modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                                                border = BorderStroke(1.dp, Green700),
+                                                colors =
+                                                    ButtonDefaults.outlinedButtonColors(
+                                                        contentColor = Green700,
+                                                        disabledContentColor = Color(0xFF94A3B8),
+                                                    ),
+                                            ) {
+                                                Text(btnLabel, fontWeight = FontWeight.Medium)
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = onForgotPrimary,
+                                                enabled = canSubmitForgotStep,
+                                                modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = Green700),
+                                            ) {
+                                                Text(btnLabel, fontWeight = FontWeight.Medium, color = Color.White)
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -839,7 +1091,7 @@ internal fun FleetDriverFlow(
                                             nuPin = ""
                                             nuPinConfirm = ""
                                             isRegistered = true
-                                            successToast = "PIN updated successfully"
+                                            successBanner = "PIN updated successfully."
                                             onboardingStep = "login"
                                         }
                                     } else {
@@ -1126,17 +1378,30 @@ internal fun FleetDriverFlow(
                     ) {
                         Text("⋮", fontSize = 16.sp, color = Color.Gray)
                     }
-                    ApiErrorBanner(
-                        message = apiBanner,
-                        onDismiss = { apiBanner = null },
-                        modifier =
-                            Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .windowInsetsPadding(WindowInsets.navigationBars)
-                                .padding(horizontal = 12.dp)
-                                .padding(bottom = 12.dp + ApiBannerOnboardingFabClearance),
-                    )
+                    Column(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp + ApiBannerOnboardingFabClearance),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        if (successBanner != null) {
+                            ApiFeedbackBanner(
+                                message = successBanner,
+                                onDismiss = { successBanner = null },
+                                isSuccess = true,
+                                modifier =
+                                    Modifier.padding(bottom = if (apiBanner != null) 8.dp else 0.dp),
+                            )
+                        }
+                        ApiFeedbackBanner(
+                            message = apiBanner,
+                            onDismiss = { apiBanner = null },
+                            isSuccess = false,
+                        )
+                    }
                 }
             }
             return@MaterialTheme
@@ -1269,9 +1534,6 @@ internal fun FleetDriverFlow(
                             .padding(bottom = bottomDockContentPad),
                     ) {
                         MainHeader(driverName = driver.name, initials = driver.initials)
-                        successToast?.let { t ->
-                            Box(Modifier.fillMaxWidth().background(Green600).padding(12.dp)) { Text(t, color = Color.White, fontSize = 13.sp) }
-                        }
                         val scrollBg =
                             if (mainTab == "card" || mainTab == "assignments") Color(0xFFECEFF1) else Color.White
                         if (mainTab == "transactions") {
@@ -1512,6 +1774,13 @@ internal fun FleetDriverFlow(
                                             driverId = prof?.driverId?.takeIf { it.isNotBlank() } ?: "—",
                                             licenceLine = prof?.dlNumber?.trim()?.takeIf { it.isNotEmpty() } ?: "—",
                                             apiAssignments = apiAssignments,
+                                            showChangeFleetPinAction =
+                                                liveMode && foScopedToken != null && effectiveFoCompanyIdForPin != null,
+                                            onChangeFleetPin = {
+                                                apiBanner = null
+                                                successBanner = null
+                                                profilePinModalOpen = true
+                                            },
                                             onLogout = {
                                                 onFinished(
                                                     FleetSdkResult.Success(
@@ -1532,22 +1801,203 @@ internal fun FleetDriverFlow(
             }
             }
 
-            ApiErrorBanner(
-                message = apiBanner,
-                onDismiss = { apiBanner = null },
-                modifier =
+            val profilePinTok = foScopedToken
+            val profilePinFoCo = effectiveFoCompanyIdForPin
+            if (profilePinModalOpen && profilePinTok != null && profilePinFoCo != null) {
+                val canSubmitProfilePin =
+                    !profilePinChanging &&
+                        (
+                            if (profileChangePinPhase == "first") {
+                                profileChangePinFirst.length == 6
+                            } else {
+                                profileChangePinSecond.length == 6
+                            }
+                        )
+                Column(
                     Modifier
-                        .align(Alignment.BottomCenter)
-                        .zIndex(50f)
-                        .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.navigationBars)
-                        .padding(horizontal = 12.dp)
-                        .padding(
-                            bottom =
-                                12.dp + ApiBannerBottomNavClearance +
-                                    if (mainShellDockVisible) FleetBottomDockReserve else 0.dp,
-                        ),
-            )
+                        .fillMaxSize()
+                        .zIndex(120f)
+                        .background(Color.White)
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(top = 8.dp)
+                        .verticalScroll(profilePinScrollState)
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 32.dp),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    TextButton(
+                        onClick = {
+                            if (profilePinChanging) return@TextButton
+                            profilePinModalOpen = false
+                        },
+                        contentPadding = PaddingValues(0.dp),
+                        modifier = Modifier.wrapContentWidth(Alignment.Start),
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Start,
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color(0xFF6B7280), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Back", color = Color(0xFF6B7280), fontSize = 14.sp)
+                        }
+                    }
+                    Text(
+                        if (profileChangePinPhase == "first") {
+                            "Enter New PIN"
+                        } else {
+                            "Confirm New PIN"
+                        },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        color = Gray900,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    Text(
+                        if (profileChangePinPhase == "first") {
+                            "Use a 6-digit PIN for payments and sign-in."
+                        } else {
+                            "Re-enter the same PIN."
+                        },
+                        fontSize = 14.sp,
+                        color = Color(0xFF6B7280),
+                        modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+                    )
+                    PinDots(if (profileChangePinPhase == "first") profileChangePinFirst else profileChangePinSecond)
+                    Numpad(
+                        enabled = !profilePinChanging,
+                        onDigit = { digit ->
+                            if (profilePinChanging) return@Numpad
+                            if (profileChangePinPhase == "first") {
+                                profileChangePinFirst =
+                                    if (profileChangePinFirst.length >= 6) {
+                                        profileChangePinFirst
+                                    } else {
+                                        profileChangePinFirst + digit
+                                    }
+                            } else {
+                                profileChangePinSecond =
+                                    if (profileChangePinSecond.length >= 6) {
+                                        profileChangePinSecond
+                                    } else {
+                                        profileChangePinSecond + digit
+                                    }
+                            }
+                            profileChangePinError = ""
+                        },
+                        onBackspace = {
+                            if (profileChangePinPhase == "first") {
+                                profileChangePinFirst = profileChangePinFirst.dropLast(1)
+                            } else {
+                                profileChangePinSecond = profileChangePinSecond.dropLast(1)
+                            }
+                        },
+                    )
+                    if (profileChangePinError.isNotEmpty()) {
+                        Text(
+                            profileChangePinError,
+                            color = Color.Red,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
+                    val tokLocal = profilePinTok
+                    val foLocal = profilePinFoCo
+                    val onProfilePinPrimary: () -> Unit = profileClick@{
+                        apiBanner = null
+                        profileChangePinError = ""
+                        if (profileChangePinPhase == "first") {
+                            if (profileChangePinFirst.length != 6) return@profileClick
+                            profileChangePinPhase = "second"
+                            profileChangePinSecond = ""
+                        } else {
+                            if (profileChangePinSecond.length != 6) return@profileClick
+                            if (profileChangePinSecond != profileChangePinFirst) {
+                                profileChangePinError = ReactParityBanner.PINS_DONT_MATCH_CONFIRM
+                                profileChangePinSecond = ""
+                                return@profileClick
+                            }
+                            pairingScope.launch {
+                                profilePinChanging = true
+                                try {
+                                    liveApi.driverPinReset(tokLocal, foLocal, profileChangePinSecond).getOrThrow()
+                                    profilePinModalOpen = false
+                                    profileChangePinPhase = "first"
+                                    profileChangePinFirst = ""
+                                    profileChangePinSecond = ""
+                                    mainTab = "profile"
+                                    successBanner = "PIN changed successfully."
+                                } catch (e: Exception) {
+                                    apiBanner = ReactParityBanner.forPinFailure(e)
+                                    profileChangePinSecond = ""
+                                } finally {
+                                    profilePinChanging = false
+                                }
+                            }
+                        }
+                    }
+                    val lbl =
+                        when {
+                            profilePinChanging -> "Updating…"
+                            profileChangePinPhase == "first" -> "Confirm PIN"
+                            else -> "Change PIN"
+                        }
+                    if (profileChangePinPhase == "first") {
+                        OutlinedButton(
+                            onClick = onProfilePinPrimary,
+                            enabled = canSubmitProfilePin,
+                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                            border = BorderStroke(1.dp, Green700),
+                            colors =
+                                ButtonDefaults.outlinedButtonColors(
+                                    contentColor = Green700,
+                                    disabledContentColor = Color(0xFF94A3B8),
+                                ),
+                        ) {
+                            Text(lbl, fontWeight = FontWeight.Medium)
+                        }
+                    } else {
+                        Button(
+                            onClick = onProfilePinPrimary,
+                            enabled = canSubmitProfilePin,
+                            modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Green700),
+                        ) {
+                            Text(lbl, fontWeight = FontWeight.Medium, color = Color.White)
+                        }
+                    }
+                }
+            }
+
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .zIndex(50f)
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .padding(horizontal = 12.dp)
+                    .padding(
+                        bottom =
+                            12.dp + ApiBannerBottomNavClearance +
+                                if (mainShellDockVisible) FleetBottomDockReserve else 0.dp,
+                    ),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (successBanner != null) {
+                    ApiFeedbackBanner(
+                        message = successBanner,
+                        onDismiss = { successBanner = null },
+                        isSuccess = true,
+                        modifier =
+                            Modifier.padding(bottom = if (apiBanner != null) 8.dp else 0.dp),
+                    )
+                }
+                ApiFeedbackBanner(
+                    message = apiBanner,
+                    onDismiss = { apiBanner = null },
+                    isSuccess = false,
+                )
+            }
             if (mainShellDockVisible) {
                 val dockSel =
                     if (mainTab == "card" || mainTab == "scan" ||

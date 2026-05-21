@@ -17,7 +17,10 @@ public class MGLFleetSdkPlugin: CAPPlugin {
         let apiBaseUrl = apiBaseUrlRaw.trimmingCharacters(in: .whitespacesAndNewlines)
         let useMock = call.getBool("useMock") ?? true
         let authToken = call.getString("authToken")
-        FleetSdk.shared.initialize(options: FleetSdkOptions(apiBaseUrl: apiBaseUrl, authToken: authToken, useMock: useMock))
+        let foCompanyId = FleetSdkPlugin.readFoCompanyId(fromAny: call.options["foCompanyId"])
+        FleetSdk.shared.initialize(
+            options: FleetSdkOptions(apiBaseUrl: apiBaseUrl, authToken: authToken, useMock: useMock, foCompanyId: foCompanyId),
+        )
         call.resolve()
         #else
         call.reject("Add local Swift package ../../../native-ios/MGLFleetSDK to the iOS app target — see docs/README.NATIVE-SDK.md")
@@ -79,9 +82,10 @@ public class MGLFleetSdkPlugin: CAPPlugin {
         }
         let useMock = initBlock["useMock"] as? Bool ?? true
         let authToken = initBlock["authToken"] as? String
-
+        let foCompanyId =
+            FleetSdkPlugin.readFoCompanyId(fromAny: initBlock["foCompanyId"])
         FleetSdk.shared.initialize(
-            options: FleetSdkOptions(apiBaseUrl: apiBaseUrl, authToken: authToken, useMock: useMock),
+            options: FleetSdkOptions(apiBaseUrl: apiBaseUrl, authToken: authToken, useMock: useMock, foCompanyId: foCompanyId),
         )
 
         guard let vc = bridge?.viewController else {
@@ -111,5 +115,16 @@ public class MGLFleetSdkPlugin: CAPPlugin {
         #else
         call.reject("Add local Swift package ../../../native-ios/MGLFleetSDK — see docs/README.NATIVE-SDK.md")
         #endif
+    }
+
+    /// JS number or string → Int64 for `FleetSdkOptions.foCompanyId`.
+    private static func readFoCompanyId(fromAny raw: Any?) -> Int64? {
+        guard let raw else { return nil }
+        if let i = raw as? Int64 { return i }
+        if let i = raw as? Int { return Int64(i) }
+        if let n = raw as? NSNumber { return n.int64Value }
+        if let d = raw as? Double { return Int64(d) }
+        if let s = raw as? String { return Int64(s.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        return nil
     }
 }

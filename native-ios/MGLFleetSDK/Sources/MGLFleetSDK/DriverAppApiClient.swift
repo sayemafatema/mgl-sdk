@@ -220,6 +220,22 @@ final class DriverAppApiClient {
         }
     }
 
+    func driverPinReset(bearerPartial: String, foCompanyId: Int64, newPin: String) async -> Result<String, Error> {
+        await runCatching {
+            let txt =
+                try await postJsonRaw(
+                    path: "/api/v0/driver-app/auth/pin/reset",
+                    body: ["foCompanyId": NSNumber(value: foCompanyId), "newPin": newPin],
+                    bearer: bearerPartial,
+                )
+            let parsed = try DriverFleetJSON.parseFlexible(txt)
+            guard let uw = try DriverFleetJSON.unwrapDriverBody(parsed) else { return "" }
+            if let s = uw as? String { return s.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
+            if let s = uw as? NSString { return s.trimmingCharacters(in: CharacterSet(charactersIn: "\"")) }
+            throw DriverApiError.message("Unexpected pin-reset response")
+        }
+    }
+
     func driverGetHome(_ token: String) async -> Result<DriverHomeParsed, Error> {
         await runCatching {
             let txt = try await getRaw(path: "/api/v0/driver-app/home", bearer: token)
